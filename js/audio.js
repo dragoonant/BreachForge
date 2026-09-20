@@ -67,6 +67,21 @@ window.RB = window.RB || {};
   // UI ticks, point.score, and the rest) are synth-only by design.
   var SAMPLES = {
     /* BEGIN GENERATED SAMPLES — written by tools/fetch-sfx.mjs, do not hand-edit */
+    'card.draw': { file: 'card-draw', gain: 0.55 },
+    'card.play': { file: 'card-play', gain: 0.55 },
+    'card.discard': { file: 'card-discard', gain: 0.5 },
+    'unit.deploy': { file: 'unit-deploy', gain: 0.6 },
+    'unit.die': { file: 'unit-die', gain: 0.55 },
+    'gear.equip': { file: 'gear-equip', gain: 0.55 },
+    'spell.cast': { file: 'spell-cast', gain: 0.55 },
+    'rune.channel': { file: 'rune-channel', gain: 0.5 },
+    'showdown.start': { file: 'showdown-start', gain: 0.6 },
+    'showdown.win': { file: 'showdown-win', gain: 0.55 },
+    'showdown.lose': { file: 'showdown-lose', gain: 0.55 },
+    'battlefield.conquer': { file: 'battlefield-conquer', gain: 0.65 },
+    'legend.activate': { file: 'legend-activate', gain: 0.6 },
+    'game.win': { file: 'game-win', gain: 0.6 },
+    'game.lose': { file: 'game-lose', gain: 0.6 },
     /* END GENERATED SAMPLES */
   };
 

@@ -113,7 +113,7 @@
     // "Give a unit +5 [S] this turn." Buffs already expire at end of turn.
     'sfd-097': {
       keywords: ['Action'],
-      effects: [{ op: 'buff', n: 5, target: { pick: 'myUnits' } }],
+      effects: [{ op: 'giveMight', n: 5, target: { pick: 'myUnits' } }],
     },
 
     // "I can't be chosen by enemy spells and abilities."
@@ -246,7 +246,7 @@
     'sfd-196': {
       keywords: ['Reaction'],
       effects: [
-        { op: 'buff', n: 2, target: { pick: 'myUnits' } },
+        { op: 'giveMight', n: 2, target: { pick: 'myUnits' } },
         { op: 'weaken', n: 2, target: { pick: 'enemyUnits' } },
       ],
     },

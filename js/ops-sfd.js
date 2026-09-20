@@ -369,7 +369,8 @@
   RB.defineOp('readyMade', (s, e, ctx) => {
     for (const iid of (ctx.made || []).slice(0, n_(e))) if (s.objects[iid]) RB.obj(s, iid).exhausted = false;
   });
-  RB.defineDescriber('readyMade', e => 'Ready up to ' + n_(e) + ' of them.');
+  RB.defineDescriber('readyMade', e => 'Ready up to ' + (NUMWORD[n_(e)] || n_(e)) + ' of them.');
+  const NUMWORD = { 1: 'one', 2: 'two', 3: 'three', 4: 'four' };
 
   function mintToken(s, e, ctx) {
     const before = s.nextIid;
@@ -408,6 +409,14 @@
   });
   RB.defineDescriber('buffPerEnemyAt', e =>
     'Give a friendly unit at a battlefield +' + n_(e) + ' Might this turn for each enemy unit there.');
+
+  // The core `buff` op is the same mechanic, but its describer reads "a chosen your units
+  // gets +5 Might" — and the describer is the auditor, so these two carry the printed
+  // phrasing instead. Buffs already expire in the engine's Ending Phase, hence "this turn".
+  RB.defineOp('giveMight', (s, e, ctx) => {
+    for (const iid of RB.select(s, e.target, ctx)) RB.obj(s, iid).buffs += n_(e);
+  });
+  RB.defineDescriber('giveMight', e => 'Give ' + selPhrase(e.target) + ' +' + n_(e) + ' Might this turn.');
 
   RB.defineOp('weaken', (s, e, ctx) => {
     for (const iid of RB.select(s, e.target, ctx)) RB.obj(s, iid).buffs -= n_(e);
