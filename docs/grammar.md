@@ -66,6 +66,24 @@ Per-turn state a condition or a card can read, on the player:
 `playedThisTurn` (the card ids finalized this turn, in order) · `drawsThisTurn` ·
 `powerSpentThisTurn` · `turnFlags.equipment` · `xp`.
 
+## Replacement effects
+
+A replacement stands **in front of** an event and takes its place — the event never happens, so
+it cannot be a trigger:
+
+```js
+replaces: [{ event: 'death', kind: 'dieInstead' }]   // "if a friendly unit would die, kill me instead"
+```
+
+The first replacement that applies consumes the event, and a replacement's own kill is never
+itself replaced. Add kinds with `RB.defineReplacement`.
+
+## Gates on activated abilities
+
+An ability's legality is not only its cost. `{ energy, power, exhaustSelf, killSelf, when }` —
+`when` is a condition, and an ability whose gate does not hold is **not offered**, rather than
+offered and fizzling for full price.
+
 ## The Champion Zone
 
 Every deck names a **Chosen Champion** — a champion unit whose tag matches the legend's. It is

@@ -155,17 +155,33 @@
       box.dataset.drop = 'bf' + i;
       box.dataset.bf = i;
 
+      // The battlefield paints itself with its own art. These images sit UNDER the cards
+      // fighting over them, so the two knobs — art opacity and scrim — are deliberately
+      // low; anything louder competes with the art on top of it. A battlefield with no
+      // generated render simply does not paint, and the zone reads exactly as before.
+      const art = RB.artUrl(card);
+      if (art) {
+        const layer = el('bf-art');
+        layer.style.backgroundImage = 'url("' + art + '")';
+        box.appendChild(layer);
+        const scrim = el('bf-scrim');
+        box.appendChild(scrim);
+      }
+
       const lt = el('lane them');
+      lt.style.position = 'relative'; lt.style.zIndex = '2';
       for (const iid of RB.unitsAt(state, i, RB.opponentOf(me))) lt.appendChild(unitEl(state, iid, false));
       box.appendChild(lt);
 
       const mid = el('');
+      mid.style.position = 'relative'; mid.style.zIndex = '2';
       mid.innerHTML = '<div class="bfname">' + card.name +
         (bf.controller !== null ? (bf.controller === me ? ' — yours' : ' — theirs') : '') + '</div>' +
         '<div class="bftext">' + RB.iconHTML(RB.printedText(card.id)) + '</div>';
       box.appendChild(mid);
 
       const lm = el('lane');
+      lm.style.position = 'relative'; lm.style.zIndex = '2';
       for (const iid of RB.unitsAt(state, i, me)) lm.appendChild(unitEl(state, iid, true));
       box.appendChild(lm);
 

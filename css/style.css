@@ -137,7 +137,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .rune.ex{opacity:.3;transform:rotate(16deg)}
 .bfrow{display:flex;gap:.7rem;justify-content:center;align-items:stretch;min-width:0}
 
-.bf{flex:1 1 0;min-width:0;max-width:30rem;border-radius:.6rem;border:1px solid var(--edge);padding:.4rem;position:relative;
+
+.bf{flex:1 1 0;min-width:0;max-width:30rem;overflow:hidden;border-radius:.6rem;border:1px solid var(--edge);padding:.4rem;position:relative;
   background:rgba(255,255,255,.03);min-height:9.4rem;display:flex;flex-direction:column;gap:.25rem;
   transition:border-color .15s,box-shadow .15s}
 .bf.ctrl-me{border-color:rgba(111,211,232,.7);box-shadow:inset 0 0 26px rgba(111,211,232,.14)}
@@ -233,3 +234,33 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 /* The Champion Zone is public: the card waits in the open, marked as not yet in play. */
 .in-champion-zone{outline:1px dashed rgba(255,202,99,.55);outline-offset:1px}
+
+/* ------------------------------------------------ painted board areas
+   Two knobs per zone: how strongly the art paints, and how heavily the scrim knocks it
+   back. Both deliberately low — these images sit UNDER the cards fighting over them, and
+   a background that competes with a card face is a background that has to be turned off. */
+:root{
+  --bf-art-opacity:.30;
+  --bf-scrim:rgba(8,11,19,.55);
+  --zone-art-opacity:.22;
+  --zone-scrim:rgba(8,11,19,.62);
+}
+.bf-art{position:absolute;inset:0;z-index:0;pointer-events:none;border-radius:.6rem;
+  background-size:cover;background-position:50% 32%;opacity:var(--bf-art-opacity);
+  filter:saturate(.72)}
+.bf-scrim{position:absolute;inset:0;z-index:1;pointer-events:none;border-radius:.6rem;
+  background:
+    radial-gradient(120% 80% at 50% 45%, transparent 0%, var(--bf-scrim) 78%),
+    linear-gradient(180deg, var(--bf-scrim) 0%, transparent 28%, transparent 72%, var(--bf-scrim) 100%)}
+/* A controlled battlefield lets its own art come through a little more — the board should
+   read at a glance as ground somebody is standing on. */
+.bf.ctrl-me .bf-art,.bf.ctrl-them .bf-art{opacity:calc(var(--bf-art-opacity) + .1)}
+.bf.contested .bf-art{opacity:calc(var(--bf-art-opacity) + .16);filter:saturate(.95)}
+
+.zone{overflow:hidden}
+.zone-art{position:absolute;inset:0;z-index:0;pointer-events:none;
+  background-size:cover;background-position:50% 50%;opacity:var(--zone-art-opacity);
+  filter:saturate(.6)}
+.zone-scrim{position:absolute;inset:0;z-index:1;pointer-events:none;
+  background:linear-gradient(180deg, var(--zone-scrim), transparent 40%, transparent 60%, var(--zone-scrim))}
+.zone>.lbl,.zone>.zonerow,.zone>.runes,.zone>#them-hand{position:relative;z-index:2}

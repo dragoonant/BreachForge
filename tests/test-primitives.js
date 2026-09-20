@@ -297,6 +297,58 @@ export function run(t) {
     t.ok(RB.canPay(s, p, cost), 'inside one it pays');
   });
 
+  t.test("a scope:'self' static never reaches an opponent's units", () => {
+    const s = game();
+    const mine = put(s, 0, 0);
+    const other = RB.allCards().find(c => c.type === 'Unit' && c.id !== RB.obj(s, mine).cardId);
+    const theirs = RB.mint(s, other.id, 1);
+    s.players[1].base.push(theirs);
+    const card = RB.card(RB.obj(s, mine).cardId);
+    const saved = card.abilities;
+    const before = RB.mightOf(s, theirs);
+    card.abilities = { statics: [{ might: 99, scope: 'self', includeSelf: true }] };
+    t.eq(RB.mightOf(s, theirs), before, "the opponent's unit is untouched");
+    t.eq(RB.mightOf(s, mine) - (card.might || 0), 99, 'and the source got the whole thing');
+    card.abilities = saved;
+  });
+
+  // --- replacement effects ---------------------------------------------------
+  t.test('a replacement effect stands in front of a death and takes its place', () => {
+    const s = game();
+    const p = s.active;
+    const victim = put(s, p, 0);
+    const shield = put(s, p, 'base');
+    const card = RB.card(RB.obj(s, shield).cardId);
+    const saved = card.abilities;
+    // Give only the shield instance the replacement, by giving its card the ability and
+    // making sure the victim is a different card.
+    if (RB.obj(s, victim).cardId === RB.obj(s, shield).cardId) { card.abilities = saved; return; }
+    card.abilities = { replaces: [{ event: 'death', kind: 'dieInstead' }] };
+    RB.kill(s, victim);
+    t.ok(s.bf[0].units.includes(victim), 'the unit that would have died is still there');
+    t.ok(!s.players[p].base.includes(shield), 'and the replacement died in its place');
+    // A replacement never replaces its own death, or it could never resolve.
+    card.abilities = saved;
+  });
+
+  t.test("an activated ability's gate is checked, not only its cost", () => {
+    const s = game();
+    const p = s.active;
+    const iid = put(s, p, 'base');
+    const card = RB.card(RB.obj(s, iid).cardId);
+    const saved = card.abilities;
+    s.players[p].pool.energy = 99; s.players[p].pool.any = 99;
+    RB.obj(s, iid).exhausted = false;
+    card.abilities = { activated: [{ energy: 0, when: 'playedEquipmentThisTurn',
+      effects: [{ op: 'draw', n: 1 }] }] };
+    t.eq(RB.legalActions(s).filter(a => a.t === 'activate' && a.iid === iid).length, 0,
+      'no Equipment played this turn, so the ability is not offered at all');
+    s.players[p].turnFlags.equipment = true;
+    t.ok(RB.legalActions(s).some(a => a.t === 'activate' && a.iid === iid),
+      'once the gate holds it appears');
+    card.abilities = saved;
+  });
+
   // --- the Champion Zone (rule 1.1) ------------------------------------------
   t.test('the Chosen Champion starts in the public Champion Zone, not in the main deck', () => {
     const s = game();

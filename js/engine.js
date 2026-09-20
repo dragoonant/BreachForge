@@ -136,6 +136,10 @@
         if (mode !== 'main' && !(a.tags || []).some(t => t === 'Action' || t === 'Reaction')) return;
         if (a.exhaustSelf && RB.obj(state, iid).exhausted) return;
         if (a.killSelf && RB.locationOf(state, iid).kind === 'nowhere') return;
+        // An ability's legality is not only its cost. "Use only if you've played an
+        // Equipment this turn" is a gate: without it the ability is either offered and
+        // fizzles for full price, or the clause is dropped — both the wrong card.
+        if (a.when && !RB.testCondition(state, a.when, { p: p, source: iid })) return;
         const cost = { energy: a.energy || 0, power: a.power || 0, domains: a.domains || [], each: false };
         if (!RB.canPay(state, p, cost)) return;
         out.push({ t: 'activate', iid: iid, ix: ix });
@@ -451,6 +455,7 @@
       o.cantMove = false;
       o.movedThisTurn = 0;
     }
+    for (const bf of s.bf) for (const h of bf.hidden) h.revealedTo = [];
     for (let q = 0; q < 2; q++) {  // 3e. Rune pools empty; unspent resources are lost
       s.players[q].pool.energy = 0;
       s.players[q].pool.any = 0;
@@ -527,9 +532,31 @@
     else RB.runTriggers(s, 'hold', { p: p, bf: i });
   };
 
+  // Replacement effects (the table lives in js/abilities.js, which owns the hook tables):
+  // a card may say "if a friendly unit would die, kill me instead", and the death never
+  // happens, so it cannot be a trigger. Each replacement is asked whether it applies and
+  // the first that does consumes the event. `replacing` guards the recursion — a
+  // replacement's own kill is never itself replaced.
+  let replacing = false;
+
   RB.kill = function (s, iid) {
     const loc = RB.locationOf(s, iid);
     const o = RB.obj(s, iid);
+    if (!replacing && loc.kind !== 'nowhere') {
+      for (const src of RB.allUnits(s).concat(s.players.map(P => P.legend)).filter(Boolean)) {
+        const ab = RB.card(RB.obj(s, src).cardId).abilities;
+        for (const r of (ab && ab.replaces) || []) {
+          if (r.event !== 'death') continue;
+          const fn = RB.replacements[r.kind];
+          if (!fn) throw new Error('no replacement named ' + r.kind);
+          replacing = true;
+          let handled = false;
+          try { handled = fn(s, { dying: iid, source: src, spec: r }); }
+          finally { replacing = false; }
+          if (handled) { RB.log(s, 'replaced', { iid: iid, by: src }); return; }
+        }
+      }
+    }
     if (loc.kind === 'base') RB.removeFrom(s.players[loc.p].base, iid);
     else if (loc.kind === 'bf') RB.removeFrom(s.bf[loc.bf].units, iid);
     else if (loc.kind === 'bfGear') RB.removeFrom(s.bf[loc.bf].gear, iid);

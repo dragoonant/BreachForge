@@ -65,6 +65,8 @@
   RB.defineDescriber('when', e => 'If ' + whenText(e.test) + ', ' +
     lower((e.then || []).map(line).join(' ')) +
     (e.otherwise && e.otherwise.length ? ' Otherwise, ' + lower(e.otherwise.map(line).join(' ')) : ''));  // ops.when
+  RB.defineDescriber('revealHidden', () =>
+    "Look at your opponents' facedown cards for the rest of the turn.");                                    // ops.revealHidden
   RB.defineDescriber('cantMove', e => sel(e.target, true) + " can't move this turn.");                     // ops.cantMove
   RB.defineDescriber('moveTokensHere', () =>
     'Move any number of your token units to this battlefield.');                                            // ops.moveTokensHere
@@ -114,6 +116,8 @@
     for (const a of ab.activated || [])
       out.push(cost(a) + ': ' + a.effects.map(line).join(' '));
     for (const st of ab.statics || []) out.push(staticText(st));
+    for (const r of ab.replaces || [])
+      if (r.kind === 'dieInstead') out.push('If a friendly unit would die, kill me instead.');
     if (ab.effects) out.push(ab.effects.map(line).join(' '));
     return out.filter(Boolean).join('\n');
   };
@@ -229,6 +233,8 @@
     if (a.power) bits.push(a.power + ' Power');
     if (a.exhaustSelf) bits.push('Exhaust me');
     if (a.killSelf) bits.push('Kill me');
-    return bits.join(', ') || 'Free';
+    const c = bits.join(', ') || 'Free';
+    // A gate on an ability is part of what the card says, not an implementation detail.
+    return c + (a.when ? ' (use only ' + whenText(a.when) + ')' : '');
   }
 })(window.RB = window.RB || {});

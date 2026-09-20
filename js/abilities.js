@@ -8,6 +8,11 @@
   RB.ops = OPS;
   RB.defineOp = function (name, fn) { OPS[name] = fn; };
 
+  // Replacement effects stand in front of an event and take its place. Their table lives
+  // here with the other hook tables so js/engine.js can read it without owning it.
+  RB.replacements = Object.create(null);
+  RB.defineReplacement = function (name, fn) { RB.replacements[name] = fn; };
+
   // --- resolution -----------------------------------------------------------
   RB.resolveCard = function (s, item) {
     const iid = item.iid, p = item.controller;
@@ -233,6 +238,29 @@
   RB.defineCondition('playedThisTurnAtLeast', (s, ctx, a) =>
     s.players[ctx.p].playedThisTurn.length >= (a.n || 1));
   RB.defineCondition('all', (s, ctx, a) => (a.tests || []).every(x => RB.testCondition(s, x, ctx)));
+  RB.defineCondition('playedEquipmentThisTurn', (s, ctx) => !!s.players[ctx.p].turnFlags.equipment);
+  RB.defineCondition('haveXP', (s, ctx, a) => (s.players[ctx.p].xp || 0) >= (a.n || 1));
+
+  // "If a friendly unit would die, kill me instead." The source dies in the dying unit's
+  // place and the original death never happens — which is why it cannot be a trigger.
+  RB.defineReplacement('dieInstead', (s, e) => {
+    const dying = RB.obj(s, e.dying), src = RB.obj(s, e.source);
+    if (e.source === e.dying) return false;
+    if (src.controller !== dying.controller) return false;
+    if (e.spec.friendlyOnly !== false && src.controller !== dying.controller) return false;
+    dying.damage = 0;
+    RB.kill(s, e.source);
+    return true;
+  });
+
+  // Reveal an opponent's facedown cards to one player, for the rest of the turn.
+  RB.defineOp('revealHidden', (s, e, ctx) => {
+    for (const bf of s.bf)
+      for (const h of bf.hidden)
+        if (h.owner !== ctx.p && !(h.revealedTo || []).includes(ctx.p))
+          (h.revealedTo = h.revealedTo || []).push(ctx.p);
+    RB.log(s, 'revealHidden', { p: ctx.p });
+  });
 
   // "They can't move it this turn." A restriction on the unit, cleared with every other
   // this-turn effect in the Ending Cleanup.
