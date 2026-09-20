@@ -452,7 +452,7 @@ RB.registerAbilities({
   'unl-198': {
     keywords: ['Action'],
     effects: [{
-      op: 'chooseMyBattlefield',
+      op: 'chooseBattlefield',
       effects: [{
         op: 'choose',
         options: [
@@ -581,6 +581,308 @@ RB.registerAbilities({
   // showdowns." Its own pool bucket, so the restriction is real rather than ignored.
   'unl-234': {
     activated: [{ exhaustSelf: true, tags: ['Reaction'], effects: [{ op: 'addShowdownEnergy', n: 1 }] }],
+  },
+
+  // ==========================================================================
+  // WAVE TWO — the 39 cards that arrived with the second batch of decks. Same
+  // rules as above: keywords the core honours are declared, a keyword it cannot
+  // honour but the grammar can say exactly is expanded, and optionality is never
+  // approximated.
+  // ==========================================================================
+
+  // Mischievous Marai — [Hidden]; the play effect only fires on a play TO A BATTLEFIELD,
+  // which is where a facedown card is always played from.
+  'unl-003': {
+    keywords: ['Hidden'],
+    triggers: [{ on: 'played', effects: [{
+      op: 'cond', test: { sourceAtBattlefield: true },
+      effects: [{ op: 'atThisBattlefield',
+        effects: [{ op: 'damage', n: 2, target: { pick: 'hereEnemy' } }] }],
+    }] }],
+  },
+
+  'unl-007': { unimplemented: '"If it would die this turn, banish it instead" is a replacement on one unit for one turn. RB.kill only scans permanents in play for a card-level `replaces`, so a spell cannot leave one behind on the unit it damaged.' },
+
+  // Pyke (Fury) — [Hidden] [Ganking]; an optional Fury Power buys the ready-and-grow.
+  'unl-028': {
+    keywords: ['Hidden', 'Ganking'],
+    additionalCosts: [{ id: 'boon', power: 1, domains: ['Fury'] }],
+    triggers: [{ on: 'played', effects: [{
+      op: 'cond', test: { paid: 'boon' },
+      effects: [{ op: 'ready', target: 'self' }, { op: 'buff', n: 2, target: 'self' }],
+    }] }],
+  },
+
+  // Tricksy Tentacles — in a duel every enemy unit shares a controller, so what is left to
+  // decide is the single destination and which units fit under the cap.
+  'unl-054': { effects: [{ op: 'moveEnemyGroup', maxMight: 8 }] },
+
+  // Lillia — grows on each token unit you play, and hands them all Tank. `isToken` reads
+  // the object, not the card's tags, so a token copy of a real unit counts too.
+  'unl-058': {
+    triggers: [{ on: 'unitPlayed', mine: true, effects: [{
+      op: 'cond', test: { eventUnitIsToken: true },
+      effects: [{ op: 'buff', n: 1, target: 'self' }],
+    }] }],
+    statics: [{ grant: 'Tank', scope: 'mine', when: 'isToken' }],
+  },
+
+  // Downstage Dramatics — [Reaction]; [Repeat] [2] is an optional additional cost whose
+  // effects run once more on resolution.
+  'unl-061': {
+    keywords: ['Reaction'],
+    additionalCosts: [{ id: 'repeat', energy: 2, effects: [{ op: 'draw', n: 1 }] }],
+    effects: [{ op: 'draw', n: 1 }],
+  },
+
+  // Eclipse — [Reaction]; "a unit" is any unit, and an enemy is simply the one taken.
+  'unl-063': {
+    keywords: ['Reaction'],
+    effects: [
+      { op: 'debuff', n: 4, target: { pick: 'allUnits', prefer: 'enemy' } },
+      { op: 'predict', n: 1 },
+    ],
+  },
+
+  // Sprite Burst — two of them, at the printed size, with Temporary.
+  'unl-069': {
+    effects: [{ op: 'keywordToken', cardId: 'tok-sprite', n: 2, might: 3,
+      ready: true, temporary: true }],
+  },
+
+  // Chakram Dancer — [Ambush]; "your OTHER units here", so the grant skips its own source.
+  'unl-071': {
+    keywords: ['Ambush'],
+    triggers: [{ on: 'played', effects: [{ op: 'atThisBattlefield', effects: [
+      { op: 'grantTo', keyword: 'Shield', target: { pick: 'hereMine', notSelf: true, n: 'all' } },
+    ] }] }],
+  },
+
+  // Crescent Strike — [Action]; the battlefield and the unit are two choices, and the
+  // splash has to agree with the second one, which is why it is a single op.
+  'unl-072': {
+    keywords: ['Action'],
+    effects: [{ op: 'chooseBattlefield', where: 'enemy', effects: [
+      { op: 'damageHereSplit', n: 4, others: 1 },
+    ] }],
+  },
+
+  // Deadly Flourish — the Gold is promised on THAT unit dying, this turn, so the promise
+  // has to remember which unit it was.
+  'unl-073': {
+    effects: [{ op: 'damageWatch', n: 3, target: { pick: 'enemyUnits' },
+      then: [{ op: 'keywordToken', cardId: 'tok-gold' }] }],
+  },
+
+  // Petal Pixie — a computed modifier, recounted every time her Might is read.
+  'unl-076': {
+    statics: [{ might: { from: 'temporaryUnitsHere' }, scope: 'self', includeSelf: true }],
+  },
+
+  // Keeper of Masks — [Hidden]; [Temporary] is expanded because the engine's sweep reads
+  // o.temporary, which only an op sets. The copies take her printed characteristics, not
+  // her Temporary status, which is what "become copies of me" means.
+  'unl-081': {
+    keywords: ['Hidden'],
+    triggers: [{ on: 'played', effects: [
+      { op: 'giveTemporary', target: 'self' },
+      { op: 'atThisBattlefield', orBase: true, effects: [
+        { op: 'copyToken', n: 2, target: 'self', to: 'here' },
+      ] },
+    ] }],
+  },
+
+  // Smoke and Mirrors — [Hidden] [Action]; the draw is a separate sentence and happens
+  // whether or not a legal pair existed.
+  'unl-083': {
+    keywords: ['Hidden', 'Action'],
+    effects: [{ op: 'swapMyUnits' }, { op: 'draw', n: 1 }],
+  },
+
+  // Sumpworks Map — [Reaction]; [Temporary] expanded as above. "When an opponent scores"
+  // is both scoring paths, filtered to the opponent.
+  'unl-085': {
+    keywords: ['Reaction'],
+    triggers: [
+      { on: 'played', effects: [{ op: 'giveTemporary', target: 'self' }] },
+      { on: 'conquer', effects: [{ op: 'cond', test: { eventIsOpponents: true },
+        effects: [{ op: 'draw', n: 1 }] }] },
+      { on: 'hold', effects: [{ op: 'cond', test: { eventIsOpponents: true },
+        effects: [{ op: 'draw', n: 1 }] }] },
+    ],
+  },
+
+  // Grim Resolve — [Action]; the XP is promised on that unit winning a combat this turn.
+  'unl-095': {
+    keywords: ['Action'],
+    effects: [{ op: 'buffWatchCombat', n: 3, target: { pick: 'myUnits' },
+      then: [{ op: 'xp', n: 2 }] }],
+  },
+
+  // Kinkou Initiate — "your OTHER units", so the condition excludes her own Might.
+  'unl-097': {
+    triggers: [{ on: 'played', effects: [{
+      op: 'cond', test: { otherUnitsMightAtLeast: 5 },
+      effects: [{ op: 'draw', n: 1 }],
+    }] }],
+  },
+
+  'unl-111': { unimplemented: '"I can\'t move to base" is a restriction on ONE destination. moveActions gates on `exhausted` and `cantMove`, both all-or-nothing, and cantMove would also stop it being played out of the base — a blanket where the card is narrow.' },
+
+  // Irresistible Faefolk — a pull on arrival, and a real "you may".
+  'unl-112': {
+    triggers: [{ on: 'moved', effects: [{
+      op: 'cond', test: { eventIsSelf: true, toBattlefield: true },
+      effects: [{ op: 'may', prompt: 'Move an enemy unit to that battlefield?',
+        effects: [{ op: 'moveUnit', to: 'here',
+          target: { pick: 'enemyUnits', notHere: true } }] }],
+    }] }],
+  },
+
+  // Nidalee — [Ambush]; `here` is the combat she was in, and a unit that died in it is no
+  // longer asked, which is exactly "I win if I remain after combat".
+  'unl-114': {
+    keywords: ['Ambush'],
+    triggers: [{ on: 'combatEnd', here: true, effects: [{
+      op: 'cond', test: { eventWinnerIsMe: true },
+      effects: [{ op: 'draw', n: 1 }],
+    }] }],
+  },
+
+  // Bewitching Spirit — "choose a player" is a real choice, including choosing yourself.
+  'unl-121': {
+    triggers: [{ on: 'played', effects: [{ op: 'choose', options: [
+      { label: 'Your opponent discards 1', effects: [{ op: 'discard', n: 1, opponent: true }] },
+      { label: 'You discard 1', effects: [{ op: 'discard', n: 1 }] },
+    ] }] }],
+  },
+
+  // Mister Root — [Accelerate] at its printed price, and XP on arrival.
+  'unl-127': {
+    additionalCosts: [{ id: 'accelerate', energy: 1, power: 1, domains: ['Chaos'],
+      entersReady: true }],
+    triggers: [{ on: 'moved', effects: [{
+      op: 'cond', test: { eventIsSelf: true, toBattlefield: true },
+      effects: [{ op: 'xp', n: 2 }],
+    }] }],
+  },
+
+  // Angler Beast — "all units", friendly ones included, so nothing is chosen and nothing
+  // tolls Deflect.
+  'unl-132': {
+    triggers: [{ on: 'played', effects: [
+      { op: 'returnToHand', target: { pick: 'allUnits', maxMight: 2, n: 'all' } },
+    ] }],
+  },
+
+  'unl-138': { unimplemented: '"Name a tag" is a free choice from all 64 tags printed in the game. A choose step takes a fixed option list, and narrowing it to the tags in play at that moment would narrow a choice that governs the ability for the rest of the game.' },
+
+  // Kha'Zix — [Ambush]; `mine` keeps the attack trigger to the attacking side and the
+  // defend trigger to the defending one, and `here` to the battlefield in question.
+  'unl-143': {
+    keywords: ['Ambush'],
+    triggers: [
+      { on: 'attack', mine: true, here: true, effects: [{
+        op: 'cond', test: { enemyAloneHere: true },
+        effects: [{ op: 'buff', n: 2, target: 'self' }, { op: 'xp', n: 2 }] }] },
+      { on: 'defend', mine: true, here: true, effects: [{
+        op: 'cond', test: { enemyAloneHere: true },
+        effects: [{ op: 'buff', n: 2, target: 'self' }, { op: 'xp', n: 2 }] }] },
+    ],
+  },
+
+  // Pyke (Chaos) — [Hidden] [Backline]; once each turn, keyed to Pyke rather than to
+  // whoever's unit died.
+  'unl-145': {
+    keywords: ['Hidden', 'Backline'],
+    triggers: [{ on: 'died', effects: [{
+      op: 'cond', test: { eventIsOpponents: true, sourceAtBattlefield: true },
+      effects: [{ op: 'firstEachTurn', key: 'pyke', per: 'me',
+        effects: [{ op: 'keywordToken', cardId: 'tok-gold' }] }],
+    }] }],
+  },
+
+  // Carrion Dredger — a Bird with the keyword it is printed with.
+  'unl-153': {
+    triggers: [{ on: 'deathknell', effects: [
+      { op: 'keywordToken', cardId: 'tok-bird', might: 1, keywords: ['Deflect'] },
+    ] }],
+  },
+
+  // Safety Inspector — the XP is an optional additional cost, so paying it is decided as
+  // he is played and the play effect reads what was paid.
+  'unl-164': {
+    additionalCosts: [{ id: 'xp3', pays: 'spendXP', n: 3 }],
+    triggers: [{ on: 'played', effects: [{ op: 'eachPlayerKills', exceptIfPaid: 'xp3' }] }],
+  },
+
+  'unl-170': { unimplemented: 'Its additional cost DISCOUNTS the card by the killed unit\'s own Energy and Power. An additional cost contributes only fixed numbers to RB.totalCost, and RB.costModifiers cannot see which extras were chosen, so the discount cannot be computed from what died.' },
+
+  // The Ruination — nothing is chosen, so nothing tolls Deflect.
+  'unl-180': { effects: [{ op: 'kill', target: 'allUnits' }] },
+
+  // Pridestalker — "a unit" is any unit; one of yours is simply the one taken.
+  'unl-183': {
+    triggers: [{ on: 'unitPlayed', mine: true, effects: [
+      { op: 'buffTo', n: 1, target: { pick: 'allUnits', prefer: 'mine' } },
+    ] }],
+  },
+
+  // Thrill of the Hunt — [Reaction]; it is PLAYED again, so its play effects fire again.
+  'unl-184': {
+    keywords: ['Reaction'],
+    effects: [{ op: 'blinkUnit', target: { pick: 'myUnits' } }],
+  },
+
+  'unl-190': { unimplemented: '"Its controller can\'t play spells this turn" is a play restriction, and legality in this engine is whatever RB.legalActions offers. There is no shared restriction table to register into, and this pack does not wrap core functions.' },
+
+  // Void Assault — two moves, each to a location of your choosing; the second is asked
+  // after the first is answered.
+  'unl-202': {
+    effects: [{ op: 'moveChoosingDestination', target: { pick: 'myUnits' }, then: [
+      { op: 'moveChoosingDestination', target: { pick: 'enemyUnits' } },
+    ] }],
+  },
+
+  // Amateur Recital — "a unit at a battlefield" is any of them, anywhere, not just here.
+  'unl-207': {
+    triggers: [{ on: 'hold', here: true, effects: [{ op: 'atThisBattlefield', effects: [{
+      op: 'cond', test: { nonEmpty: { pick: 'allUnits', at: 'battlefield' } },
+      effects: [{ op: 'may', prompt: 'Move a unit at a battlefield to its base?',
+        effects: [{ op: 'moveUnit', to: 'base',
+          target: { pick: 'allUnits', at: 'battlefield', prefer: 'enemy' } }] }],
+    }] }] }],
+  },
+
+  // Black Flame Altar — only the units here that carry the status.
+  'unl-208': { statics: [{ grant: 'Shield', scope: 'here', when: 'isTemporary' }] },
+
+  // Frozen Fortress — each player's Beginning Phase, and every unit here, both sides.
+  'unl-212': {
+    triggers: [{ on: 'beginningPhase', effects: [{ op: 'atThisBattlefield', effects: [
+      { op: 'damage', n: 1, target: 'hereMine' },
+      { op: 'damage', n: 1, target: 'hereEnemy' },
+    ] }] }],
+  },
+
+  'unl-230': { unimplemented: 'Its ability costs [1] less for each friendly unit with Temporary. RB.costModifiers is the hook for a CARD\'s total cost; an activated ability\'s cost is built inline in legalActions and doActivate with no modifier hook, so the discount has nowhere to live.' },
+
+  // Voidreaver — XP on winning a combat, and two abilities gated on spending it. The gate
+  // is checked in legalActions, so neither is offered without the XP to pay.
+  'unl-236': {
+    triggers: [{ on: 'combatEnd', effects: [{
+      op: 'cond', test: { eventWinnerIsMe: true }, effects: [{ op: 'xp', n: 1 }] }] }],
+    activated: [
+      { when: { kind: 'haveXP', n: 1 }, exhaustSelf: true, effects: [
+        { op: 'spendXP', n: 1 },
+        { op: 'buffTo', n: 1, permanent: true, target: { pick: 'allUnits', prefer: 'mine' } },
+      ] },
+      { when: { kind: 'haveXP', n: 2 }, exhaustSelf: true, effects: [
+        { op: 'spendXP', n: 2 },
+        { op: 'moveUnit', to: 'base',
+          target: { pick: 'myUnits', at: 'battlefield', exhausted: true } },
+      ] },
+    ],
   },
 
 });

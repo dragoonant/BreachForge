@@ -25,7 +25,12 @@
 //    RB.cardText is extended too, but only as a describer: it adds prose for the static
 //    keys and set-local triggers the core describer does not know, and delegates the rest.
 //
-// 4. ONE STATIC PREDICATE IS ADDED HERE, through RB.defineStaticWhen and never by wrapping
+// 4. EVERY PICKER ENDS AT RB.offerChoice. A pack builds its own pool and orders it — that
+//    ordering is the card's policy — and hands it to the one door, which decides how many
+//    and whether to ask. Slicing a pool here instead would skip the human seat's question,
+//    the Deflect toll and the `chosen` trigger — and sfd-195 Blade Dancer IS that trigger.
+//
+// 5. ONE STATIC PREDICATE IS ADDED HERE, through RB.defineStaticWhen and never by wrapping
 //    RB.staticsOn: `sandSoldier`, because sfd-197 speaks about a token by NAME and the
 //    static's own `tag` filter cannot say that (data/tokens.js tags the Sand Soldier
 //    `Shurima`, not `Sand Soldier`).
@@ -96,6 +101,17 @@
     }
     return out;
   }
+  function fireOn(s, event, data, iid) {
+    const ab = abOf(s, iid);
+    if (!ab || !ab.sfdTriggers || !isSfd(s, iid)) return;
+    for (const t of ab.sfdTriggers) {
+      if (t.on !== event) continue;
+      const prev = s.via;
+      s.via = { iid: iid };
+      RB.runEffects(s, t.effects, { p: RB.obj(s, iid).owner, source: iid, event: data });
+      s.via = prev;
+    }
+  }
   function fire(s, event, data) {
     for (const [iid, p] of sfdSources(s)) {
       if (!isSfd(s, iid)) continue;
@@ -137,6 +153,16 @@
       !!s.objects[ctx.event.iid] && RB.cardOf(s, ctx.event.iid).type === 'Unit',
     paidExtra: (s, ctx, e) => (ctx.paid || []).includes(e.id),
     trashAtLeast: (s, ctx, e) => s.players[ctx.p].trash.length >= n_(e),
+    handAtMost: (s, ctx, e) => s.players[ctx.p].hand.length <= n_(e),
+    // "in combat": a combat showdown is open, which is the window combat kills happen in.
+    inCombat: s => !!s.showdown && !!s.showdown.combat,
+    // "an OPEN battlefield" is one that was occupied and UNCONTROLLED before you took it.
+    // The conquer event does not carry the previous controller, so sfd.noteOpen records it
+    // at the showdown that led here — a trigger, not a wrapper.
+    conqueredOpen: (s, ctx) => {
+      const bf = eventBf(s, ctx);
+      return bf >= 0 && s.bf[bf].sfdWasOpen === true;
+    },
   };
   const COND_TEXT = {
     here: 'it happened here', isMe: 'it is me', iChose: 'you were the one choosing',
@@ -144,6 +170,8 @@
     unattached: 'I am unattached', mightyHere: 'you had one or more Mighty units here',
     enemyUnitDied: 'it was an enemy unit', paidExtra: 'you paid the additional cost',
     trashAtLeast: 'your trash holds enough cards',
+    handAtMost: 'you have few enough cards in hand', inCombat: 'it was in combat',
+    conqueredOpen: 'the battlefield was open',
   };
   def('when', (s, e, ctx) => {
     const list = Array.isArray(e.cond) ? e.cond : [e.cond];
@@ -190,8 +218,9 @@
     RB.pay(s, ctx.p, plan);
     if (e.exhaustSelf) RB.obj(s, ctx.source).exhausted = true;
     if (e.bounceHere) {
-      const u = cheapestHere(s, ctx);
-      if (u === null) return;
+      const u = RB.offerChoice(s, hereCandidates(s, ctx), 1, ctx, 'bounceHere',
+        'Return which unit to hand?')[0];
+      if (!u) return;
       toHand(s, u);
     }
     RB.runEffects(s, e.effects || [], ctx);
@@ -205,7 +234,7 @@
   function canPay(s, e, ctx) {
     if (!RB.canPay(s, ctx.p, resourceCost(e))) return false;
     if (e.exhaustSelf && RB.obj(s, ctx.source).exhausted) return false;
-    if (e.bounceHere && cheapestHere(s, ctx) === null) return false;
+    if (e.bounceHere && !hereCandidates(s, ctx).length) return false;
     return true;
   }
   function costPhrase(e) {
@@ -217,12 +246,13 @@
     if (e.bounceHere) out += (out ? ' and ' : '') + "return a unit you control here to its owner's hand";
     return out || 'do nothing';
   }
-  function cheapestHere(s, ctx) {
+  // The pool, ordered cheapest-first. Kept separate from the choice because `canPay` asks
+  // only whether one EXISTS, and a legality probe must not announce a choice.
+  function hereCandidates(s, ctx) {
     const here = eventBf(s, ctx);
-    if (here < 0) return null;
-    const us = RB.unitsAt(s, here, ctx.p);
-    if (!us.length) return null;
-    return us.slice().sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b))[0];
+    if (here < 0) return [];
+    return RB.unitsAt(s, here, ctx.p).slice()
+      .sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b));
   }
 
   // --- gear ------------------------------------------------------------------
@@ -231,10 +261,10 @@
   def('attach', (s, e, ctx) => {
     const gear = ctx.source;
     if (RB.obj(s, gear).attachedTo) return;          // already placed by the play destination
-    const hosts = unitsOf(s, ctx.p);
-    if (!hosts.length) return;
-    hosts.sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
-    attachTo(s, gear, hosts[0], ctx.p);
+    const hosts = unitsOf(s, ctx.p).sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
+    const host = RB.offerChoice(s, hosts, 1, ctx, 'equipHost', 'Attach to which unit?')[0];
+    if (!host) return;
+    attachTo(s, gear, host, ctx.p);
   });
   say('attach', () => 'Attach me to a unit you control.');
 
@@ -250,7 +280,7 @@
   }
 
   def('killGear', (s, e, ctx) => {
-    const g = pickGear(s, e, ctx);
+    const g = pickGear(s, e, ctx, 'killGear');
     if (g === null) return;
     detach(s, g);
     RB.kill(s, g);
@@ -258,7 +288,7 @@
   say('killGear', () => 'Kill a gear.');
 
   def('bounceGear', (s, e, ctx) => {
-    const g = pickGear(s, e, ctx);
+    const g = pickGear(s, e, ctx, 'bounceGear');
     if (g === null) return;
     detach(s, g);
     toHand(s, g);
@@ -268,13 +298,16 @@
   // Auto-resolution for "a gear": the opponent's biggest, else your own smallest. The POOL
   // is every gear the card may legally choose; this only orders it, the way RB.autoPick
   // orders units, because the player does not pick yet (D-2).
-  function pickGear(s, e, ctx) {
+  function pickGear(s, e, ctx, tag) {
     const all = allGear(s);
     const theirs = all.filter(i => RB.obj(s, i).controller !== ctx.p);
-    if (theirs.length) return theirs.sort((a, b) => bonusOf(s, b) - bonusOf(s, a))[0];
-    if (e.side === 'enemy') return null;
-    const mine = all.filter(i => RB.obj(s, i).controller === ctx.p);
-    return mine.length ? mine.sort((a, b) => bonusOf(s, a) - bonusOf(s, b))[0] : null;
+    // Ordered best-first — the opponent's biggest, else your own smallest — and then handed
+    // to the one door, which asks a human seat and fires the `chosen` trigger.
+    const pool = theirs.length ? theirs.sort((a, b) => bonusOf(s, b) - bonusOf(s, a))
+      : e.side === 'enemy' ? []
+      : all.filter(i => RB.obj(s, i).controller === ctx.p).sort((a, b) => bonusOf(s, a) - bonusOf(s, b));
+    const got = RB.offerChoice(s, pool, 1, ctx, tag || 'gear', 'Which gear?');
+    return got.length ? got[0] : null;
   }
   const bonusOf = (s, iid) => RB.cardOf(s, iid).might || 0;
   function detach(s, gid) {
@@ -299,14 +332,18 @@
   }
 
   // [Weaponmaster] — "choose a card you control with the Equipment tag; pay the cost of its
-  // Equip ability, reduced by [A], to attach it to this unit". The reduction is applied to
-  // that ability's own printed cost, and nothing is attached if the rest cannot be paid.
+  // Equip ability, reduced by [A], to attach it to this unit" — "even if it's already
+  // attached" (sfd-116), so an attached Equipment is a legal choice and is taken off its
+  // host. The reduction applies to that ability's own printed cost, and nothing is attached
+  // if the rest cannot be paid.
   def('weaponmaster', (s, e, ctx) => {
     const mine = allGear(s).filter(i => RB.obj(s, i).controller === ctx.p &&
-      !RB.obj(s, i).attachedTo && (RB.cardOf(s, i).tags || []).includes('Equipment'));
-    if (!mine.length) return;
+      RB.obj(s, i).attachedTo !== ctx.source &&
+      (RB.cardOf(s, i).tags || []).includes('Equipment'));
     mine.sort((a, b) => bonusOf(s, b) - bonusOf(s, a));
-    const gear = mine[0];
+    const gear = RB.offerChoice(s, mine, 1, ctx, 'weaponmaster', 'Attach which Equipment?')[0];
+    if (!gear) return;
+    detach(s, gear);
     const eq = ((abOf(s, gear) || {}).activated || [])[0] || {};
     const cost = { energy: Math.max(0, (eq.energy || 0) - 0), power: Math.max(0, (eq.power || 0) - 1),
       domains: eq.domains || RB.DOMAINS.slice(), each: false };
@@ -322,10 +359,10 @@
   // Equipment, attach it to me." The loan is a delayed ability keyed to this unit leaving,
   // so it outlives the trigger that made it and survives the unit dying.
   def('stealGear', (s, e, ctx) => {
-    const theirs = allGear(s).filter(i => RB.obj(s, i).controller !== ctx.p);
-    if (!theirs.length) return;
-    theirs.sort((a, b) => bonusOf(s, b) - bonusOf(s, a));
-    const gear = theirs[0];
+    const theirs = allGear(s).filter(i => RB.obj(s, i).controller !== ctx.p)
+      .sort((a, b) => bonusOf(s, b) - bonusOf(s, a));
+    const gear = RB.offerChoice(s, theirs, 1, ctx, 'stealGear', 'Take which gear?')[0];
+    if (!gear) return;
     detach(s, gear);
     const loc = RB.locationOf(s, gear);
     if (loc.kind === 'base') RB.removeFrom(s.players[loc.p].base, gear);
@@ -374,11 +411,14 @@
   say('playTokenPer', e => tokenPhrase(e, 1).replace(/\.$/, '') + ' for each ' + e.per + ' you control.');
 
   def('readyMade', (s, e, ctx) => {
-    for (const iid of (ctx.made || []).slice(0, n_(e))) if (s.objects[iid]) RB.obj(s, iid).exhausted = false;
+    const made = (ctx.made || []).filter(i => s.objects[i] && RB.obj(s, i).exhausted);
+    for (const iid of RB.offerChoice(s, made, n_(e), ctx, 'readyMade', 'Ready which of them?'))
+      RB.obj(s, iid).exhausted = false;
   });
   say('readyMade', e => 'Ready up to ' + (COUNTWORD[n_(e)] || n_(e)) + ' of them.');
 
-  function mintToken(s, e, ctx) {
+  function mintToken(s, e, ctx0) {
+    const ctx = (e.forOwner && ctx0.owner != null) ? Object.assign({}, ctx0, { p: ctx0.owner }) : ctx0;
     const before = s.nextIid;
     RB.ops.token(s, {
       op: 'token', cardId: e.cardId, might: e.might, ready: e.ready, to: e.to, temporary: e.temporary,
@@ -423,19 +463,23 @@
   // gets +5 Might" — and the describer is the auditor, so these two carry the printed
   // phrasing instead. Buffs already expire in the Ending Phase, hence "this turn".
   def('giveMight', (s, e, ctx) => {
-    for (const iid of RB.select(s, e.target, ctx)) RB.obj(s, iid).buffs += n_(e);
+    for (const iid of pickFor(s, e, ctx)) RB.obj(s, iid).buffs += n_(e);
   });
-  say('giveMight', e => 'Give ' + selPhrase(e.target) + ' +' + n_(e) + ' Might this turn.');
+  say('giveMight', e => 'Give ' + selPhrase(e.target, e.other) + ' +' + n_(e) + ' Might this turn.');
+
+  const pickFor = (s, e, ctx) =>
+    RB.select(s, e.target, ctx).filter(i => !e.other || i !== ctx.source);
 
   def('weaken', (s, e, ctx) => {
-    for (const iid of RB.select(s, e.target, ctx)) RB.obj(s, iid).buffs -= n_(e);
+    for (const iid of pickFor(s, e, ctx)) RB.obj(s, iid).buffs -= n_(e);
   });
-  say('weaken', e => 'Give ' + selPhrase(e.target) + ' -' + n_(e) + ' Might this turn.');
+  say('weaken', e => 'Give ' + selPhrase(e.target, e.other) + ' -' + n_(e) + ' Might this turn.');
 
-  function selPhrase(sel) {
+  function selPhrase(sel, other) {
     if (!sel || sel === 'self') return 'me';
     if (sel === 'eventUnit') return 'that unit';
     if (sel && typeof sel === 'object' && sel.pick) return 'a chosen ' + selPhrase(sel.pick);
+    if (sel === 'myUnits' && other) return 'your other units';
     return ({
       myUnits: 'friendly unit', enemyUnits: 'enemy unit', allUnits: 'unit',
       hereMine: 'friendly unit there', hereEnemy: 'enemy unit there',
@@ -448,9 +492,12 @@
     const cands = [];
     for (let i = 0; i < s.bf.length; i++)
       for (const u of RB.unitsAt(s, i, ctx.p)) cands.push([u, RB.unitsAt(s, i, RB.opponentOf(ctx.p)).length]);
-    if (!cands.length) return;
     cands.sort((a, b) => b[1] - a[1] || RB.mightOf(s, b[0]) - RB.mightOf(s, a[0]));
-    RB.obj(s, cands[0][0]).buffs += n_(e) * cands[0][1];
+    const pool = cands.map(c => c[0]);
+    const got = RB.offerChoice(s, pool, 1, ctx, 'buffPerEnemyAt', 'Give the Might to which unit?');
+    if (!got.length) return;
+    const many = cands.find(c => c[0] === got[0])[1];
+    RB.obj(s, got[0]).buffs += n_(e) * many;
   });
   say('buffPerEnemyAt', e =>
     'Give a friendly unit at a battlefield +' + n_(e) + ' Might this turn for each enemy unit there.');
@@ -458,35 +505,39 @@
   // "Swap the Might of two units at the same battlefield." The pair taken is the one the
   // card is played for: your smallest against their biggest, wherever that gap is widest.
   def('swapMightThere', (s, e, ctx) => {
-    let best = null;
-    for (let i = 0; i < s.bf.length; i++) {
-      const mine = RB.unitsAt(s, i, ctx.p);
-      const theirs = RB.unitsAt(s, i, RB.opponentOf(ctx.p)).filter(u => RB.canChoose(s, ctx.p, u));
-      for (const a of mine) for (const b of theirs) {
-        const gap = RB.mightOf(s, b) - RB.mightOf(s, a);
-        if (!best || gap > best.gap) best = { a: a, b: b, gap: gap };
-      }
-    }
-    if (!best || best.gap <= 0) return;
-    RB.announceChoice(s, ctx.p, best.b, ctx.source);
-    const ma = RB.mightOf(s, best.a), mb = RB.mightOf(s, best.b);
-    RB.obj(s, best.a).buffs += mb - ma;
-    RB.obj(s, best.b).buffs += ma - mb;
-    RB.log(s, 'swapMight', { a: best.a, b: best.b });
+    // Every enemy unit standing where you also stand, biggest first: the pair is what the
+    // card is played for, and each half is its own question.
+    const foe = RB.opponentOf(ctx.p);
+    const theirs = [];
+    for (let i = 0; i < s.bf.length; i++)
+      if (RB.unitsAt(s, i, ctx.p).length)
+        for (const u of RB.unitsAt(s, i, foe)) if (RB.canChoose(s, ctx.p, u)) theirs.push(u);
+    theirs.sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
+    const them = RB.offerChoice(s, theirs, 1, ctx, 'swapThem', 'Swap with which enemy unit?')[0];
+    if (!them) return;
+    const at = RB.locationOf(s, them).bf;
+    const ours = RB.unitsAt(s, at, ctx.p).slice()
+      .sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b));
+    const us = RB.offerChoice(s, ours, 1, ctx, 'swapUs', 'Swap which of your units?')[0];
+    if (!us) return;
+    const ma = RB.mightOf(s, us), mb = RB.mightOf(s, them);
+    RB.obj(s, us).buffs += mb - ma;
+    RB.obj(s, them).buffs += ma - mb;
+    RB.log(s, 'swapMight', { a: us, b: them });
   });
   say('swapMightThere', () => 'Swap the Might of two units at the same battlefield this turn.');
 
   // Kill a friendly unit and move its Might onto another. Auto-resolution: give up the
   // smallest, hand the Might to the biggest of the rest.
   def('killAndTransferMight', (s, e, ctx) => {
-    const mine = unitsOf(s, ctx.p);
-    if (!mine.length) return;
-    mine.sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b));
-    const victim = mine[0];
+    const mine = unitsOf(s, ctx.p).sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b));
+    const victim = RB.offerChoice(s, mine, 1, ctx, 'sacrifice', 'Kill which of your units?')[0];
+    if (!victim) return;
     const m = RB.mightOf(s, victim);
-    const rest = mine.slice(1).sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
+    const rest = mine.filter(i => i !== victim).sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
     RB.kill(s, victim);
-    if (rest.length) RB.obj(s, rest[0]).buffs += m;
+    const heir = RB.offerChoice(s, rest, 1, ctx, 'inherit', 'Give its Might to which unit?')[0];
+    if (heir) RB.obj(s, heir).buffs += m;
   });
   say('killAndTransferMight', () =>
     'Kill a friendly unit. If you do, give +Might equal to its Might to another friendly unit this turn.');
@@ -499,10 +550,9 @@
     for (let i = 0; i < s.bf.length; i++)
       for (const u of RB.unitsAt(s, i, RB.opponentOf(ctx.p)))
         if (RB.canChoose(s, ctx.p, u)) pool.push(u);
-    if (!pool.length) return;
     pool.sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
-    RB.announceChoice(s, ctx.p, pool[0], ctx.source);
-    RB.obj(s, pool[0]).damage += n_(e);
+    const got = RB.offerChoice(s, pool, 1, ctx, 'damageThere', 'Deal the damage to which unit?');
+    for (const iid of got) RB.obj(s, iid).damage += n_(e);
   });
   say('damageThere', e => 'Deal ' + n_(e) + ' to a unit at a battlefield.');
 
@@ -516,8 +566,8 @@
     const pool = RB.unitsAt(s, here, foe).filter(u => RB.obj(s, u).role === 'attacker');
     const take = (pool.length ? pool : RB.unitsAt(s, here, foe)).slice()
       .sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
-    if (!take.length) return;
-    const iid = take[0];
+    const iid = RB.offerChoice(s, take, 1, ctx, 'recall', 'Send which attacker home?')[0];
+    if (!iid) return;
     RB.removeFrom(s.bf[here].units, iid);
     delete RB.obj(s, iid).role;
     s.players[RB.obj(s, iid).controller].base.push(iid);
@@ -547,6 +597,7 @@
     const iid = P.deck[0];
     const card = RB.cardOf(s, iid);
     RB.log(s, 'reveal', { p: ctx.p, iid: iid, card: card.id });
+    fireOn(s, 'revealed', { p: ctx.p, iid: iid }, iid);
     P.deck.shift();
     if (card.type === 'Spell') { P.hand.push(iid); RB.log(s, 'draw', { p: ctx.p, iid: iid }, 'card.draw'); }
     else P.deck.push(iid);
@@ -573,9 +624,9 @@
       if (e.maxPower != null && (c.power || 0) > e.maxPower) return false;
       return true;
     });
-    if (!pool.length) return;
     pool.sort((a, b) => (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0));
-    const iid = pool[0];
+    const iid = RB.offerChoice(s, pool, 1, ctx, 'fromTrash', 'Play which card from your trash?')[0];
+    if (!iid) return;
     RB.removeFrom(P.trash, iid);
     if (!e.ignoreCost) {
       const cost = RB.costOf(s, iid);
@@ -599,16 +650,13 @@
 
   // --- the chain ---------------------------------------------------------------
   // Counters read the chain's top, which during this card's resolution is the item it was
-  // played in response to (the chain is LIFO and this card has already been popped).
-  //
-  // KNOWN LIMIT: an activated ability's chain item records no targets — only a card that
-  // declares `chooses` does — so a `chose` test can only ever match a spell. The printed
-  // "spell or ability" is therefore narrower in play than on the card, and the engine, not
-  // the data, is what decides that.
+  // played in response to (the chain is LIFO and this card has already been popped). An
+  // ability's item now carries `cardId` and its declared choices, so "spell OR ABILITY"
+  // is sayable: `spellOnly` is what narrows a card that names only spells.
   def('counterSpell', (s, e, ctx) => {
     const item = RB.chainTop(s);
-    if (!item || item.kind !== 'card') return;
-    if (RB.card(item.cardId).type !== 'Spell') return;
+    if (!item || !item.cardId) return;
+    if (e.spellOnly && RB.card(item.cardId).type !== 'Spell') return;
     if (e.enemy && item.controller === ctx.p) return;
     if (e.chose === 'mine') {
       const mine = (item.targets || []).filter(i => s.objects[i] && RB.obj(s, i).controller === ctx.p);
@@ -618,13 +666,14 @@
     RB.ops.counter(s, {}, ctx);
     if (e.then) RB.runEffects(s, e.then, Object.assign({}, ctx, { counteredEnergy: energy }));
   });
-  say('counterSpell', e => 'Counter ' + (e.enemy ? 'an enemy' : 'a') + ' spell' +
+  say('counterSpell', e => 'Counter ' + (e.enemy ? 'an enemy ' : 'a ') +
+    (e.spellOnly ? 'spell' : 'spell or ability') +
     (e.chose === 'mine' ? ' that chooses a friendly unit or gear' : '') + '.' +
     (e.then ? ' ' + upper(join(e.then)) : ''));
 
   def('ransomSpell', (s, e, ctx) => {
     const item = RB.chainTop(s);
-    if (!item || item.kind !== 'card') return;
+    if (!item || !item.cardId) return;
     if (RB.card(item.cardId).type !== 'Spell') return;
     RB.ops.ransom(s, { energy: e.energy || 0, power: e.power || 0 }, ctx);
   });
@@ -654,6 +703,209 @@
     }
   });
 
+
+  // --- wave two ---------------------------------------------------------------
+  // The Buff game action: a counter worth +1 Might, at most one per unit, gone when the
+  // unit leaves play. It is kept in `o.counters` — the representation the core's
+  // `spendBuff` additional cost spends and ops-ogn's Might layer pays out, so a buff
+  // placed here can pay for a card that asks for one. Buffing an already-buffed unit does
+  // nothing and is not a choice, so a buffed unit is not a candidate.
+  def('buff', (s, e, ctx) => {
+    if (e.target === 'self') {
+      const o = s.objects[ctx.source];
+      if (o && !o.counters) { o.counters = 1; RB.log(s, 'buff', { p: ctx.p, iid: ctx.source }); }
+      return;
+    }
+    const pool = unitsOf(s, ctx.p)
+      .filter(i => !RB.obj(s, i).counters && (!e.other || i !== ctx.source))
+      .sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
+    for (const iid of RB.offerChoice(s, pool, n_(e), ctx, 'buff', 'Buff which units?')) {
+      RB.obj(s, iid).counters = 1;
+      RB.log(s, 'buff', { p: ctx.p, iid: iid });
+    }
+  });
+  say('buff', e => e.target === 'self' ? 'Buff me.'
+    : 'Buff up to ' + (COUNTWORD[n_(e)] || n_(e)) + (e.other ? ' other' : '') + ' friendly units.');
+
+  // "When a friendly unit is played this turn, buff it." A promise for the rest of the
+  // turn: delayed abilities outlive their source, and the turn it was made in rides along
+  // so it expires when the turn does — s.delayed is never swept.
+  def('buffPlayedThisTurn', (s, e, ctx) => {
+    s.delayed = s.delayed || [];
+    s.delayed.push({ on: 'unitPlayed', p: ctx.p, source: ctx.source, once: false,
+      watch: 'mine', effects: [{ op: 'sfd.buffEventUnit' }], data: { turn: s.turn } });
+    RB.log(s, 'delayed', { p: ctx.p, on: 'unitPlayed' });
+  });
+  say('buffPlayedThisTurn', () => 'When a friendly unit is played this turn, buff it.');
+
+  def('buffEventUnit', (s, e, ctx) => {
+    const d = ctx.delayed || {};
+    if (d.turn !== s.turn) {                        // the turn is over: the promise lapses
+      for (const entry of (s.delayed || []).slice())
+        if (entry.data === d) s.delayed.splice(s.delayed.indexOf(entry), 1);
+      return;
+    }
+    const iid = ctx.event && ctx.event.iid;
+    if (!iid || !s.objects[iid] || RB.obj(s, iid).counters) return;
+    RB.obj(s, iid).counters = 1;
+    RB.log(s, 'buff', { p: ctx.p, iid: iid });
+  });
+  say('buffEventUnit', () => 'Buff it.');
+
+  // "Deal N to up to three units at the same location." A location is a battlefield or a
+  // base; the one taken is where the most enemy units stand, ordered by what N damage
+  // actually finishes off.
+  def('damageAtLocation', (s, e, ctx) => {
+    const foe = RB.opponentOf(ctx.p);
+    const locs = [];
+    for (let i = 0; i < s.bf.length; i++) locs.push(RB.unitsAt(s, i, foe));
+    locs.push(s.players[foe].base.filter(i => RB.cardOf(s, i).type === 'Unit'));
+    let best = [];
+    for (const L of locs) {
+      const ok = L.filter(u => RB.canChoose(s, ctx.p, u));
+      if (ok.length > best.length) best = ok;
+    }
+    best = best.slice().sort((a, b) =>
+      (RB.mightOf(s, a) - RB.obj(s, a).damage) - (RB.mightOf(s, b) - RB.obj(s, b).damage));
+    for (const iid of RB.offerChoice(s, best, e.upTo || 1, ctx, 'damageAtLocation', 'Damage which units?'))
+      RB.obj(s, iid).damage += n_(e);
+  });
+  say('damageAtLocation', e => 'Deal ' + n_(e) + ' to up to ' +
+    (COUNTWORD[e.upTo || 1] || e.upTo) + ' units at the same location.');
+
+  // "You and each opponent may play a Gold gear token exhausted. For each opponent who did,
+  // you play a Gold gear token exhausted." Two real questions, one per seat, and the second
+  // pays its answerer AND the card's controller.
+  def('goldRound', (s, e, ctx) => {
+    const gold = { op: 'sfd.playToken', cardId: 'tok-gold', exhausted: true };
+    RB.ops.may(s, { effects: [gold], prompt: 'Play a Gold gear token exhausted?' }, ctx);
+    const foe = RB.opponentOf(ctx.p);
+    s.queue.push({ kind: 'may', who: foe, source: ctx.source,
+      prompt: 'Play a Gold gear token exhausted? (your opponent gets one too)',
+      ctx: { p: foe, source: ctx.source, owner: ctx.p },
+      onAnswer: [[gold, Object.assign({ forOwner: true }, gold)], []] });
+  });
+  say('goldRound', () => 'You and each opponent may play a Gold gear token exhausted. ' +
+    'For each opponent who did, you play a Gold gear token exhausted.');
+
+  // "Return all units and gear to their owners' hands." Gear first, so a Might Bonus is
+  // never read off a host that has already gone.
+  def('returnAll', (s, e, ctx) => {
+    for (const gid of allGear(s)) { detach(s, gid); toHand(s, gid); }
+    for (const iid of RB.allUnits(s).slice())
+      if (RB.cardOf(s, iid).type === 'Unit') toHand(s, iid);
+    void ctx;
+  });
+  say('returnAll', () => "Return all units and gear to their owners' hands.");
+
+  // "Choose an opponent. They score 1 point." In a duel there is exactly one.
+  def('opponentScores', (s, e, ctx) => {
+    const foe = RB.opponentOf(ctx.p);
+    s.players[foe].points += n_(e);
+    RB.log(s, 'score', { p: foe, how: 'effect', points: s.players[foe].points }, 'point.score');
+  });
+  say('opponentScores', e => 'Choose an opponent. They score ' + n_(e) +
+    ' point' + (n_(e) === 1 ? '' : 's') + '.');
+
+  def('channelEach', (s, e, ctx) => {
+    for (let p = 0; p < 2; p++) RB.channel(s, p, n_(e), !!e.exhausted);
+    void ctx;
+  });
+  say('channelEach', e => 'Each player channels ' + n_(e) + ' rune' + (n_(e) === 1 ? '' : 's') +
+    (e.exhausted ? ' exhausted' : '') + '.');
+
+  // "…, deal damage equal to my Might to an enemy unit in a base."
+  def('damageInBase', (s, e, ctx) => {
+    const foe = RB.opponentOf(ctx.p);
+    const pool = s.players[foe].base
+      .filter(i => RB.cardOf(s, i).type === 'Unit' && RB.canChoose(s, ctx.p, i))
+      .sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
+    const n = e.fromMight ? RB.mightOf(s, ctx.source) : n_(e);
+    if (!n) return;
+    for (const iid of RB.offerChoice(s, pool, 1, ctx, 'damageInBase', 'Damage which unit in their base?'))
+      RB.obj(s, iid).damage += n;
+  });
+  say('damageInBase', e => 'Deal damage equal to ' + (e.fromMight ? 'my Might' : n_(e)) +
+    ' to an enemy unit in a base.');
+
+  // "The first time I … each turn" — the count is on the source, stamped with the turn, so
+  // it resets without anything having to sweep it.
+  def('onceEachTurn', (s, e, ctx) => {
+    const o = RB.obj(s, ctx.source);
+    const key = 'sfdOnce' + (ctx.opIx || '');
+    if (o[key] === s.turn) return;
+    o[key] = s.turn;
+    RB.runEffects(s, e.effects || [], ctx);
+  });
+  say('onceEachTurn', e => 'The first time each turn, ' + lower(join(e.effects)));
+
+  // Records whether this battlefield was OPEN — occupied and uncontrolled — as the showdown
+  // that may conquer it begins. The conquer event cannot say so afterwards: by then the
+  // conqueror is the controller.
+  def('noteOpen', (s, e, ctx) => {
+    const bf = eventBf(s, ctx);
+    if (bf >= 0) s.bf[bf].sfdWasOpen = s.bf[bf].controller === null;
+  });
+  say('noteOpen', () => '');
+
+  // Counts a choice this card's controller made with a spell or a unit ability, of an
+  // object an opponent controls. Read by the `sfd.chosenEnemyTwice` gate on sfd-248.
+  def('countChoice', (s, e, ctx) => {
+    const ev = ctx.event || {};
+    if (ev.chooser !== ctx.p) return;
+    if (!s.objects[ev.iid] || RB.obj(s, ev.iid).controller === ctx.p) return;
+    const src = ev.source && s.objects[ev.source] ? RB.cardOf(s, ev.source).type : null;
+    if (src !== 'Spell' && src !== 'Unit') return;
+    const o = RB.obj(s, ctx.source);
+    if (o.sfdChoiceTurn !== s.turn) { o.sfdChoiceTurn = s.turn; o.sfdChoices = 0; }
+    o.sfdChoices = (o.sfdChoices || 0) + 1;
+  });
+  say('countChoice', () => '');
+
+  // "Reveal the top 2 cards of your Main Deck. You may banish one, then play it. Recycle
+  // the rest." The two are lifted off the deck while the question is open, so nothing can
+  // draw one out from under the choice; whatever is not taken goes to the bottom.
+  def('burrow', (s, e, ctx) => {
+    const P = s.players[ctx.p];
+    const top = P.deck.splice(0, n_(e) || 2);
+    if (!top.length) return;
+    for (const iid of top) {
+      RB.log(s, 'reveal', { p: ctx.p, iid: iid, card: RB.cardOf(s, iid).id });
+      fireOn(s, 'revealed', { p: ctx.p, iid: iid }, iid);
+    }
+    const playable = top.filter(iid => RB.canPay(s, ctx.p, RB.costOf(s, iid)));
+    if (!playable.length) { for (const iid of top) P.deck.push(iid); return; }
+    s.queue.push({ kind: 'may', who: ctx.p, source: ctx.source,
+      prompt: 'Banish one of them and play it?',
+      ctx: { p: ctx.p, source: ctx.source, revealed: top },
+      onAnswer: [[{ op: 'sfd.burrowTake' }], [{ op: 'sfd.burrowRecycle' }]] });
+  });
+  say('burrow', e => 'Reveal the top ' + (n_(e) || 2) + ' cards of your Main Deck. ' +
+    'You may banish one, then play it. Recycle the rest.');
+
+  def('burrowTake', (s, e, ctx) => {
+    const P = s.players[ctx.p];
+    const top = (ctx.revealed || []).filter(i => s.objects[i]);
+    const playable = top.filter(iid => RB.canPay(s, ctx.p, RB.costOf(s, iid)))
+      .sort((a, b) => (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0));
+    const take = RB.offerChoice(s, playable, 1, ctx, 'burrowTake', 'Banish and play which card?')[0];
+    for (const iid of top) if (iid !== take) P.deck.push(iid);
+    if (!take) return;
+    P.banished.push(take);
+    const plan = RB.planPayment(s, ctx.p, RB.costOf(s, take));
+    if (!plan) return;
+    RB.pay(s, ctx.p, plan);
+    RB.removeFrom(P.banished, take);
+    RB.log(s, 'play', { p: ctx.p, iid: take, card: RB.cardOf(s, take).id, from: 'banished' }, 'card.play');
+    RB.resolveCard(s, { iid: take, controller: ctx.p, to: 'base', kind: 'card' });
+  });
+  say('burrowTake', () => 'Banish one and play it.');
+
+  def('burrowRecycle', (s, e, ctx) => {
+    for (const iid of ctx.revealed || []) if (s.objects[iid]) s.players[ctx.p].deck.push(iid);
+  });
+  say('burrowRecycle', () => 'Recycle them.');
+
   // --- install: describers, and the two wrappers the core still needs -----------
   let installed = false;
   function ready() {
@@ -663,6 +915,37 @@
     if (installed || !ready()) return;
     installed = true;
     for (const [name, fn] of SAY) RB.defineDescriber(name, fn);
+
+    // The gate on sfd-248, registered into the core's condition table (and its prose into
+    // the core's, or the auditor reads back a camelCase identifier).
+    RB.defineCondition('sfd.chosenEnemyTwice', (s, ctx, a) => {
+      const o = s.objects[ctx.source];
+      return !!o && o.sfdChoiceTurn === s.turn && (o.sfdChoices || 0) >= (a.n || 2);
+    });
+    if (RB.defineWhenText)
+      RB.defineWhenText('sfd.chosenEnemyTwice', () =>
+        "only if you've chosen enemy units and/or gear twice this turn with spells or unit abilities");
+
+    // "Units can't be played here" (sfd-216). A play destination is decided by the named
+    // permissions in the engine's PLAY_WHERE table, which is a hook table — so the bar is
+    // registered into it rather than wrapping RB.legalActions, and it bars every card that
+    // reaches a battlefield through a permission. Done at install time, after every pack
+    // has registered, so a later definition is not silently replaced by this one.
+    for (const name of ['whereIHaveUnits', 'whereEnemyUnits', 'whereIAmAttacking',
+      'whereIControl', 'anyBattlefield']) {
+      const basePerm = RB.playWhere(name);
+      RB.definePlayWhere(name, (st, p, i) => !unitsBarredAt(st, i) && basePerm(st, p, i));
+    }
+
+    // "When you spend a buff" (sfd-101). A buff is spent as an additional cost, which is a
+    // hook-table entry — so the raise is registered there, delegating to whatever the entry
+    // already did. A buff spent by another pack's own op does not come through here; a core
+    // `buffSpent` event would close that.
+    const spend = RB.extraAvailable && RB.extraAvailable.spendBuff;
+    if (spend) RB.defineExtraCost('spendBuff', {
+      available: spend.available,
+      pay: (st, p, iid, x) => { spend.pay(st, p, iid, x); fire(st, 'buffSpent', { p: p }); },
+    });
 
     // WRAPPER 1 of 2. There is no event for a rune being recycled, and sfd-203 triggers on
     // exactly that. Raised into this pack's own table (see note 3), never into RB.runTriggers.
@@ -732,9 +1015,18 @@
       return 'I have +' + st.might + " Might while I'm an attacker.";
     if (st.when && st.when.kind === 'sandSoldier' && st.grant)
       return 'Your Sand Soldiers have ' + st.grant + '.';
+    if (st.noUnitPlays) return "Units can't be played here.";
     return null;
   }
-  const SFD_WORDS = { runeRecycle: 'When you recycle a rune' };
+  function unitsBarredAt(s, i) {
+    const ab = RB.card(s.bf[i].cardId).abilities;
+    return !!(ab && ab.statics && ab.statics.some(x => x.noUnitPlays));
+  }
+  const SFD_WORDS = {
+    runeRecycle: 'When you recycle a rune',
+    buffSpent: 'When you spend a buff',
+    revealed: "As I'm revealed from your deck",
+  };
   const ORDINAL = { 1: 'first', 2: 'second', 3: 'third', 4: 'fourth' };
 
   RB.sfdInstall = install;

@@ -40,7 +40,7 @@ RB.registerAbilities({
   // When you play your second card in a turn, give me +2 [S] this turn and ready me.
   'ogn-027': {
     triggers: [{ on: 'cardPlayed', mine: true, effects: [
-      { op: 'ogn.when', test: 'nthCardPlayed', n: 2, effects: [
+      { op: 'when', test: { kind: 'ogn.eventIsNthCard', n: 2 }, then: [
         { op: 'ogn.mightThisTurn', n: 2, target: 'self' },
         { op: 'ready', target: 'self' }] }] }],
   },
@@ -73,7 +73,7 @@ RB.registerAbilities({
   // When I conquer, you may kill a gear. If you do, buff me.
   'ogn-056': {
     triggers: [{ on: 'conquer', mine: true, here: true, effects: [
-      { op: 'ogn.when', test: 'anyGear', effects: [
+      { op: 'when', test: 'ogn.anyGear', then: [
         { op: 'may', prompt: 'Kill a gear to buff Adaptatron?', effects: [
           { op: 'ogn.killGear', prefer: 'enemy' },
           { op: 'ogn.buffCounter', target: 'self' }] }] }] }],
@@ -93,7 +93,7 @@ RB.registerAbilities({
     keywords: ['Tank'],
     triggers: [
       { on: 'played', effects: [
-        { op: 'ogn.when', test: 'atBattlefield', effects: [
+        { op: 'when', test: 'sourceAtBattlefield', then: [
           { op: 'may', prompt: 'Move an enemy unit here?', effects: [
             { op: 'ogn.moveUnit', target: { pick: 'enemyUnits' }, to: 'here' }] }] }] },
       { on: 'hold', mine: true, here: true, effects: [{ op: 'ogn.bounce', target: 'self' }] }],
@@ -102,7 +102,7 @@ RB.registerAbilities({
   // While I'm at a battlefield, ready 4 friendly runes at the end of your turn.
   'ogn-073': {
     triggers: [{ on: 'endOfTurn', mine: true, effects: [
-      { op: 'ogn.when', test: 'atBattlefield', effects: [{ op: 'ready', what: 'runes', n: 4 }] }] }],
+      { op: 'when', test: 'sourceAtBattlefield', then: [{ op: 'ready', what: 'runes', n: 4 }] }] }],
   },
 
   // [Hidden] · If a friendly unit would die, kill this instead. Heal that unit, exhaust
@@ -248,14 +248,14 @@ RB.registerAbilities({
   // When I move, discard 1, then draw 1.
   'ogn-185': {
     triggers: [{ on: 'moved', effects: [
-      { op: 'ogn.when', test: 'isSelf', effects: [
+      { op: 'when', test: 'ogn.eventIsMe', then: [
         { op: 'discard', n: 1 }, { op: 'draw', n: 1 }] }] }],
   },
 
   // When this leaves the board, draw 1 and channel 1 rune exhausted. · [C],[T]: Kill this.
   'ogn-186': {
     triggers: [{ on: 'leftBoard', effects: [
-      { op: 'ogn.when', test: 'isSelf', effects: [
+      { op: 'when', test: 'ogn.eventIsMe', then: [
         { op: 'draw', n: 1 }, { op: 'channel', n: 1, exhausted: true }] }] }],
     activated: [{ power: 1, domains: ['Chaos'], exhaustSelf: true,
       effects: [{ op: 'kill', target: 'self' }] }],
@@ -307,7 +307,7 @@ RB.registerAbilities({
   'ogn-224': {
     keywords: ['Action'],
     effects: [
-      { op: 'ogn.when', test: 'anyGear', effects: [
+      { op: 'when', test: 'ogn.anyGear', then: [
         { op: 'may', prompt: 'Kill a gear?', effects: [{ op: 'ogn.killGear', prefer: 'enemy' }] }] },
       { op: 'draw', n: 1 }],
   },
@@ -341,7 +341,7 @@ RB.registerAbilities({
   // defender", so it is the only choice that does anything.
   'ogn-279': {
     triggers: [{ on: 'defend', effects: [
-      { op: 'ogn.when', test: 'here', effects: [
+      { op: 'when', test: 'ogn.here', then: [
         { op: 'ogn.grantKeyword', keyword: 'Shield', value: 2, duration: 'combat',
           target: { pick: 'hereMine' } }] }] }],
   },
@@ -349,14 +349,14 @@ RB.registerAbilities({
   // When you hold here, draw 1.
   'ogn-280': {
     triggers: [{ on: 'hold', effects: [
-      { op: 'ogn.when', test: 'here', effects: [{ op: 'draw', n: 1 }] }] }],
+      { op: 'when', test: 'ogn.here', then: [{ op: 'draw', n: 1 }] }] }],
   },
 
   // When you conquer here, you may spend a buff to draw 1.
   'ogn-282': {
     triggers: [{ on: 'conquer', effects: [
-      { op: 'ogn.when', test: 'here', effects: [
-        { op: 'ogn.when', test: 'myBuff', effects: [
+      { op: 'when', test: 'ogn.here', then: [
+        { op: 'when', test: 'ogn.myBuff', then: [
           { op: 'may', prompt: 'Spend a buff to draw 1?', effects: [
             { op: 'ogn.spendBuff' }, { op: 'draw', n: 1 }] }] }] }] }],
   },
@@ -364,13 +364,13 @@ RB.registerAbilities({
   // When you conquer here, you must recycle one of your runes. (This doesn't choose anything.)
   'ogn-287': {
     triggers: [{ on: 'conquer', effects: [
-      { op: 'ogn.when', test: 'here', effects: [{ op: 'recycleRune', n: 1 }] }] }],
+      { op: 'when', test: 'ogn.here', then: [{ op: 'recycleRune', n: 1 }] }] }],
   },
 
   // When you hold here, you may channel 1 rune exhausted.
   'ogn-288': {
     triggers: [{ on: 'hold', effects: [
-      { op: 'ogn.when', test: 'here', effects: [
+      { op: 'when', test: 'ogn.here', then: [
         { op: 'may', prompt: 'Channel 1 rune exhausted?', effects: [
           { op: 'channel', n: 1, exhausted: true }] }] }] }],
   },
@@ -378,7 +378,7 @@ RB.registerAbilities({
   // When you conquer here, ready up to 2 runes at the end of this turn.
   'ogn-289': {
     triggers: [{ on: 'conquer', effects: [
-      { op: 'ogn.when', test: 'here', effects: [
+      { op: 'when', test: 'ogn.here', then: [
         { op: 'delayed', on: 'endOfTurn', effects: [{ op: 'ready', what: 'runes', n: 2 }] }] }] }],
   },
 
@@ -397,7 +397,7 @@ RB.registerAbilities({
   // When you conquer here, discard 1, then draw 1.
   'ogn-298': {
     triggers: [{ on: 'conquer', effects: [
-      { op: 'ogn.when', test: 'here', effects: [
+      { op: 'when', test: 'ogn.here', then: [
         { op: 'discard', n: 1 }, { op: 'draw', n: 1 }] }] }],
   },
 
@@ -421,5 +421,181 @@ RB.registerAbilities({
 
   // While a friendly unit defends alone, it gets +2 [S].
   'ogs-019': { statics: [{ might: 2, scope: 'mine', when: 'defendingAlone' }] },
+
+  // ================================================================ wave two
+  // [Action] Deal 3 to a unit at a battlefield.
+  'ogn-009': {
+    keywords: ['Action'],
+    effects: [{ op: 'ogn.damage', n: 3,
+      target: { pick: 'allUnits', at: 'battlefield', prefer: 'enemy' } }],
+  },
+
+  // [Ganking] · Recycle 1 from your trash: Give me +1 [S] this turn.
+  // The recycle is the ability's cost; the gate is what keeps it from being offered with
+  // an empty trash, which is the whole of what a cost that cannot be paid means here.
+  'ogn-036': {
+    keywords: ['Ganking'],
+    activated: [{ when: { kind: 'ogn.trashAtLeast', n: 1 }, effects: [
+      { op: 'ogn.recycleFromTrash', n: 1 },
+      { op: 'ogn.mightThisTurn', n: 1, target: 'self' }] }],
+  },
+
+  // [Tank] · When you play me, draw 1.
+  'ogn-087': {
+    keywords: ['Tank'],
+    triggers: [{ on: 'played', effects: [{ op: 'draw', n: 1 }] }],
+  },
+
+  // [Ganking] · When I conquer, you may play a spell from your trash with Energy cost
+  // less than your points without paying its Energy cost. Then recycle it.
+  'ogn-112': {
+    keywords: ['Ganking'],
+    triggers: [{ on: 'conquer', mine: true, here: true, effects: [
+      { op: 'may', prompt: 'Play a spell from your trash?',
+        effects: [{ op: 'ogn.playSpellFromTrashUnderPoints' }] }] }],
+  },
+
+  // Draw 4.
+  'ogn-114': { effects: [{ op: 'draw', n: 4 }] },
+
+  // Each player looks at the top 5 cards of their Main Deck, banishes one of them, then
+  // recycles the rest. Starting with the next player, each player plays those cards,
+  // ignoring Energy costs.
+  'ogn-115': { effects: [{ op: 'ogn.eachBanishTopAndPlay', look: 5 }] },
+
+  // [T]: [Reaction] — [Add] [C].
+  'ogn-120': {
+    activated: [{ exhaustSelf: true, tags: ['Reaction'],
+      effects: [{ op: 'addPower', domain: 'Mind', n: 1 }] }],
+  },
+
+  'ogn-122': { unimplemented: 'Take a turn after this one. There is no additional-turn ' +
+    'concept: the turn loop hands play to the opponent unconditionally, and a spell ' +
+    'cannot reach it — endTurn is internal and takes no queue.' },
+
+  // Exhaust all friendly units, then deal 12 to ALL units at battlefields.
+  'ogn-123': {
+    effects: [
+      { op: 'exhaust', target: 'myUnits' },
+      { op: 'ogn.damageAll', n: 12 }],
+  },
+
+  'ogn-145': { unimplemented: 'Prevent all spell and ability damage this turn. Damage has ' +
+    'no single door — every op marks it on the unit itself — so there is nothing for a ' +
+    'prevention layer to stand in front of, and a layer that caught only this pack\'s ' +
+    'damage would be the wrong card.' },
+
+  // When I'm played and when I conquer, buff me. · Spend my buff: Give me +4 [S] this turn.
+  'ogn-164': {
+    triggers: [
+      { on: 'played', effects: [{ op: 'ogn.buffCounter', target: 'self' }] },
+      { on: 'conquer', mine: true, here: true,
+        effects: [{ op: 'ogn.buffCounter', target: 'self' }] }],
+    activated: [{ when: 'ogn.selfBuffed', effects: [
+      { op: 'ogn.spendBuff', target: 'self' },
+      { op: 'ogn.mightThisTurn', n: 4, target: 'self' }] }],
+  },
+
+  // You may play me to an open battlefield. · Friendly units may be played to open
+  // battlefields. The second clause is a permission granted from the board, which
+  // playDestinations cannot read; js/ops-ogn.js reads the static in legalActions.
+  'ogn-193': {
+    playAlso: ['to an open battlefield'],
+    // `ognOpenPlay` is what js/ops-ogn.js reads in legalActions; the granted keyword
+    // beside it is there so the permission has a name on the board and a line in the
+    // audit — a bespoke static flag has no prose hook yet.
+    statics: [{ ognOpenPlay: true, grant: 'Open Deployment', scope: 'mine' }],
+  },
+
+  // Each player discards their hand, then draws 4.
+  'ogn-201': { effects: [{ op: 'ogn.eachDiscardsHandAndDraws', n: 4 }] },
+
+  // When you play me, play a 1 [S] Recruit unit token here.
+  'ogn-211': {
+    triggers: [{ on: 'played', effects: [{ op: 'ogn.token', cardId: 'tok-recruit', to: 'source' }] }],
+  },
+
+  // When you play this, play a 1 [S] Recruit unit token at your base.
+  // Kill this: Recycle up to 4 cards from trashes.
+  'ogn-212': {
+    triggers: [{ on: 'played', effects: [
+      { op: 'ogn.token', cardId: 'tok-recruit', to: 'base' }] }],
+    activated: [{ killSelf: true, effects: [{ op: 'ogn.recycleFromTrash', n: 4, both: true, upTo: true }] }],
+  },
+
+  // [Action] When any unit takes damage this turn, kill it.
+  'ogn-221': { keywords: ['Action'], effects: [{ op: 'ogn.fragileThisTurn' }] },
+
+  // When another non-Recruit unit you control dies, play a 1 [S] Recruit unit token into
+  // your base.
+  'ogn-246': {
+    triggers: [{ on: 'died', mine: true, effects: [
+      { op: 'when', test: { kind: 'all', tests: ['ogn.eventIsOther',
+        { kind: 'ogn.eventNotTagged', tag: 'Recruit' }] },
+        then: [{ op: 'ogn.token', cardId: 'tok-recruit', to: 'base' }] }] }],
+  },
+
+  'ogn-268': { unimplemented: 'Pay any amount of [C] to deal that much damage — an X cost. ' +
+    'Additional costs are discrete named entries and the payment solver has no variable ' +
+    'amount, so "any amount" would have to become a fixed list, which is a different card.' },
+
+  // Buff a friendly unit in your base, then move it to a battlefield.
+  'ogn-270': {
+    effects: [{ op: 'ogn.moveUnit', buff: true,
+      target: { pick: 'myUnits', at: 'base' }, to: 'battlefield' }],
+  },
+
+  // When you conquer here, look at the top two cards of your Main Deck. You may recycle
+  // one or both of them. Put those you don't back in any order.
+  'ogn-291': {
+    triggers: [{ on: 'conquer', effects: [
+      { op: 'when', test: 'ogn.here', then: [{ op: 'ogn.lookAndRecycle', n: 2 }] }] }],
+  },
+
+  // Units can't move from here to base. `ognNoRetreat` is what js/ops-ogn.js reads in
+  // legalActions; the granted keyword beside it is there so the restriction has a name on
+  // the board and a line in the audit — a bespoke static flag has no prose hook yet.
+  'ogn-295': { statics: [{ ognNoRetreat: true, grant: 'No Retreat', scope: 'here' }] },
+
+  'ogn-296': { unimplemented: 'Spells and abilities deal 1 Bonus Damage to units here. ' +
+    'Damage has no single door — every op marks it on the unit itself — so a bonus-damage ' +
+    'layer cannot stand in front of it, and one that caught only this pack\'s damage ' +
+    'would be the wrong card.' },
+
+  'ogn-299': { unimplemented: 'Add [C], "use only to play spells". The rune pool is ' +
+    'untagged and the payment solver is never told what is being paid for, so a ' +
+    'spell-only resource cannot be restricted — adding ordinary Power instead would be ' +
+    'strictly better than the printed card.' },
+
+  // [1], [T]: Play a 1 [S] Recruit unit token.
+  'ogn-308': {
+    activated: [{ energy: 1, exhaustSelf: true, effects: [
+      { op: 'ogn.token', cardId: 'tok-recruit', to: 'base' }] }],
+  },
+
+  // [T]: Give a unit [Ganking] this turn.
+  'ogn-309': {
+    activated: [{ exhaustSelf: true, effects: [
+      { op: 'ogn.grantKeyword', keyword: 'Ganking',
+        target: { pick: 'allUnits', prefer: 'mine' } }] }],
+  },
+
+  'ogn-310': { unimplemented: 'An OPTIONAL replacement with a cost ("you may pay [C], ' +
+    'exhaust me, and spend its buff … instead"). A replacement must answer in front of ' +
+    'the death, synchronously, and the only optionality primitive is `may`, which opens a ' +
+    'queue step that cannot be answered there. Authored as a compulsion it would spend ' +
+    'the buff and exhaust the legend without being asked, which is a different card.' },
+
+  'ogs-014': { unimplemented: 'Add [2], "use only to play spells". The rune pool is ' +
+    'untagged and the payment solver is never told what is being paid for, so a ' +
+    'spell-only resource cannot be restricted — adding ordinary Energy instead would be ' +
+    'strictly better than the printed card.' },
+
+  // When you play a spell that costs [5] or more, draw 1.
+  'ogs-021': {
+    triggers: [{ on: 'spellPlayed', mine: true, effects: [
+      { op: 'when', test: { kind: 'ogn.eventCostAtLeast', n: 5 },
+        then: [{ op: 'draw', n: 1 }] }] }],
+  },
 
 });

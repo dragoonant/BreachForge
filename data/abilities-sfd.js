@@ -40,12 +40,11 @@
     },
 
     // "[Reaction] … [Assault 2] … I can be played to a battlefield you're attacking."
-    // Nothing in the core reads the Assault keyword, so the +2 is authored as the static it
-    // is; the keyword stays because it is printed and referenceable.
+    // Assault is the printed keyword and the Might layer reads it (ops-ogn), so a static
+    // saying the same thing would count the +2 twice.
     'sfd-025': {
       keywords: ['Reaction', { name: 'Assault', value: 2 }],
       playAlso: ['whereIAmAttacking'],
-      statics: [{ might: 2, scope: 'self', when: 'attacking' }],
     },
 
     // ---------------------------------------------------------------- Calm
@@ -302,7 +301,7 @@
     // gate is checked in legalActions, so the ability is never offered without it — it
     // cannot fizzle for full price.
     'sfd-197': {
-      statics: [{ grant: 'Weaponmaster', scope: 'mine', when: { kind: 'sandSoldier' } }],
+      statics: [{ grant: 'Weaponmaster', scope: 'mine', tag: 'Sand Soldier' }],
       activated: [{ energy: 1, exhaustSelf: true, when: 'playedEquipmentThisTurn',
         effects: [{ op: 'sfd.playToken', cardId: 'tok-sand-soldier', might: 2, to: 'base' }] }],
     },
@@ -401,6 +400,154 @@
         { on: 'becameReady', effects: [{ op: 'sfd.when', cond: 'isMe',
           effects: [{ op: 'sfd.giveMight', n: 1, target: 'self' }] }] },
       ],
+    },
+
+    // ============================================================ wave two
+    'sfd-003': {
+      unimplemented: 'Grants [Assault 2] for a turn. A runtime keyword grant carries no ' +
+        'value — the core `grant` op stores a name, and the only reader of Assault counts a ' +
+        'granted one as 1 — so the card would give +1 where it prints +2.',
+    },
+
+    // "If you have two or fewer cards in your hand, I enter ready."
+    // "When I hold, draw 2."
+    'sfd-027': {
+      triggers: [
+        { on: 'played', effects: [{ op: 'sfd.when', cond: 'handAtMost', n: 2,
+          effects: [{ op: 'ready', target: 'self' }] }] },
+        { on: 'hold', mine: true, here: true, effects: [{ op: 'draw', n: 2 }] },
+      ],
+    },
+
+    'sfd-029': {
+      unimplemented: 'Third clause grants [Accelerate] — an optional ADDITIONAL COST — to ' +
+        'friendly units played from anywhere but a hand. Additional costs are read off the ' +
+        'card being played and cannot be granted, and a play from the trash or from face ' +
+        'down raises `unitPlayed` without saying which zone it came from.',
+    },
+
+    // "[Action] [Repeat] [1][C] Deal 1 to up to three units at the same location."
+    'sfd-080': {
+      keywords: ['Action'],
+      additionalCosts: [{ id: 'repeat', energy: 1, power: 1, domains: ['Mind'],
+        effects: [{ op: 'sfd.damageAtLocation', n: 1, upTo: 3 }] }],
+      effects: [{ op: 'sfd.damageAtLocation', n: 1, upTo: 3 }],
+    },
+
+    // "When you play me, you and each opponent may play a Gold gear token exhausted. For
+    //  each opponent who did, you play a Gold gear token exhausted."
+    'sfd-081': {
+      triggers: [{ on: 'played', effects: [{ op: 'sfd.goldRound' }] }],
+    },
+
+    // "[1][C]: Draw 1." / "[4][C][C][C][C], [T]: Score 1 point." / "Use my abilities only
+    //  while I'm at a battlefield."
+    'sfd-088': {
+      activated: [
+        { energy: 1, power: 1, domains: ['Mind'], when: 'sourceAtBattlefield',
+          effects: [{ op: 'draw', n: 1 }] },
+        { energy: 4, power: 4, domains: ['Mind'], exhaustSelf: true, when: 'sourceAtBattlefield',
+          effects: [{ op: 'gainPoint', n: 1 }] },
+      ],
+    },
+
+    // "You may pay [1] as an additional cost to play me. When you play me, if you paid the
+    //  additional cost, buff me."
+    'sfd-098': {
+      additionalCosts: [{ id: 'swell', energy: 1 }],
+      triggers: [{ on: 'played', effects: [{ op: 'sfd.when', cond: 'paidExtra', id: 'swell',
+        effects: [{ op: 'sfd.buff', target: 'self' }] }] }],
+    },
+
+    // "When you play me, buff up to four friendly units."
+    // "When you spend a buff, play a Gold gear token exhausted."
+    'sfd-101': {
+      triggers: [{ on: 'played', effects: [{ op: 'sfd.buff', n: 4 }] }],
+      sfdTriggers: [{ on: 'buffSpent', mine: true,
+        effects: [{ op: 'sfd.playToken', cardId: 'tok-gold', exhausted: true }] }],
+    },
+
+    // "[Equip] [C]"
+    'sfd-108': {
+      activated: [{ power: 1, domains: ['Body'], effects: [{ op: 'sfd.attach' }] }],
+    },
+
+    // "[Weaponmaster] … When I conquer an open battlefield, deal damage equal to my Might
+    //  to an enemy unit in a base."
+    // A battlefield is open when it is occupied and UNCONTROLLED, which the conquer event
+    // cannot say afterwards — so the showdown that leads there records it.
+    'sfd-116': {
+      keywords: ['Weaponmaster'],
+      triggers: [
+        { on: 'played', effects: [{ op: 'may', effects: [{ op: 'sfd.weaponmaster' }] }] },
+        { on: 'showdownBegins', effects: [{ op: 'sfd.noteOpen' }] },
+        { on: 'conquer', mine: true, here: true, effects: [{ op: 'sfd.when', cond: 'conqueredOpen',
+          effects: [{ op: 'sfd.damageInBase', fromMight: true }] }] },
+      ],
+    },
+
+    // "Return all units and gear to their owners' hands."
+    'sfd-147': {
+      effects: [{ op: 'sfd.returnAll' }],
+    },
+
+    // "[Deflect] … The first time I win a combat each turn, you score 1 point. When I die
+    //  in combat, choose an opponent. They score 1 point."
+    'sfd-148': {
+      keywords: [{ name: 'Deflect', value: 1 }],
+      triggers: [
+        { on: 'combatEnd', effects: [{ op: 'sfd.when', cond: ['here', 'wonCombat'],
+          effects: [{ op: 'sfd.onceEachTurn', effects: [{ op: 'gainPoint', n: 1 }] }] }] },
+        { on: 'deathknell', effects: [{ op: 'sfd.when', cond: 'inCombat',
+          effects: [{ op: 'sfd.opponentScores', n: 1 }] }] },
+      ],
+    },
+
+    'sfd-149': {
+      unimplemented: 'Second clause discounts the OPTIONAL ADDITIONAL COSTS you pay. A cost ' +
+        'modifier is handed the finished total and not the extras that went into it, so it ' +
+        'cannot tell an additional cost from a base cost, nor an optional one from a ' +
+        'mandatory one it must not discount.',
+    },
+
+    // "[Action] When a friendly unit is played this turn, buff it. Draw 1."
+    'sfd-166': {
+      keywords: ['Action'],
+      effects: [{ op: 'sfd.buffPlayedThisTurn' }, { op: 'draw', n: 1 }],
+    },
+
+    // "When you play me, give your other units +2 [S] this turn."
+    // "As I'm revealed from your deck, [Add] [2]."
+    'sfd-175': {
+      triggers: [{ on: 'played',
+        effects: [{ op: 'sfd.giveMight', n: 2, target: 'myUnits', other: true }] }],
+      sfdTriggers: [{ on: 'revealed', effects: [{ op: 'addEnergy', n: 2 }] }],
+    },
+
+    // "When you conquer, you may exhaust me to reveal the top 2 cards of your Main Deck.
+    //  You may banish one, then play it. Recycle the rest."
+    'sfd-187': {
+      triggers: [{ on: 'conquer', mine: true, effects: [{ op: 'sfd.mayPay', exhaustSelf: true,
+        effects: [{ op: 'sfd.burrow', n: 2 }] }] }],
+    },
+
+    // "Units can't be played here."
+    'sfd-216': {
+      statics: [{ noUnitPlays: true }],
+    },
+
+    // "When you hold here, each player channels 1 rune exhausted."
+    'sfd-219': {
+      triggers: [{ on: 'hold', effects: [{ op: 'sfd.when', cond: 'here',
+        effects: [{ op: 'sfd.channelEach', n: 1, exhausted: true }] }] }],
+    },
+
+    // "[T]: [Reaction] — Draw 1. Use only if you've chosen enemy units and/or gear twice
+    //  this turn with spells or unit abilities."
+    'sfd-248': {
+      triggers: [{ on: 'chosen', effects: [{ op: 'sfd.countChoice' }] }],
+      activated: [{ exhaustSelf: true, tags: ['Reaction'],
+        when: { kind: 'sfd.chosenEnemyTwice', n: 2 }, effects: [{ op: 'draw', n: 1 }] }],
     },
 
   });

@@ -18,8 +18,14 @@
 // Selection note: the core's RB.autoPick always takes the BIGGEST candidate, which is the
 // right policy for a removal spell and the wrong one for "choose a friendly unit" on a
 // card that harms what it chooses. The helper below keeps the *pool* exactly as printed
-// and only varies which legal member of it is taken (`low`, `prefer`), so no card here
-// chooses outside what its text allows.
+// and only varies the ORDER it is offered in (`low`, `prefer`), so no card here chooses
+// outside what its text allows.
+//
+// It does not decide how many to take. Every narrowing ends at RB.offerChoice — the one
+// door — because that is where the human seat is asked, an answer already given is
+// honoured, Deflect is charged to the chooser, and the `chosen` trigger fires. A picker
+// that slices its own pool skips all four silently. This pack builds and orders the pool;
+// the door decides how many and whether to ask.
 (function (RB) {
   'use strict';
 
@@ -47,8 +53,9 @@
   }
 
   // A pick spec: { pick:<selector>, n:1, at:'battlefield'|'base', role:'attacker',
-  //                notTemporary:true, notEventUnit:true, filter:'damaged', maxMight:N,
-  //                low:true (take the smallest), prefer:'enemy'|'mine' }
+  //                notTemporary:true, notEventUnit:true, notSelf:true, exhausted:true,
+  //                filter:'damaged', maxMight:N, notHere:true,
+  //                n:'all' (every match, not one), low:true, prefer:'enemy'|'mine' }
   function targets(s, spec, ctx) {
     if (!spec || typeof spec === 'string') return base(s, spec, ctx);
     let pool = base(s, spec.pick, ctx);
@@ -57,6 +64,8 @@
     if (spec.role) pool = pool.filter(i => RB.obj(s, i).role === spec.role);
     if (spec.notTemporary) pool = pool.filter(i => !RB.obj(s, i).temporary);
     if (spec.notEventUnit && ctx.event) pool = pool.filter(i => i !== ctx.event.iid);
+    if (spec.notSelf) pool = pool.filter(i => i !== ctx.source);
+    if (spec.exhausted) pool = pool.filter(i => RB.obj(s, i).exhausted);
     if (spec.notHere && ctx.event && ctx.event.bf !== undefined)
       pool = pool.filter(i => RB.locationOf(s, i).bf !== ctx.event.bf);
     if (spec.filter === 'damaged') pool = pool.filter(i => RB.obj(s, i).damage > 0);
@@ -74,7 +83,10 @@
       const no = pool.filter(i => RB.obj(s, i).controller !== want);
       pool = yes.concat(no);
     }
-    return pool.slice(0, spec.n || 1);
+    // `n:'all'` is not a choice — "return ALL units with 2 Might or less" chooses nothing,
+    // so it must not toll Deflect or fire `chosen`. Everything else goes through the door.
+    if (spec.n === 'all') return pool;
+    return RB.offerChoice(s, pool, spec.n || 1, ctx, String(spec.pick), spec.prompt);
   }
   RB.unlTargets = targets;      // the check harness reads this
 
@@ -83,14 +95,31 @@
     allUnits: 'a unit', hereMine: 'a friendly unit there', hereEnemy: 'enemy units there',
     here: 'a unit there', gear: 'a gear',
   };
+  // The plural reading of each pool, for `n:'all'` — "all friendly unit theres" is not a
+  // sentence, and a describer nobody can read is a clause nobody can check.
+  const PLURAL = {
+    myUnits: 'your units', enemyUnits: 'enemy units', allUnits: 'all units',
+    hereMine: 'your units there', hereEnemy: 'enemy units there',
+    here: 'the units there', gear: 'gear',
+  };
   function selText(spec) {
     if (!spec) return 'me';
     if (typeof spec === 'string') return NAMES[spec] || spec;
+    if (spec.n === 'all') {
+      let a = PLURAL[spec.pick] || String(spec.pick);
+      if (spec.notSelf || spec.notEventUnit) a = a.replace(/^your /, 'your other ');
+      if (spec.notTemporary) a += " without Temporary";
+      if (spec.at === 'battlefield') a += ' at a battlefield';
+      if (spec.maxMight !== undefined) a += ' with ' + spec.maxMight + ' Might or less';
+      return a;
+    }
     let t = NAMES[spec.pick] || String(spec.pick);
     if (spec.role) t = 'an ' + (spec.role === 'attacker' ? 'attacking' : 'defending') + ' ' +
       t.replace(/^an? /, '');
     if (spec.notTemporary) t += " that isn't Temporary";
-    if (spec.notEventUnit) t = 'another ' + t.replace(/^an? /, '');
+    if (spec.notEventUnit || spec.notSelf) t = 'another ' + t.replace(/^an? /, '');
+    if (spec.exhausted) t = 'an exhausted ' + t.replace(/^an? /, '');
+    if (spec.maxMight !== undefined) t += ' with ' + spec.maxMight + ' Might or less';
     if (spec.notHere) t += ' at a different location';
     if (spec.at === 'battlefield') t += ' at a battlefield';
     if (spec.at === 'base') t += ' in a base';
@@ -128,7 +157,10 @@
       s.players[go.owner].base.push(g);
     }
     o.attached = [];
-    o.damage = 0; o.buffs = 0; o.permBuffs = 0; o.granted = []; o.exhausted = false;
+    // RB.kill clears permBuffs and counters; this path lifts the card out of its zone
+    // directly and never reaches kill, so it has to clear the same fields itself.
+    o.damage = 0; o.buffs = 0; o.permBuffs = 0; o.counters = 0; o.granted = [];
+    o.exhausted = false; o.cantMove = false;
     o.stunned = false; o.temporary = false; o.attachedTo = null; o.movedThisTurn = 0;
     delete o.role;
     if (!o.token) s.players[o.owner].hand.push(iid);
@@ -194,6 +226,15 @@
     // Not the pool alone: a cost is payable if a rune could still be exhausted for it.
     canPayEnergy: (s, ctx, v) => RB.canPay(s, ctx.p, { energy: v, power: 0, domains: [], each: false }),
     noBattlefield: (s, ctx, v) => !s.bf.some(b => b.cardId === v),
+    paid: (s, ctx, v) => (ctx.paid || []).includes(v),
+    otherUnitsMightAtLeast: (s, ctx, v) => RB.allUnits(s)
+      .filter(i => RB.obj(s, i).controller === ctx.p && i !== ctx.source)
+      .reduce((n, i) => n + RB.mightOf(s, i), 0) >= v,
+    enemyAloneHere: (s, ctx) => !!ctx.event && ctx.event.bf !== undefined &&
+      RB.unitsAt(s, ctx.event.bf, RB.opponentOf(ctx.p)).length === 1,
+    eventWinnerIsMe: (s, ctx) => !!ctx.event && ctx.event.winner === ctx.p,
+    selfHere: (s, ctx) => !!ctx.event && ctx.event.bf !== undefined &&
+      RB.locationOf(s, ctx.source).bf === ctx.event.bf,
   };
   const TEST_TEXT = {
     opponentScoreWithin: v => "an opponent's score is within " + v + ' points of the Victory Score',
@@ -215,6 +256,11 @@
     eventNth: v => 'it is the ' + (v === 2 ? 'second' : v === 3 ? 'third' : v + 'th') + ' this turn',
     canPayEnergy: v => 'you can pay ' + v + ' Energy',
     noBattlefield: v => RB.card(v).name + ' is not on the board',
+    paid: () => 'you paid the additional cost',
+    otherUnitsMightAtLeast: v => 'your other units have total Might ' + v + ' or more',
+    enemyAloneHere: () => 'an enemy unit is alone here',
+    eventWinnerIsMe: () => 'you won',
+    selfHere: () => "I'm there",
   };
   // A test is looked up in this pack's table first, then in the CORE's shared condition
   // table (RB.defineCondition) — so `beginningPhase`, `myTurn`, `eventIsOpponents` and the
@@ -269,22 +315,29 @@
   RB.defineOp('copyToken', (s, e, ctx) => {
     const src = targets(s, e.target, ctx)[0];
     if (!src) return;
-    const iid = RB.mint(s, RB.obj(s, src).cardId, ctx.p);
-    const o = RB.obj(s, iid);
-    o.token = true;
-    o.exhausted = !e.ready;
-    o.enteredTurn = s.turn;
-    if (e.temporary) o.temporary = true;
-    if (e.to === 'here' && ctx.event && ctx.event.bf !== undefined) {
-      s.bf[ctx.event.bf].units.push(iid);
-      RB.applyContested(s, ctx.event.bf, ctx.p);
-    } else s.players[ctx.p].base.push(iid);
-    RB.log(s, 'token', { p: ctx.p, iid: iid, card: o.cardId }, 'unit.deploy');
+    for (let k = 0; k < n_(e); k++) {
+      const iid = RB.mint(s, RB.obj(s, src).cardId, ctx.p);
+      const o = RB.obj(s, iid);
+      o.token = true;
+      o.exhausted = !e.ready;
+      o.enteredTurn = s.turn;
+      // A copy takes printed characteristics, not statuses — a copy of a Temporary unit is
+      // not itself Temporary unless the card making it says so.
+      if (e.temporary) o.temporary = true;
+      if (e.to === 'here' && ctx.event && ctx.event.bf !== undefined) {
+        s.bf[ctx.event.bf].units.push(iid);
+        RB.applyContested(s, ctx.event.bf, ctx.p);
+      } else s.players[ctx.p].base.push(iid);
+      RB.log(s, 'token', { p: ctx.p, iid: iid, card: o.cardId }, 'unit.deploy');
+      RB.runTriggers(s, 'unitPlayed', { p: ctx.p, iid: iid });
+    }
   });
   RB.defineDescriber('copyToken', e => {
+    const many = n_(e) > 1 ? (n_(e) === 2 ? 'two ' : n_(e) + ' ') : '';
     const of = selText(e.target);
     const where = e.to === 'here' ? (/ there$/.test(of) ? '' : ' there') : ' to your base';
-    return 'Play a' + (e.ready ? ' ready' : 'n exhausted') + ' token copy of ' + of +
+    return 'Play ' + (many ? many + (e.ready ? 'ready ' : 'exhausted ') + 'token copies of '
+      : 'a' + (e.ready ? ' ready' : 'n exhausted') + ' token copy of ') + of +
       where + (e.temporary ? ', with Temporary' : '') + '.';
   });
 
@@ -311,15 +364,20 @@
         RB.applyContested(s, ctx.event.bf, ctx.p);
       } else s.players[ctx.p].base.push(iid);
       RB.log(s, 'token', { p: ctx.p, iid: iid, card: e.cardId }, 'unit.deploy');
+      // "Play a token" is playing it, so a unit token raises unitPlayed — which is what a
+      // card like Lillia ("when you play a token unit") reads. NOTE: the core `token` op
+      // does not raise it, so tokens made by other packs do not reach those triggers.
+      if (RB.card(e.cardId).type === 'Unit') RB.runTriggers(s, 'unitPlayed', { p: ctx.p, iid: iid });
     }
   });
   const COUNT = ['no', 'a', 'two', 'three', 'four', 'five', 'six'];
   RB.defineDescriber('keywordToken', e => {
     const c = RB.card(e.cardId);
     const k = n_(e);
+    const might = e.might != null ? e.might : c.might;
     return 'Play ' + (COUNT[k] || k) + ' ' + (e.ready ? 'ready ' : '') +
-      (e.might != null ? e.might : c.might) + ' Might ' + c.name +
-      ' unit token' + (k === 1 ? '' : 's') +
+      (might != null ? might + ' Might ' : '') + c.name + ' ' +
+      c.type.toLowerCase() + ' token' + (k === 1 ? '' : 's') +
       ((e.keywords || []).length ? ' with ' + e.keywords.join(' and ') : '') +
       (e.temporary ? ' with Temporary' : '') +
       (e.to === 'here' ? ' there' : ' to your base') + '.';
@@ -448,15 +506,24 @@
   }
   RB.defineOp('atThisBattlefield', (s, e, ctx) => {
     const i = myBattlefield(s, ctx.source);
-    if (i < 0) return;
+    // `orBase`: a card that says "here" while standing in a base still means somewhere.
+    // With no battlefield the effects run on the unchanged context, where `to:'here'`
+    // falls back to the base — the right reading for a unit played to one.
+    if (i < 0) { if (e.orBase) RB.runEffects(s, e.effects || [], ctx); return; }
     RB.runEffects(s, e.effects || [], withBf(ctx, i));
   });
   RB.defineDescriber('atThisBattlefield', e => join(e.effects));
 
-  // "Choose a battlefield where you have units." A real choice when more than one
-  // qualifies, and no prompt at all when there is nothing to decide.
-  RB.defineOp('chooseMyBattlefield', (s, e, ctx) => {
-    const opts = s.bf.map((b, i) => i).filter(i => RB.unitsAt(s, i, ctx.p).length);
+  // "Choose a battlefield [where you have units / where an enemy unit is]." A real choice
+  // when more than one qualifies, and no prompt at all when there is nothing to decide.
+  const BF_WHERE = {
+    mine: (s, i, p) => RB.unitsAt(s, i, p).length > 0,
+    enemy: (s, i, p) => RB.unitsAt(s, i, RB.opponentOf(p)).length > 0,
+    any: () => true,
+  };
+  RB.defineOp('chooseBattlefield', (s, e, ctx) => {
+    const ok = BF_WHERE[e.where || 'mine'];
+    const opts = s.bf.map((b, i) => i).filter(i => ok(s, i, ctx.p));
     if (!opts.length) return;
     if (opts.length === 1) { RB.runEffects(s, e.effects || [], withBf(ctx, opts[0])); return; }
     s.queue.push({
@@ -466,15 +533,17 @@
       onAnswer: opts.map(i => [{ op: 'atBf', bf: i, effects: e.effects || [] }]),
     });
   });
-  RB.defineDescriber('chooseMyBattlefield', e =>
-    'Choose a battlefield where you have units. ' + join(e.effects));
+  const BF_WHERE_TEXT = { mine: 'where you have units', enemy: 'where an enemy unit is', any: '' };
+  RB.defineDescriber('chooseBattlefield', e =>
+    ('Choose a battlefield ' + (BF_WHERE_TEXT[e.where || 'mine'] || '')).trim() + '. ' +
+    join(e.effects));
 
   // --- firstEachTurn --------------------------------------------------------
   // "The first time … each turn". Tracked on the source's own object, per player, so a
   // battlefield answers the question separately for each side.
   RB.defineOp('firstEachTurn', (s, e, ctx) => {
     const o = RB.obj(s, ctx.source);
-    const who = (ctx.event && ctx.event.p !== undefined) ? ctx.event.p : ctx.p;
+    const who = (e.per === 'me' || !ctx.event || ctx.event.p === undefined) ? ctx.p : ctx.event.p;
     const key = (e.key || 'once') + ':' + who;
     o.unlOnce = o.unlOnce || {};
     if (o.unlOnce[key] === s.turn) return;
@@ -576,12 +645,18 @@
   RB.defineOp('damageEachLocation', (s, e, ctx) => {
     const foe = RB.opponentOf(ctx.p);
     const spots = s.bf.map((b, i) => RB.unitsAt(s, i, foe)).concat([s.players[foe].base.slice()]);
-    for (const here of spots) {
-      if (!here.length) continue;
-      const best = here.slice().sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a))[0];
-      RB.obj(s, best).damage += n_(e);
-      RB.log(s, 'damage', { iid: best, n: n_(e) });
-    }
+    spots.forEach((here, ix) => {
+      if (!here.length) return;
+      const ordered = here.slice().sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
+      // One choice per location, and each is a real one — so each goes through the door
+      // under its own tag, or they would share an answer.
+      const taken = RB.offerChoice(s, ordered, 1, ctx, 'eachLocation' + ix,
+        'Choose an enemy unit to damage');
+      for (const iid of taken) {
+        RB.obj(s, iid).damage += n_(e);
+        RB.log(s, 'damage', { iid: iid, n: n_(e) });
+      }
+    });
   });
   RB.defineDescriber('damageEachLocation', e =>
     'Choose up to one enemy unit at each location. Deal ' + n_(e) + ' to them.');
@@ -684,6 +759,242 @@
   });
   RB.defineDescriber('returnBanished', () => 'Return it to their hand.');
 
+  // --- buffTo / grantTo -----------------------------------------------------
+  // The mirror of `debuff`, and a keyword grant, both through this pack's chooser: the
+  // core's buff and grant read RB.select, which cannot say "your OTHER units here" or
+  // "prefer one of mine".
+  RB.defineOp('buffTo', (s, e, ctx) => {
+    const key = e.permanent ? 'permBuffs' : 'buffs';
+    for (const iid of targets(s, e.target, ctx)) RB.obj(s, iid)[key] += n_(e);
+  });
+  RB.defineDescriber('buffTo', e => 'Give ' + selText(e.target) + ' +' + n_(e) + ' Might' +
+    (e.permanent ? '.' : ' this turn.'));
+
+  RB.defineOp('grantTo', (s, e, ctx) => {
+    for (const iid of targets(s, e.target, ctx)) RB.obj(s, iid).granted.push(e.keyword);
+  });
+  RB.defineDescriber('grantTo', e =>
+    'Give ' + selText(e.target) + ' ' + e.keyword + ' this turn.');
+
+  // --- damageHereSplit ------------------------------------------------------
+  // "Deal N to that unit and M to each other enemy unit there." One clause, one op,
+  // because the two halves have to agree on which unit was chosen.
+  RB.defineOp('damageHereSplit', (s, e, ctx) => {
+    const chosen = targets(s, { pick: 'hereEnemy', prompt: e.prompt }, ctx)[0];
+    if (!chosen) return;
+    RB.obj(s, chosen).damage += n_(e);
+    RB.log(s, 'damage', { iid: chosen, n: n_(e) });
+    if (!e.others) return;
+    for (const iid of base(s, 'hereEnemy', ctx)) {
+      if (iid === chosen) continue;
+      RB.obj(s, iid).damage += e.others;
+      RB.log(s, 'damage', { iid: iid, n: e.others });
+    }
+  });
+  RB.defineDescriber('damageHereSplit', e =>
+    'Choose an enemy unit there. Deal ' + n_(e) + ' to that unit' +
+    (e.others ? ' and ' + e.others + ' to each other enemy unit there' : '') + '.');
+
+  // --- watching one unit ----------------------------------------------------
+  // "Deal 3 to an enemy unit. WHEN IT DIES this turn, …" and "give a unit +3 this turn.
+  // WHEN IT WINS a combat this turn, …". The promise has to remember WHICH unit, and a
+  // delayed ability's data is the only place that travels with it.
+  function watch(s, ctx, iid, on, kind, then) {
+    s.delayed = s.delayed || [];
+    s.delayed.push({ on: on, p: ctx.p, source: ctx.source, once: false,
+      effects: [{ op: 'watchFire', kind: kind, then: then || [] }],
+      data: { watch: iid, turn: s.turn } });
+  }
+  RB.defineOp('watchFire', (s, e, ctx) => {
+    const d = ctx.delayed;
+    if (!d || !d.watch || d.turn !== s.turn) return;      // the window was this turn only
+    if (e.kind === 'died' && !(ctx.event && ctx.event.iid === d.watch)) return;
+    if (e.kind === 'wonCombat') {
+      if (!ctx.event || ctx.event.winner !== ctx.p) return;
+      const loc = RB.locationOf(s, d.watch);
+      if (loc.kind !== 'bf' || loc.bf !== ctx.event.bf) return;
+    }
+    d.watch = null;                                        // fires once
+    RB.runEffects(s, e.then || [], ctx);
+  });
+  RB.defineDescriber('watchFire', e => join(e.then));
+
+  RB.defineOp('damageWatch', (s, e, ctx) => {
+    const iid = targets(s, e.target, ctx)[0];
+    if (!iid) return;
+    RB.obj(s, iid).damage += n_(e);
+    RB.log(s, 'damage', { iid: iid, n: n_(e) });
+    watch(s, ctx, iid, 'died', 'died', e.then);
+  });
+  RB.defineDescriber('damageWatch', e => 'Deal ' + n_(e) + ' to ' + selText(e.target) +
+    '. When it dies this turn, ' + lower(join(e.then)));
+
+  RB.defineOp('buffWatchCombat', (s, e, ctx) => {
+    const iid = targets(s, e.target, ctx)[0];
+    if (!iid) return;
+    RB.obj(s, iid).buffs += n_(e);
+    watch(s, ctx, iid, 'combatEnd', 'wonCombat', e.then);
+  });
+  RB.defineDescriber('buffWatchCombat', e => 'Give ' + selText(e.target) + ' +' + n_(e) +
+    ' Might this turn. When it wins a combat this turn, ' + lower(join(e.then)));
+
+  // --- destinations ---------------------------------------------------------
+  // Every location a unit could be moved to, as a choose step: each battlefield, then the
+  // base. `then` runs after the move, inside the chosen battlefield's context.
+  function destinationOptions(s) {
+    return s.bf.map((b, i) => ({ label: 'To ' + RB.card(b.cardId).name, bf: i }))
+      .concat([{ label: 'To its base', bf: null }]);
+  }
+  function askDestination(s, ctx, opts, effectsFor) {
+    if (opts.length === 1) { RB.runEffects(s, effectsFor(opts[0]), ctx); return; }
+    s.queue.push({
+      kind: 'choose', who: ctx.p, source: ctx.source,
+      options: opts.map(o => o.label),
+      ctx: { p: ctx.p, source: ctx.source, event: ctx.event, targets: ctx.targets, paid: ctx.paid },
+      onAnswer: opts.map(effectsFor),
+    });
+  }
+  RB.defineOp('moveChoosingDestination', (s, e, ctx) => {
+    if (!targets(s, e.target, ctx).length) { RB.runEffects(s, e.then || [], ctx); return; }
+    askDestination(s, ctx, destinationOptions(s), o => o.bf === null
+      ? [{ op: 'moveUnit', target: e.target, to: 'base' }].concat(e.then || [])
+      : [{ op: 'atBf', bf: o.bf, effects: [{ op: 'moveUnit', target: e.target, to: 'here' }]
+            .concat(e.then || []) }]);
+  });
+  RB.defineDescriber('moveChoosingDestination', e => 'Move ' + selText(e.target) +
+    ' to a location of your choice.' + (e.then && e.then.length ? ' ' + join(e.then) : ''));
+
+  // --- moveEnemyGroup -------------------------------------------------------
+  // "Move any number of enemy units with the same controller and a total Might of N or
+  // less to a single location." In a duel every enemy unit shares a controller, so the
+  // decision left is the destination and how many fit under the cap.
+  RB.defineOp('moveEnemyGroup', (s, e, ctx) => {
+    const foe = RB.opponentOf(ctx.p);
+    if (!RB.allUnits(s).some(i => RB.obj(s, i).controller === foe)) return;
+    askDestination(s, ctx, destinationOptions(s),
+      o => [{ op: 'gatherEnemies', maxMight: e.maxMight, bf: o.bf }]);
+  });
+  RB.defineDescriber('moveEnemyGroup', e =>
+    'Move any number of enemy units with the same controller and a total Might of ' +
+    e.maxMight + ' or less to a single location.');
+
+  RB.defineOp('gatherEnemies', (s, e, ctx) => {
+    const foe = RB.opponentOf(ctx.p);
+    const dest = e.bf;
+    const cand = RB.allUnits(s)
+      .filter(i => RB.obj(s, i).controller === foe)
+      .filter(i => {
+        const l = RB.locationOf(s, i);
+        return dest === null ? l.kind !== 'base' : !(l.kind === 'bf' && l.bf === dest);
+      })
+      // Smallest first: "any number" wants as many as the cap allows.
+      .sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b));
+    let total = 0;
+    for (const iid of cand) {
+      const m = RB.mightOf(s, iid);
+      if (total + m > e.maxMight) continue;
+      total += m;
+      const o = RB.obj(s, iid);
+      const from = RB.locationOf(s, iid);
+      if (!pluck(s, iid)) continue;
+      if (dest === null) s.players[o.controller].base.push(iid);
+      else { s.bf[dest].units.push(iid); RB.applyContested(s, dest, o.controller); }
+      RB.log(s, 'move', { p: o.controller, iid: iid, to: dest === null ? 'base' : 'bf' + dest }, 'unit.move');
+      RB.runTriggers(s, 'moved', { p: o.controller, iid: iid,
+        bf: dest === null ? undefined : dest, fromBf: from.kind === 'bf' ? from.bf : undefined });
+    }
+  });
+  RB.defineDescriber('gatherEnemies', () => '');
+
+  // --- swapMyUnits ----------------------------------------------------------
+  // "Choose a unit you control and another unit you control at a different location. If at
+  // least one has Temporary, move each to the other's location." A pair with no Temporary
+  // member does nothing, so the Temporary one is what is chosen first.
+  RB.defineOp('swapMyUnits', (s, e, ctx) => {
+    const mine = RB.allUnits(s).filter(i => RB.obj(s, i).controller === ctx.p);
+    const where = i => { const l = RB.locationOf(s, i); return l.kind === 'bf' ? 'bf' + l.bf : 'base'; };
+    const temps = mine.filter(i => RB.obj(s, i).temporary)
+      .sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
+    const a = RB.offerChoice(s, temps, 1, ctx, 'swapTemporary', 'Choose a unit with Temporary')[0];
+    if (!a) return;
+    const others = mine.filter(i => i !== a && where(i) !== where(a))
+      .sort((x, y) => RB.mightOf(s, y) - RB.mightOf(s, x));
+    const b = RB.offerChoice(s, others, 1, ctx, 'swapWith', 'Choose a unit at a different location')[0];
+    if (!b) return;
+    const la = RB.locationOf(s, a), lb = RB.locationOf(s, b);
+    if (!pluck(s, a) || !pluck(s, b)) return;
+    const place = (iid, loc) => {
+      if (loc.kind === 'bf') { s.bf[loc.bf].units.push(iid); RB.applyContested(s, loc.bf, ctx.p); }
+      else s.players[ctx.p].base.push(iid);
+      RB.log(s, 'move', { p: ctx.p, iid: iid, to: loc.kind === 'bf' ? 'bf' + loc.bf : 'base' }, 'unit.move');
+    };
+    place(a, lb); place(b, la);
+  });
+  RB.defineDescriber('swapMyUnits', () =>
+    'Choose a unit you control and another unit you control at a different location. ' +
+    'If at least one of them has Temporary, move each to the other\'s location.');
+
+  // --- eachPlayerKills ------------------------------------------------------
+  // "Each player must kill one of their units." Mine is a choice and goes through the
+  // door; theirs is THEIR choice, which this engine has no way to ask for, so it takes
+  // their cheapest — the same rule the core's own killFriendly cost uses.
+  RB.defineOp('eachPlayerKills', (s, e, ctx) => {
+    for (let p = 0; p < 2; p++) {
+      if (p === ctx.p && e.exceptIfPaid && (ctx.paid || []).includes(e.exceptIfPaid)) continue;
+      const pool = RB.allUnits(s).filter(i => RB.obj(s, i).controller === p)
+        .sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b));
+      if (!pool.length) continue;
+      const taken = p === ctx.p
+        ? RB.offerChoice(s, pool, 1, ctx, 'sacrificeMine', 'Choose one of your units to kill')
+        : [pool[0]];
+      if (taken[0]) RB.kill(s, taken[0]);
+    }
+  });
+  RB.defineDescriber('eachPlayerKills', e => 'Each player must kill one of their units.' +
+    (e.exceptIfPaid ? " If you paid the additional cost, you don't kill a unit this way." : ''));
+
+  // --- blinkUnit / landBanished ---------------------------------------------
+  // "Banish a friendly unit, then its owner plays it to any battlefield, ignoring its
+  // cost." It is played again, so its play effects fire again — which is the card.
+  RB.defineOp('blinkUnit', (s, e, ctx) => {
+    const iid = targets(s, e.target, ctx)[0];
+    if (!iid) return;
+    const o = RB.obj(s, iid);
+    if (!pluck(s, iid)) return;
+    o.damage = 0; o.buffs = 0; o.permBuffs = 0; o.counters = 0; o.granted = [];
+    o.stunned = false; o.cantMove = false; delete o.role;
+    s.players[o.owner].banished.push(iid);
+    RB.obj(s, ctx.source).unlBlink = iid;
+    RB.log(s, 'banish', { p: o.owner, iid: iid });
+    if (!s.bf.length) return;
+    askDestination(s, ctx, s.bf.map((b, i) => ({ label: 'To ' + RB.card(b.cardId).name, bf: i })),
+      o2 => [{ op: 'atBf', bf: o2.bf, effects: [{ op: 'landBanished' }] }]);
+  });
+  RB.defineDescriber('blinkUnit', e => 'Banish ' + selText(e.target) +
+    ', then its owner plays it to any battlefield, ignoring its cost.');
+
+  RB.defineOp('landBanished', (s, e, ctx) => {
+    const src = RB.obj(s, ctx.source);
+    const iid = src.unlBlink;
+    if (!iid || ctx.event === undefined || ctx.event.bf === undefined) return;
+    const owner = RB.obj(s, iid).owner;
+    if (!RB.removeFrom(s.players[owner].banished, iid)) { src.unlBlink = null; return; }
+    src.unlBlink = null;
+    RB.log(s, 'play', { p: owner, iid: iid, card: RB.obj(s, iid).cardId, to: 'bf' + ctx.event.bf }, 'unit.deploy');
+    RB.resolveCard(s, { iid: iid, controller: owner, to: 'bf' + ctx.event.bf, kind: 'card', targets: [] });
+  });
+  RB.defineDescriber('landBanished', () => '');
+
+  // --- spendXP as an additional cost ----------------------------------------
+  // The core has killFriendly / discard / spendBuff / recycleFromTrash; XP is this pack's.
+  RB.defineExtraCost('spendXP', {
+    available: (s, p, iid, x) => (s.players[p].xp || 0) >= (x.n || 1),
+    pay: (s, p, iid, x) => {
+      s.players[p].xp = Math.max(0, (s.players[p].xp || 0) - (x.n || 1));
+      RB.log(s, 'xp', { p: p, xp: s.players[p].xp });
+    },
+  });
+
   // --- conditions this pack adds to the core's table ------------------------
   // Registered, not wrapped. Both take the affected card and the static's SOURCE, which is
   // what lets one card say something about units that are not its own.
@@ -694,9 +1005,22 @@
     RB.mightOf(state, iid) < RB.mightOf(state, src));
   // …and the prose for each, so the auditor names the condition instead of reading back a
   // camelCase identifier. A condition nobody can read is a clause nobody can check.
+  RB.defineStaticWhen('isToken', (state, iid) => !!RB.obj(state, iid).token);
+  RB.defineStaticWhen('isTemporary', (state, iid) => !!RB.obj(state, iid).temporary);
+  // "+1 Might for each of your units with Temporary at my battlefield." Reads no Might, so
+  // it cannot recurse through the statics guard.
+  RB.defineStaticAmount('temporaryUnitsHere', (state, iid) => {
+    const o = RB.obj(state, iid);
+    const loc = RB.locationOf(state, iid);
+    if (loc.kind !== 'bf') return 0;
+    return state.bf[loc.bf].units
+      .filter(i => RB.obj(state, i).controller === o.controller && RB.obj(state, i).temporary).length;
+  });
   if (RB.defineWhenText) {
     RB.defineWhenText('enemyOfSource', () => 'for enemy units');
     RB.defineWhenText('weakerEnemyThanSource', () => 'for enemy units with less Might than me');
+    RB.defineWhenText('isToken', () => 'while they are tokens');
+    RB.defineWhenText('isTemporary', () => 'while they have Temporary');
   }
 
 })(window.RB = window.RB || {});

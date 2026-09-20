@@ -237,4 +237,24 @@ Four things go wrong, and they all go wrong systemically — if one tile has it,
   `DEFAULTS.cropFraction` if it is happening across the set, because the crop happens at encode
   time and raising it means regenerating everything.
 
-Fix the prompts and re-run the sample before spending on the remaining 155.
+Fix the prompts and re-run the sample before spending on the remaining cards.
+
+### QC needs both passes, not one
+
+The bottom-strip sweep and the contact sheet catch different failures, and a run is only clean when
+both are done:
+
+- **The strip sweep** (bottom ~9% at 2x zoom) is the only way to see a corner signature, which is
+  invisible at contact-sheet size. Page through it with an explicit window (`?from=N&n=26`) and
+  check that the last row of each window actually rendered — rows below the fold are silently
+  skipped, and that is exactly how a signature on `ogn-310` survived the first sweep of the second
+  wave.
+- **The contact sheet** is the only way to see lettering anywhere else in the frame — a carved arch
+  band, a crate stencil, a shop front. `ogs-021` had "NITZLIGR" across the top of a hall and passed
+  the strip sweep cleanly.
+
+When one id fails twice in the same way, stop re-rolling and change the prompt: `ogn-310` was
+signed in the same empty bottom-right corner on two consecutive rolls, and filling that corner with
+terrain ("the packed sand banking up across the lower corners of the frame") fixed it. Likewise
+`ogs-021` stopped producing inscriptions once the grand hall became an open hilltop — a grand
+architectural band is an inscription magnet even when no banned noun appears in the line.
