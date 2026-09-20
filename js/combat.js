@@ -47,6 +47,16 @@
     return out;
   }
 
+  // A recall returns a unit to its owner's base. Rule 449.
+  function recall(s, iid, i) {
+    RB.removeFrom(s.bf[i].units, iid);
+    const o = RB.obj(s, iid);
+    o.damage = 0;
+    delete o.role;
+    s.players[o.controller].base.push(iid);
+    RB.log(s, 'recall', { iid: iid, p: o.controller, bf: i }, 'unit.move');
+  }
+
   // The Resolution Step: kill lethal, heal survivors, recall attackers if defenders hold,
   // then establish control — which is a Conquer if that player has not scored here yet.
   function resolveCombat(s, sd) {
@@ -55,22 +65,28 @@
       if (RB.obj(s, iid).damage > 0 && RB.obj(s, iid).damage >= RB.mightOf(s, iid)) RB.kill(s, iid);
     for (const iid of bf.units) RB.obj(s, iid).damage = 0;     // 3c. Heal all Units.
 
+    if (sd.combat) {
+      // 3d. Recall Attackers present at the Battlefield if Defenders are still present
+      // (rule 449). This is the step that makes an attack that fails to clear the
+      // battlefield *bounce* — without it two units that cannot kill each other restage
+      // the combat forever, which is exactly what the fuzzer found with two 0-might units.
+      if (RB.unitsAt(s, i, sd.defender).length)
+        for (const iid of RB.unitsAt(s, i, sd.attacker)) recall(s, iid, i);
+    }
+
     const A = RB.unitsAt(s, i, sd.attacker);
     const D = RB.unitsAt(s, i, sd.defender);
     if (sd.combat) {
-      if (A.length && D.length) {
-        // "No Result": both sides still standing. Combat stages again at this battlefield.
-        bf.combatStaged = true; bf.showdownStaged = true;
+      const winner = (A.length && !D.length) ? sd.attacker : (D.length && !A.length) ? sd.defender : null;
+      if (winner === null) {
+        // "No Result" — neither side holds the field. Both sides having units cannot
+        // happen after the recall above, so this is the mutual-destruction case.
         RB.log(s, 'combatNoResult', { bf: i });
-        return;
+      } else {
+        RB.log(s, 'combatResult', { bf: i, winner: winner },
+          winner === sd.attacker ? 'showdown.win' : 'showdown.lose');
       }
-      if (D.length && A.length === 0) {
-        RB.log(s, 'combatResult', { bf: i, winner: sd.defender }, 'showdown.lose');
-      } else if (A.length && D.length === 0) {
-        RB.log(s, 'combatResult', { bf: i, winner: sd.attacker }, 'showdown.win');
-        // 3d. Recall attackers only if defenders are still present — they are not.
-      }
-      RB.runTriggers(s, 'combatEnd', { bf: i, winner: A.length ? sd.attacker : (D.length ? sd.defender : null) });
+      RB.runTriggers(s, 'combatEnd', { bf: i, winner: winner, p: winner === null ? sd.attacker : winner });
     }
 
     bf.contestedBy = null; bf.combatStaged = false; bf.showdownStaged = false;

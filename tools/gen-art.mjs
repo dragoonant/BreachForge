@@ -39,7 +39,9 @@ import {
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PROMPTS_PATH = path.join(ROOT, 'tools', 'art-prompts.json');
 const ART_DIR = path.join(ROOT, 'art', 'cards');
-const ARCHIVE_DIR = path.join(ROOT, 'art', 'archive');
+// Superseded art goes to the gitignored art-archive/ at the repo root, alongside art-masters/ —
+// the repo carries delivery WebP only.
+const ARCHIVE_DIR = path.join(ROOT, 'art-archive');
 
 // ---------------------------------------------------------------------------
 // THE STYLE CONSTANT.

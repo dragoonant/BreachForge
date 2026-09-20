@@ -108,7 +108,7 @@ tools/gen-art.mjs             The generator. Owns STYLE, the run plan and art/ca
 tools/lib/hf-image.mjs        HTTP + crop + WebP. Generator-agnostic, shared with future tools.
 tools/art-contact-sheet.mjs   Builds scratch/art-contact-sheet.html for reviewing a run.
 art/cards/<id>.webp           Delivery art. WebP only — masters stay out of the repo.
-art/archive/                  Previous versions, stashed automatically by --force.
+art-archive/                  Previous versions, stashed automatically by --force. Gitignored.
 art/manifest.js               GENERATED switch: RB.artManifest lists the ids that have a file.
 js/procart.js                 The procedural fallback for every id not in the manifest.
 scratch/reports/              One report per generation run: generated / skipped / failed and why.
@@ -159,7 +159,9 @@ Four things go wrong, and they all go wrong systemically — if one tile has it,
   rule 1.
 - **Text or lettering** rendered anywhere in the frame → a text-magnet noun or a negation slipped
   through. Fix rules 3 and 4.
-- **A signature surviving in a bottom corner** → raise `DEFAULTS.cropFraction` in
-  `tools/lib/hf-image.mjs` and regenerate with `--force`.
+- **A signature surviving in a bottom corner** → if it is one or two tiles, just re-roll them with
+  `--force`; FLUX signs stochastically and a fresh seed usually comes back clean. Only raise
+  `DEFAULTS.cropFraction` if it is happening across the set, because the crop happens at encode
+  time and raising it means regenerating everything.
 
 Fix the prompts and re-run the sample before spending on the remaining 155.

@@ -125,12 +125,38 @@ export function run(t) {
     t.eq(st2.players[p].points, 8, 'but a hold takes it');
   });
 
+  t.test('an attack that leaves defenders standing recalls the attackers to their base', () => {
+    // Rule 449, combat cleanup step 3d. Without it two units that cannot kill each other
+    // restage the combat forever — the fuzzer found exactly that with two 0-might units.
+    const s = game();
+    const unit = RB.allCards().find(c => c.type === 'Unit');
+    const att = RB.mint(s, unit.id, 0), def = RB.mint(s, unit.id, 1);
+    s.bf[0].units.push(att, def);
+    RB.obj(s, att).buffs = -99; RB.obj(s, def).buffs = -99;     // both at 0 might
+    s.bf[0].contestedBy = 0;
+    s.showdown = { bf: 0, attacker: 0, defender: 1, combat: true };
+    RB.closeShowdown(s);
+    t.ok(s.players[0].base.includes(att), 'the attacker bounced home');
+    t.ok(s.bf[0].units.includes(def), 'the defender held the field');
+    t.eq(s.bf[0].combatStaged, false, 'and nothing restaged');
+  });
+
   t.test('combat damage is assigned lethal-first, without overkill while a unit remains', () => {
     const s = game();
-    // two 2-might defenders against 5 might: one dies with 2, the other takes 3
-    const mk = m => { const iid = RB.mint(s, s.bf[0].cardId, 0); RB.obj(s, iid).__m = m; return iid; };
-    void mk;
-    t.ok(typeof RB.closeShowdown === 'function', 'the showdown closer exists');
+    const big = RB.allCards().find(c => c.type === 'Unit' && c.might >= 5);
+    const small = RB.allCards().find(c => c.type === 'Unit' && c.might === 2);
+    if (!big || !small) return;
+    const a = RB.mint(s, big.id, 0);
+    const d1 = RB.mint(s, small.id, 1), d2 = RB.mint(s, small.id, 1);
+    s.bf[0].units.push(a, d1, d2);
+    RB.obj(s, a).buffs = 5 - big.might;                          // exactly 5 might
+    s.bf[0].contestedBy = 0;
+    s.showdown = { bf: 0, attacker: 0, defender: 1, combat: true };
+    RB.closeShowdown(s);
+    // 5 among two 2-might units: one dies outright, the rest lands on the other, which
+    // also dies. Spreading 2/1/1/1 would be illegal — lethal must be assigned in full first.
+    t.ok(!s.bf[0].units.includes(d1) && !s.bf[0].units.includes(d2),
+      'both defenders took lethal damage from a single 5-might attacker');
   });
 
   t.test('legalActions never returns an empty list while the game is live', () => {
