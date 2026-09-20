@@ -35,6 +35,7 @@
     } else {
       RB.runEffects(s, ab.effects || [], ctx);
       s.players[p].trash.push(iid);
+      if (card.type === 'Spell') RB.runTriggers(s, 'spellPlayed', { p: p, iid: iid });
     }
   };
 

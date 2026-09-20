@@ -70,9 +70,7 @@
       out.push((TRIGGER_WORDS[t.on] || t.on) + ', ' + lower(t.effects.map(line).join(' ')));
     for (const a of ab.activated || [])
       out.push(cost(a) + ': ' + a.effects.map(line).join(' '));
-    for (const s of ab.statics || [])
-      out.push(s.might ? 'Units here have ' + (s.might > 0 ? '+' : '') + s.might + ' Might.'
-        : s.grant ? 'Units here have ' + s.grant + '.' : '');
+    for (const st of ab.statics || []) out.push(staticText(st));
     if (ab.effects) out.push(ab.effects.map(line).join(' '));
     return out.filter(Boolean).join('\n');
   };
@@ -81,6 +79,34 @@
     if (!d) throw new Error('no describer for op: ' + e.op);
     return d(e);
   }
+  // A static's SCOPE and CONDITION are the whole meaning of several cards — "your other
+  // units here", "while defending alone", "at 6+ XP". A describer that prints every static
+  // as "Units here have …" blunts the audit exactly where the continuous layer is doing
+  // the most work, so it reads both.
+  const SCOPE = {
+    here: 'Units here', hereMine: 'Your units here', mine: 'Your units',
+    all: 'All units', self: 'I',
+  };
+  const WHEN = {
+    defendingAlone: 'while defending alone',
+    xpAtLeast: 'while you have enough XP',
+  };
+  function staticText(st) {
+    let who = SCOPE[st.scope || 'here'] || 'Units here';
+    if (st.tag) who = who.replace(/Units?$/i, st.tag + 's');
+    if (!st.includeSelf && (st.scope || 'here') !== 'self' && /^Your units/.test(who))
+      who = who.replace('Your units', 'Your other units');
+    const verb = who === 'I' ? 'have ' : 'have ';
+    const what = st.might != null
+      ? (st.might > 0 ? '+' : '') + st.might + ' Might'
+      : st.grant ? st.grant : null;
+    if (!what) return '';
+    const cond = st.when ? ' ' + (WHEN[st.when.kind || st.when] ||
+      ('while ' + (st.when.kind || st.when))) : '';
+    return who + ' ' + verb + what + cond + '.';
+  }
+  RB.staticText = staticText;
+
   function lower(s) { return s.charAt(0).toLowerCase() + s.slice(1); }
   function cost(a) {
     const bits = [];
