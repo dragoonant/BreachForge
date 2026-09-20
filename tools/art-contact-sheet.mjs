@@ -19,8 +19,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
+import { loadCardTable } from './lib/card-table.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ART_DIR = path.join(ROOT, 'art', 'cards');
@@ -44,12 +44,9 @@ function parseArgs(argv) {
   return o;
 }
 
+// The whole registered table, tokens included — see tools/lib/card-table.mjs.
 function loadCards() {
-  const src = fs.readFileSync(path.join(ROOT, 'data', 'cards.js'), 'utf8');
-  const ctx = vm.createContext({});
-  vm.runInContext('var window = globalThis;', ctx);
-  vm.runInContext(src, ctx);
-  return ctx.RB.cardData;
+  return loadCardTable(ROOT).all;
 }
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => (

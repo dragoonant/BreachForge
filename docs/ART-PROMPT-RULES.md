@@ -178,6 +178,7 @@ scratch/build-art-prompts.mjs The editable source of those 163 lines, plus the l
 tools/gen-art.mjs             The generator. Owns STYLE, the run plan and art/cards/ layout.
 tools/lib/hf-image.mjs        HTTP + crop + WebP. Generator-agnostic, shared with future tools.
 tools/art-contact-sheet.mjs   Builds scratch/art-contact-sheet.html for reviewing a run.
+tools/lib/card-table.mjs      The registered card table (packs + tokens from every door).
 tools/gen-board-art.mjs       The board-area pipeline. Owns BOARD_STYLE and the four area images.
 art/board/<name>.webp         Painted playmat areas: base-mine|theirs, runes-mine|theirs.
 art/cards/<id>.webp           Delivery art. WebP only — masters stay out of the repo.
@@ -238,6 +239,25 @@ Four things go wrong, and they all go wrong systemically — if one tile has it,
   time and raising it means regenerating everything.
 
 Fix the prompts and re-run the sample before spending on the remaining cards.
+
+### The work list is the registered table, not a file
+
+Build it with `loadCardTable()` from `tools/lib/card-table.mjs`, never from `data/cards.js` or
+`data/tokens.js` alone. **Tokens are cards** — they sit on the board next to generated art, and one
+without a render reads as a hole rather than as a choice — and a token can be registered from more
+than one door: `data/tokens.js` holds most of them, `RB.defineToken` is the proper door for a pack
+that brings its own, and a direct `RB.tokenData.push` is the older door still in use (Origins
+registers `tok-recruit` that way from `js/ops-ogn.js`). `card-table.mjs` reads all three, the last
+two by statically scanning source rather than executing it.
+
+Tokens get a different treatment from cards. A token is a generic thing a card makes, so it gets
+**no signature identity clause**: a Sand Soldier is an anonymous Shuriman conscript, a Recruit an
+anonymous levy, a Reflection a featureless mirror-figure. Rule 6 is for named champions only. But a
+token still follows its own type's archetype — `tok-gold` is a Gear and gets the still life,
+`tok-baron-pit` is a Battlefield and gets the wide low horizon, which matters more than usual
+because **battlefield cards also paint the board zone behind them**: Baron Pit joins the table as a
+third battlefield, so its art becomes ground people fight on. The first roll of it came back as a
+view down into a hole and had to be re-framed as a view across the rim.
 
 ### QC needs both passes, not one
 
