@@ -145,6 +145,14 @@ A modifier may carry a **condition** and a **computed value**:
 { might: { from: 'points' }, scope: 'self', includeSelf: true }   // "+1 Might per point you have"
 ```
 
+**Durations.** `{ op: 'buff', n: 2 }` is **this turn** and expires in the Ending Cleanup;
+`{ op: 'buff', n: 1, permanent: true }` survives. A printed "+2 Might this turn" and a printed
+"+1 Might" are different cards. Granted keywords also expire at end of turn.
+
+**Stun** is a binary status, not an exhaustion and not a Might reduction: a stunned unit
+contributes **0 Might in the Combat Damage Step** but still takes damage equal to its **full**
+Might to die, cannot be stunned twice, and clears in the Ending Cleanup.
+
 `when`: `defendingAlone` · `attacking` · `defending` · `mighty` · `{ xpAtLeast: 6 }` ·
 `sourceMighty`. `from`: `points` · `xp` · `counters`. Add your own with
 `RB.defineStaticWhen` / `RB.defineStaticAmount` — **never by wrapping `RB.staticsOn`**.

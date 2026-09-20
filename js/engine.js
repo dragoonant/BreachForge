@@ -420,14 +420,27 @@
   }
 
   // --------------------------------------------------------------- turn structure
+  // The Ending Phase (§317). The Expiration Step is a cleanup with three steps inserted,
+  // and each of them is a rule the engine was missing: all damage heals, every "this
+  // turn" effect expires — which is where Stun clears, not in the Awaken Phase — and both
+  // players' rune pools empty.
   function endTurn(s) {
     RB.log(s, 'endTurn', { p: s.active }, 'turn.end');
     RB.runTriggers(s, 'endOfTurn', { p: s.active });
-    // Temporary units leave; "this turn" effects expire.
     for (const iid of Object.keys(s.objects)) {
       const o = s.objects[iid];
-      if (o.temporary) RB.kill(s, iid);
-      o.buffs = 0; o.movedThisTurn = 0;
+      if (o.temporary) { RB.kill(s, iid); continue; }
+      o.damage = 0;                // 3c. Heal all Units
+      o.buffs = 0;                 // 3d. "this turn" effects expire
+      o.granted = [];
+      o.stunned = false;           //     …which is where Stun clears
+      o.movedThisTurn = 0;
+    }
+    for (let q = 0; q < 2; q++) {  // 3e. Rune pools empty; unspent resources are lost
+      s.players[q].pool.energy = 0;
+      s.players[q].pool.any = 0;
+      s.players[q].pool.showdownOnly = 0;
+      for (const d of RB.DOMAINS) s.players[q].pool.power[d] = 0;
     }
     startTurn(s, RB.opponentOf(s.active), false);
   }
@@ -443,9 +456,10 @@
     // Awaken Phase — ready everything you control. Rule 316.2.
     s.phase = 'awaken';
     for (const iid of s.players[p].runes) RB.obj(s, iid).exhausted = false;
-    // A stunned permanent is "able to be readied" only after its stun is spent, so the
-    // Awaken Phase clears the stun instead of the exhaustion.
-    const wake = iid => { const o = RB.obj(s, iid); if (o.stunned) o.stunned = false; else o.exhausted = false; };
+    // Stun does NOT hold a card exhausted — it makes it contribute 0 Might in the Combat
+    // Damage Step, and it clears in the Ending Cleanup, not here. The Awaken Phase readies
+    // everything you control, stunned or not.
+    const wake = iid => { RB.obj(s, iid).exhausted = false; };
     for (const iid of s.players[p].base) wake(iid);
     for (let i = 0; i < s.bf.length; i++) for (const iid of RB.unitsAt(s, i, p)) wake(iid);
     if (s.players[p].legend) wake(s.players[p].legend);
@@ -505,13 +519,15 @@
     else if (loc.kind === 'bfGear') RB.removeFrom(s.bf[loc.bf].gear, iid);
     else return;
     RB.log(s, 'die', { iid: iid, p: o.controller }, 'unit.die');
-    RB.runTriggers(s, 'leftBoard', { p: o.controller, iid: iid,
-      bf: loc.kind === 'bf' ? loc.bf : undefined });
-    // Deathknell fires from the dying card itself, noting where it was — rule 808. It has
-    // to run BEFORE the card's modifications are cleared and before it reaches the trash,
-    // or a death trigger is a silent drop, which is worse than the card being unplayable.
+    // Order matters and is the card's own first: Deathknell belongs to the card that is
+    // dying and is noted at the place it died (rule 808), so it runs before the general
+    // events and before the card's modifications are cleared — otherwise a death trigger
+    // is a silent drop, which is worse than the card being unplayable. `died` then tells
+    // the board a unit died; `leftBoard` is the broader zone change and comes last.
     RB.runDeathTriggers(s, iid, loc);
-    RB.runTriggers(s, 'died', { p: o.controller, iid: iid, bf: loc.kind === 'bf' ? loc.bf : undefined });
+    const where = loc.kind === 'bf' ? loc.bf : undefined;
+    RB.runTriggers(s, 'died', { p: o.controller, iid: iid, bf: where });
+    RB.runTriggers(s, 'leftBoard', { p: o.controller, iid: iid, bf: where });
     o.damage = 0; o.buffs = 0; o.granted = []; o.exhausted = false; o.temporary = false;
     o.stunned = false; o.attachedTo = null;
     for (const g of o.attached.slice()) { o.attached = []; RB.kill(s, g); }

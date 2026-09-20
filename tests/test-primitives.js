@@ -29,6 +29,9 @@ export function run(t) {
     s.players[p].pool.any = 5;
     t.eq(RB.legalActions(s).filter(a => a.t === 'hide').length, 0,
       'no battlefield controlled yet, so nothing can be hidden');
+    // You hold a battlefield by standing on it: an empty one becomes uncontrolled in the
+    // very next cleanup, which would take the facedown card with it.
+    s.bf[0].units.push(put(s, p, 0));
     s.bf[0].controller = p;
     const hides = RB.legalActions(s).filter(a => a.t === 'hide');
     t.ok(hides.length > 0, 'a controlled battlefield offers a hide');
@@ -46,6 +49,7 @@ export function run(t) {
       (c.abilities.keywords || []).some(k => k === 'Hidden' || k.name === 'Hidden'));
     if (!card) return;
     const iid = RB.mint(s, card.id, p);
+    s.bf[0].units.push(put(s, p, 0));
     s.bf[0].controller = p;
     s.bf[0].hidden.push({ iid: iid, owner: p, turnHidden: s.turn });
     t.eq(RB.legalActions(s).filter(a => a.from === 'hidden').length, 0, 'not this turn');
@@ -64,6 +68,7 @@ export function run(t) {
     const p = s.active;
     const card = RB.allCards().find(c => c.type === 'Spell');
     const iid = RB.mint(s, card.id, p);
+    s.bf[0].units.push(put(s, p, 0));
     s.bf[0].controller = p;
     s.bf[0].hidden.push({ iid: iid, owner: p, turnHidden: s.turn });
     s.bf[0].controller = RB.opponentOf(p);
@@ -178,9 +183,24 @@ export function run(t) {
         s = RB.apply(s, acts[RB.peekInt(s, acts.length, i)]);
       }
     } finally { RB.runTriggers = spy; }
-    for (const ev of ['cardPlayed', 'drew', 'moved', 'died', 'leftBoard',
+    for (const ev of ['cardPlayed', 'drew', 'moved',
                       'showdownBegins', 'attack', 'defend', 'becameReady'])
       t.ok(seen.has(ev), 'event never raised in a whole game: ' + ev);
+  });
+
+  t.test('a death raises died, deathknell and leftBoard, in that order', () => {
+    const s = game();
+    const p = s.active;
+    const iid = put(s, p, 0);
+    const order = [];
+    const spy = RB.runTriggers;
+    RB.runTriggers = function (st, ev, data) {
+      if (['died', 'leftBoard'].includes(ev)) order.push(ev);
+      return spy(st, ev, data);
+    };
+    try { RB.kill(s, iid); } finally { RB.runTriggers = spy; }
+    t.eq(order, ['died', 'leftBoard'], 'both fired, death first');
+    t.ok(s.players[p].trash.includes(iid), 'and the card reached the trash');
   });
 
   t.test('per-turn counters count this turn only and reset on the next', () => {
@@ -246,6 +266,63 @@ export function run(t) {
     t.ok(!RB.canPay(s, p, cost), 'outside a showdown it buys nothing');
     s.showdown = { bf: 0, attacker: p, defender: RB.opponentOf(p), combat: false };
     t.ok(RB.canPay(s, p, cost), 'inside one it pays');
+  });
+
+  // --- the Ending Phase (rule 317) -------------------------------------------
+  t.test('the ending phase heals all damage, expires this-turn buffs, and keeps permanent ones', () => {
+    let s = game();
+    const p = s.active;
+    const iid = put(s, p, 'base');
+    const card = RB.card(RB.obj(s, iid).cardId);
+    RB.obj(s, iid).damage = 1;
+    RB.obj(s, iid).buffs = 3;
+    RB.obj(s, iid).permBuffs = 2;
+    RB.obj(s, iid).granted = ['Ganking'];
+    s = RB.apply(s, { t: 'endTurn' });
+    const o = RB.obj(s, iid);
+    t.eq(o.damage, 0, 'damage healed');
+    t.eq(o.buffs, 0, 'the this-turn buff expired');
+    t.eq(o.permBuffs, 2, 'the permanent buff survived');
+    t.eq(o.granted, [], 'granted keywords expired');
+    t.eq(RB.mightOf(s, iid), (card.might || 0) + 2, 'and Might reflects exactly that');
+  });
+
+  t.test('the ending phase empties BOTH rune pools, not just the turn player\'s', () => {
+    let s = game();
+    s.players[0].pool.energy = 4; s.players[0].pool.any = 2;
+    s.players[1].pool.energy = 3; s.players[1].pool.power.Fury = 2;
+    s = RB.apply(s, { t: 'endTurn' });
+    for (let q = 0; q < 2; q++) {
+      t.eq(s.players[q].pool.energy, 0, 'player ' + q + ' energy');
+      t.eq(s.players[q].pool.any, 0, 'player ' + q + ' universal power');
+      t.eq(s.players[q].pool.power.Fury, 0, 'player ' + q + ' domain power');
+    }
+  });
+
+  t.test('a stunned unit deals no combat damage but is no easier to kill, and clears at end of turn', () => {
+    let s = game();
+    const p = s.active;
+    const iid = put(s, p, 0);
+    const full = RB.mightOf(s, iid);
+    RB.runEffects(s, [{ op: 'stun', target: 'allUnits' }], { p: p, source: iid });
+    t.eq(RB.combatMightOf(s, iid), 0, 'it contributes nothing to combat damage');
+    t.eq(RB.mightOf(s, iid), full, 'but its Might is untouched, so it still takes full damage to kill');
+    t.ok(!RB.obj(s, iid).exhausted, 'and it is not exhausted — Stun is not an exhaustion');
+    RB.runEffects(s, [{ op: 'stun', target: 'allUnits' }], { p: p, source: iid });
+    t.eq(RB.obj(s, iid).stunned, true, 'it cannot be stunned twice');
+    s = RB.apply(s, { t: 'endTurn' });
+    t.eq(RB.obj(s, iid).stunned, false, 'and it clears in the ending cleanup');
+  });
+
+  t.test('the awaken phase readies a stunned unit like any other', () => {
+    let s = game();
+    const p = s.active;
+    const iid = put(s, p, 'base');
+    RB.obj(s, iid).exhausted = true;
+    RB.obj(s, iid).stunned = true;
+    s = RB.apply(s, { t: 'endTurn' });
+    s = RB.apply(s, { t: 'endTurn' });
+    t.ok(!RB.obj(s, iid).exhausted, 'stun never held it down');
   });
 
   // --- Recycle and Burn Out (rules 416 and 431) ------------------------------

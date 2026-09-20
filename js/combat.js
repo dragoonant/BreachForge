@@ -35,6 +35,9 @@
   // carrying `noCombatDamage` zeroes the contribution without touching how much damage it
   // takes to kill it.
   RB.combatMightOf = function (s, iid) {
+    // A stunned unit contributes 0 Might here — and only here. It still takes damage equal
+    // to its full Might to kill, which is why this is separate from RB.mightOf.
+    if (RB.obj(s, iid).stunned) return 0;
     for (const st of RB.staticsOn(s, iid)) if (st.noCombatDamage) return 0;
     return RB.mightOf(s, iid);
   };

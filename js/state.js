@@ -24,7 +24,7 @@
     const iid = 'o' + (state.nextIid++);
     state.objects[iid] = {
       iid: iid, cardId: cardId, owner: owner, controller: owner,
-      exhausted: false, damage: 0, buffs: 0, granted: [], attached: [],
+      exhausted: false, damage: 0, buffs: 0, permBuffs: 0, granted: [], attached: [],
       attachedTo: null, temporary: false, movedThisTurn: 0, enteredTurn: -1,
       wasMighty: false, wasReady: false, counters: 0, untargetable: false,
     };
@@ -142,7 +142,7 @@
   RB.mightOf = function (state, iid) {
     const o = RB.obj(state, iid);
     const c = RB.card(o.cardId);
-    let m = (c.might || 0) + (o.buffs || 0);
+    let m = (c.might || 0) + (o.buffs || 0) + (o.permBuffs || 0);
     for (const st of RB.staticsOn(state, iid)) m += RB.staticValue(state, iid, st.might);
     for (const g of o.attached) m += (RB.card(RB.obj(state, g).cardId).might || 0);
     return Math.max(0, m);

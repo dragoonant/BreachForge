@@ -19,7 +19,8 @@
   RB.defineDescriber('draw', e => (e.opponent ? 'Your opponent draws ' : 'Draw ') + n(e) + '.');            // ops.draw
   RB.defineDescriber('damage', e => 'Deal ' + n(e) + ' damage to ' + sel(e.target) + '.');                  // ops.damage
   RB.defineDescriber('kill', e => 'Kill ' + sel(e.target) + '.');                                           // ops.kill
-  RB.defineDescriber('buff', e => sel(e.target, true) + ' gets +' + n(e) + ' Might.');                      // ops.buff
+  RB.defineDescriber('buff', e => sel(e.target, true) + ' gets +' + n(e) + ' Might' +
+    (e.permanent ? '' : ' this turn') + '.');                      // ops.buff
   RB.defineDescriber('grant', e => sel(e.target, true) + ' gains ' + e.keyword + '.');                      // ops.grant
   RB.defineDescriber('ready', e => 'Ready ' + (e.what === 'runes' ? n(e) + ' runes' : sel(e.target)) + '.');// ops.ready
   RB.defineDescriber('exhaust', e => 'Exhaust ' + sel(e.target) + '.');                                     // ops.exhaust
@@ -38,7 +39,8 @@
   RB.defineDescriber('may', e => 'You may ' + lower(e.effects.map(line).join(' ')));                        // ops.may
   RB.defineDescriber('choose', e => 'Choose one — ' +
     e.options.map(o => o.label).join('; ') + '.');                                                          // ops.choose
-  RB.defineDescriber('stun', e => 'Stun ' + sel(e.target) + '.');                                           // ops.stun
+  RB.defineDescriber('stun', e => 'Stun ' + sel(e.target) +
+    '. (It contributes no Might in combat this turn.)');                                           // ops.stun
   RB.defineDescriber('counter', () => 'Counter it.');                                                       // ops.counter
   RB.defineDescriber('xp', e => 'Gain ' + n(e) + ' XP.');                                                   // ops.xp
   RB.defineDescriber('counters', e => 'Put ' + n(e) + ' counter' + (n(e) === 1 ? '' : 's') +

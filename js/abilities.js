@@ -154,7 +154,12 @@
   RB.defineOp('draw', (s, e, ctx) => { for (let i = 0; i < (e.n || 1); i++) RB.draw(s, e.opponent ? RB.opponentOf(ctx.p) : ctx.p); });
   RB.defineOp('damage', (s, e, ctx) => { for (const iid of asList(s, e.target, ctx)) RB.obj(s, iid).damage += e.n || 1; });
   RB.defineOp('kill', (s, e, ctx) => { for (const iid of asList(s, e.target, ctx)) RB.kill(s, iid); });
-  RB.defineOp('buff', (s, e, ctx) => { for (const iid of asList(s, e.target, ctx)) RB.obj(s, iid).buffs += e.n || 1; });
+  // `buffs` is the THIS-TURN channel and expires in the Ending Cleanup; `permBuffs`
+  // survives. A printed "+2 Might this turn" and a printed "+1 Might" are different cards.
+  RB.defineOp('buff', (s, e, ctx) => {
+    const key = e.permanent ? 'permBuffs' : 'buffs';
+    for (const iid of asList(s, e.target, ctx)) RB.obj(s, iid)[key] += e.n || 1;
+  });
   RB.defineOp('grant', (s, e, ctx) => { for (const iid of asList(s, e.target, ctx)) RB.obj(s, iid).granted.push(e.keyword); });
   RB.defineOp('ready', (s, e, ctx) => {
     if (e.what === 'runes') {
@@ -280,10 +285,15 @@
     });
   });
 
+  // Stun is a binary status: a stunned unit contributes 0 Might in the Combat Damage Step
+  // but still needs damage equal to its FULL Might to die, and it cannot be stunned twice.
+  // It clears in the Ending Cleanup. It is not an exhaustion and not a Might reduction —
+  // both of those are different, weaker or stronger, cards.
   RB.defineOp('stun', (s, e, ctx) => {
     for (const iid of asList(s, e.target, ctx)) {
       const o = RB.obj(s, iid);
-      o.exhausted = true; o.stunned = true;
+      if (o.stunned) continue;
+      o.stunned = true;
       RB.log(s, 'stun', { iid: iid }, 'ui.invalid');
     }
   });
