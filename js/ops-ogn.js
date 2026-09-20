@@ -812,8 +812,12 @@
     dying.ognLimbo = loc;
     s.queue.push({
       kind: 'may', who: src.controller, source: e.source,
-      prompt: 'Pay ' + power + ' Power, exhaust ' + RB.card(src.cardId).name + ', and spend ' +
-        RB.card(dying.cardId).name + "'s buff to save it?",
+      // Same door as every other "may": the question is this replacement's own printed
+      // sentence turned around (RB.promptFromSentence), so it can never promise something
+      // the card does not say. Only the dying unit's name is filled in on top, because
+      // "its buff" is the one pronoun the sentence cannot resolve on a prompt line.
+      prompt: RB.promptFromSentence(RB.replacementText(e.spec), RB.card(src.cardId).name)
+        .replace(/\bits buff\b/, RB.card(dying.cardId).name + "'s buff"),
       ctx: { p: src.controller, source: e.source,
         event: { p: dying.controller, iid: e.dying } },
       onAnswer: [[{ op: 'ogn.saveBuffed', power: power }], [{ op: 'ogn.finishDeath' }]],

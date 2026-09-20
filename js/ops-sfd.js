@@ -205,7 +205,10 @@
     };
     s.queue.push({
       kind: 'may', who: ctx.p, source: ctx.source,
-      prompt: e.prompt || ('Pay ' + costPhrase(e).replace(/^pay /, '') + '?'),
+      // The question comes from this op's own describer (RB.promptFromEffect), not from
+      // the cost: built from the cost alone this read "Pay exhaust me?" and never once
+      // said what the player was buying.
+      prompt: RB.promptFromEffect(s, e, ctx),
       ctx: plainCtx(ctx), onAnswer: [[pay], []],
     });
   });
@@ -432,7 +435,7 @@
     // core `token` op by another pack is outside this path; the grant is still readable
     // there through RB.hasKeyword, it simply has no play moment to hang on.
     if (RB.cardOf(s, iid).type === 'Unit' && RB.hasKeyword(s, iid, 'Weaponmaster'))
-      RB.ops.may(s, { effects: [{ op: 'sfd.weaponmaster' }] }, { p: ctx.p, source: iid });
+      RB.ops.may(s, { op: 'may', effects: [{ op: 'sfd.weaponmaster' }] }, { p: ctx.p, source: iid });
   }
   function ownedCards(s, p) {
     const out = [];
@@ -844,7 +847,7 @@
   // pays its answerer AND the card's controller.
   def('goldRound', (s, e, ctx) => {
     const gold = { op: 'sfd.playToken', cardId: 'tok-gold', exhausted: true };
-    RB.ops.may(s, { effects: [gold], prompt: 'Play a Gold gear token exhausted?' }, ctx);
+    RB.ops.may(s, { op: 'may', effects: [gold], prompt: 'Play a Gold gear token exhausted?' }, ctx);
     const foe = RB.opponentOf(ctx.p);
     s.queue.push({ kind: 'may', who: foe, source: ctx.source,
       prompt: 'Play a Gold gear token exhausted? (your opponent gets one too)',

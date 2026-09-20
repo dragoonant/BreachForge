@@ -214,6 +214,9 @@
     return fn ? fn(r) : 'If a ' + (r.event || 'thing') + ' would happen, ' +
       r.kind.replace(/^[a-z]+\./, '').replace(/([A-Z])/g, ' $1').toLowerCase().trim() + '.';
   }
+  // Exported because a replacement that ASKS has to phrase its question from the same
+  // sentence it prints, and the packs cannot reach REPLACE otherwise.
+  RB.replacementText = replacementText;
   function whenText(w) {
     const fn = WHEN[whenName(w)];
     return fn ? fn(whenArg(w))
@@ -278,6 +281,48 @@
     return Object.keys(w)[0];
   }
   RB.staticText = staticText;
+
+  // --- the question a "may" asks --------------------------------------------
+  // One door. A yes/no queue step used to build its own wording, and three sites did it
+  // three ways: the cost alone ("Pay exhaust me?" — ungrammatical, and silent about what
+  // the player gets), a hand-written sentence, or nothing at all. The describer already
+  // writes the deal in full — "You may exhaust me to channel 1 rune exhausted." — so the
+  // prompt is that sentence turned around, and the card's text and its prompt can no
+  // longer drift apart.
+  //
+  // `subject` is the source card's NAME. "me" and "I" are how a card talks about itself
+  // on its own face; on a prompt line the player is being asked about one specific object
+  // on the board, and naming it is the difference between a question and a riddle.
+  function nameSelf(t, subject) {
+    if (!subject) return t;
+    return t.replace(/\bmyself\b/g, subject)
+            .replace(/\bmy\b/g, subject + "'s")
+            .replace(/\bme\b/g, subject)
+            .replace(/\bI\b/g, subject);
+  }
+  RB.promptFromSentence = function (sentence, subject) {
+    let t = String(sentence == null ? '' : sentence).trim();
+    // Everything up to and including the offer's framing is the describer explaining that
+    // a choice exists. The player already knows: they are looking at Yes and No.
+    t = t.replace(/^.*?\byou may\b[\s:]*/i, '');
+    t = t.replace(/[.!?\s]+$/, '');
+    if (!t) return null;
+    t = nameSelf(t, subject);
+    return t.charAt(0).toUpperCase() + t.slice(1) + '?';
+  };
+
+  // The one door every yes/no question goes through, authored or generated. An AUTHORED
+  // prompt is already a question and is left as its author wrote it — except for the self
+  // pronouns, which are the one thing the author could not resolve: "my battlefield" is
+  // correct on a card face and reads as the PLAYER's on a prompt line (unl-141 Evelynn).
+  RB.promptFromEffect = function (s, e, ctx) {
+    const iid = ctx ? ctx.source : null;
+    const subject = (iid != null && s.objects[iid]) ? RB.cardOf(s, iid).name : null;
+    if (e.prompt) return nameSelf(e.prompt, subject);
+    const d = D[e.op];
+    if (!d) throw new Error('no describer for op: ' + e.op);
+    return RB.promptFromSentence(d(e), subject);
+  };
 
   function lower(s) { return s.charAt(0).toLowerCase() + s.slice(1); }
   const PLAY_WHERE_TEXT = {

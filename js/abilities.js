@@ -504,7 +504,11 @@
   // there is exactly one place that knows what "may" means.
   RB.defineOp('may', (s, e, ctx) => {
     s.queue.push({
-      kind: 'may', who: ctx.p, source: ctx.source, prompt: e.prompt || null,
+      // A bare "may" used to carry no prompt at all and let the UI fall back to the
+      // card's printed text — which says what the card does, not what is being asked
+      // right now. RB.promptFromEffect turns this op's describer into the question.
+      kind: 'may', who: ctx.p, source: ctx.source,
+      prompt: RB.promptFromEffect(s, e, ctx),
       ctx: { p: ctx.p, source: ctx.source, event: ctx.event, targets: ctx.targets },
       onAnswer: [e.effects || [], e.otherwise || []],
     });
