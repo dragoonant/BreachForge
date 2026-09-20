@@ -36,7 +36,7 @@
     'sfd-022': {
       keywords: ['Reaction', 'Quick-Draw'],
       triggers: [{ on: 'played', effects: [{ op: 'sfd.attach' }] }],
-      activated: [{ power: 1, domains: ['Fury'], effects: [{ op: 'sfd.attach' }] }],
+      activated: [{ keyword: 'Equip', power: 1, domains: ['Fury'], effects: [{ op: 'sfd.attach' }] }],
     },
 
     // "[Reaction] … [Assault 2] … I can be played to a battlefield you're attacking."
@@ -65,7 +65,7 @@
 
     // "[Equip] [C]"
     'sfd-033': {
-      activated: [{ power: 1, domains: ['Calm'], effects: [{ op: 'sfd.attach' }] }],
+      activated: [{ keyword: 'Equip', power: 1, domains: ['Calm'], effects: [{ op: 'sfd.attach' }] }],
     },
 
     // "[Deathknell] — If I died alone, draw 1."
@@ -76,7 +76,7 @@
 
     // "[Equip] [C]"
     'sfd-042': {
-      activated: [{ power: 1, domains: ['Calm'], effects: [{ op: 'sfd.attach' }] }],
+      activated: [{ keyword: 'Equip', power: 1, domains: ['Calm'], effects: [{ op: 'sfd.attach' }] }],
     },
 
     // "Counter an enemy spell or ability that chooses a friendly unit or gear."
@@ -93,7 +93,7 @@
 
     // "[Equip] [C]"
     'sfd-051': {
-      activated: [{ power: 1, domains: ['Calm'], effects: [{ op: 'sfd.attach' }] }],
+      activated: [{ keyword: 'Equip', power: 1, domains: ['Calm'], effects: [{ op: 'sfd.attach' }] }],
     },
 
     // ---------------------------------------------------------------- Mind
@@ -155,7 +155,7 @@
 
     // "[Equip] [C]"
     'sfd-133': {
-      activated: [{ power: 1, domains: ['Chaos'], effects: [{ op: 'sfd.attach' }] }],
+      activated: [{ keyword: 'Equip', power: 1, domains: ['Chaos'], effects: [{ op: 'sfd.attach' }] }],
     },
 
     // "Return a gear to its owner's hand."
@@ -202,7 +202,7 @@
     // two cards in the trash the ability is still offered and does nothing — it is never
     // free to actually equip, but it can waste the [C]. Same shape as unl-158.
     'sfd-150': {
-      activated: [{ power: 1, domains: ['Chaos'], effects: [{
+      activated: [{ keyword: 'Equip', power: 1, domains: ['Chaos'], effects: [{
         op: 'sfd.when', cond: 'trashAtLeast', n: 2,
         effects: [{ op: 'sfd.recycleFromTrash', n: 2 }, { op: 'sfd.attach' }],
       }] }],
@@ -211,7 +211,7 @@
     // ---------------------------------------------------------------- Order
     // "[Equip] [C]"
     'sfd-153': {
-      activated: [{ power: 1, domains: ['Order'], effects: [{ op: 'sfd.attach' }] }],
+      activated: [{ keyword: 'Equip', power: 1, domains: ['Order'], effects: [{ op: 'sfd.attach' }] }],
     },
 
     // "[Hidden] Play a 2 [M] Sand Soldier unit token. Then do this: You may pay [C] to ready it."
@@ -226,7 +226,7 @@
 
     // "[Equip] [C]"
     'sfd-161': {
-      activated: [{ power: 1, domains: ['Order'], effects: [{ op: 'sfd.attach' }] }],
+      activated: [{ keyword: 'Equip', power: 1, domains: ['Order'], effects: [{ op: 'sfd.attach' }] }],
     },
 
     // "Kill a friendly unit. If you do, give +[M] equal to its Might to another friendly
@@ -268,7 +268,7 @@
         { on: 'beginningPhase', mine: true, effects: [{ op: 'sfd.when', cond: 'unattached',
           effects: [{ op: 'kill', target: 'self' }] }] },
       ],
-      activated: [{ power: 1, domains: ['Fury', 'Chaos'], effects: [{ op: 'sfd.attach' }] }],
+      activated: [{ keyword: 'Equip', power: 1, domains: ['Fury', 'Chaos'], effects: [{ op: 'sfd.attach' }] }],
     },
 
     // "When you choose a friendly unit, you may exhaust me and pay [A] to ready it."
@@ -424,29 +424,25 @@
       ],
     },
 
-    // Third clause: "Friendly units played from anywhere other than a player's hand have
-    // [Accelerate]." A granted additional cost is offered and paid correctly now — but only
-    // while it is UNSCOPED, and this clause is the complement of one zone, so it must be
-    // scoped. `fromZone` names one zone, so "anywhere other than a hand" is the two zones
-    // that are not a hand, and neither can carry it today (driven, not read off the source):
-    //   * `fromZone: 'champion'` THROWS inside RB.legalActions. extraCombinations offers the
-    //     granted id with the zone in hand, then RB.additionalCost re-resolves that id with
-    //     no zone and skips every zone-scoped grant — "<card> has no additional cost
-    //     accelerate" — every time the action list is built with a champion waiting.
-    //   * `fromZone: 'hidden'` is never offered: the facedown branch of playableFrom does
-    //     not go through extraCombinations at all, and doPlayHidden ignores `a.pay`.
-    // Unscoped would work, and is the inverse of the printed card: it would hand Accelerate
-    // to the hand plays this clause excludes. (Plays driven by an effect — out of a trash,
-    // a deck or banishment — have no additional-cost step for any card, printed or granted.)
+    // "[Accelerate] · [Assault] · Friendly units played from anywhere other than a player's
+    //  hand have [Accelerate]."
+    // The third clause is TWO zone-scoped grants, because a static carries one `fromZone`
+    // and "anywhere other than a hand" is the complement of one zone: the play step knows
+    // 'hand', 'champion' and 'hidden', so the two that are not a hand say it exactly. The
+    // granted entry is Accelerate's own price, and a card that prints Accelerate is offered
+    // it once rather than twice — RB.grantedExtras never grants a card to itself, and the
+    // shared id resolves to the identical entry either way.
+    // (A play driven by an effect — out of a trash, a deck or banishment — has no
+    // additional-cost step in this engine for any card, printed or granted.)
     'sfd-029': {
-      unimplemented: 'Third clause grants [Accelerate] — an optional ADDITIONAL COST — to ' +
-        'friendly units played from anywhere but a hand, which is the complement of one ' +
-        'zone. A grant with no `fromZone` is offered and paid correctly, but it reaches the ' +
-        'hand plays the clause excludes; and of the two zones that are not a hand, a ' +
-        "`fromZone: 'champion'` grant throws in RB.legalActions (RB.additionalCost " +
-        're-resolves the granted id without a zone and skips it), while a ' +
-        "`fromZone: 'hidden'` grant is never offered (the facedown play path does not go " +
-        'through extraCombinations). Either choice is a crash or the wrong card.',
+      keywords: [{ name: 'Assault', value: 1 }],
+      additionalCosts: [{ id: 'accelerate', energy: 1, power: 1, entersReady: true }],
+      statics: [
+        { grantsExtra: { id: 'accelerate', energy: 1, power: 1, entersReady: true },
+          type: 'Unit', fromZone: 'champion' },
+        { grantsExtra: { id: 'accelerate', energy: 1, power: 1, entersReady: true },
+          type: 'Unit', fromZone: 'hidden' },
+      ],
     },
 
     // "[Action] [Repeat] [1][C] Deal 1 to up to three units at the same location."
@@ -492,7 +488,7 @@
 
     // "[Equip] [C]"
     'sfd-108': {
-      activated: [{ power: 1, domains: ['Body'], effects: [{ op: 'sfd.attach' }] }],
+      activated: [{ keyword: 'Equip', power: 1, domains: ['Body'], effects: [{ op: 'sfd.attach' }] }],
     },
 
     // "[Weaponmaster] … When I conquer an open battlefield, deal damage equal to my Might
@@ -503,7 +499,9 @@
       keywords: ['Weaponmaster'],
       triggers: [
         { on: 'played', effects: [{ op: 'may', effects: [{ op: 'sfd.weaponmaster' }] }] },
-        { on: 'showdownBegins', effects: [{ op: 'sfd.noteOpen' }] },
+        // Bookkeeping, not a printed clause: `silent` is what keeps it out of the prose,
+        // so the auditor sees the card's two lines rather than a third that dangles.
+        { on: 'showdownBegins', silent: true, effects: [{ op: 'sfd.noteOpen' }] },
         { on: 'conquer', mine: true, here: true, effects: [{ op: 'sfd.when', cond: 'conqueredOpen',
           effects: [{ op: 'sfd.damageInBase', fromMight: true }] }] },
       ],
@@ -572,7 +570,8 @@
     // "[T]: [Reaction] — Draw 1. Use only if you've chosen enemy units and/or gear twice
     //  this turn with spells or unit abilities."
     'sfd-248': {
-      triggers: [{ on: 'chosen', effects: [{ op: 'sfd.countChoice' }] }],
+      // The counter behind the gate: bookkeeping, so it prints nothing (see sfd-116).
+      triggers: [{ on: 'chosen', silent: true, effects: [{ op: 'sfd.countChoice' }] }],
       activated: [{ exhaustSelf: true, tags: ['Reaction'],
         when: { kind: 'sfd.chosenEnemyTwice', n: 2 }, effects: [{ op: 'draw', n: 1 }] }],
     },

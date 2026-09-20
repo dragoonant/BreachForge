@@ -380,7 +380,13 @@
     const c = RB.card(e.cardId);
     const k = n_(e);
     const might = e.might != null ? e.might : c.might;
-    return 'Play ' + (COUNT[k] || k) + ' ' + (e.ready ? 'ready ' : '') +
+    // A token's READINESS is printed on several cards that make one ("play a Gold gear
+    // token exhausted"), and the handler decides it either way — o.exhausted = !e.ready —
+    // so the describer names both states rather than only the one it was asked for. The
+    // article follows the word it precedes: "an exhausted", "a ready".
+    const many = k === 1 ? (e.ready ? 'a ready ' : 'an exhausted ')
+      : (COUNT[k] || k) + ' ' + (e.ready ? 'ready ' : 'exhausted ');
+    return 'Play ' + many +
       (might != null ? might + ' Might ' : '') + c.name + ' ' +
       c.type.toLowerCase() + ' token' + (k === 1 ? '' : 's') +
       ((e.keywords || []).length ? ' with ' + e.keywords.join(' and ') : '') +

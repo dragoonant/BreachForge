@@ -985,8 +985,10 @@
       return !!o && o.sfdChoiceTurn === s.turn && (o.sfdChoices || 0) >= (a.n || 2);
     });
     if (RB.defineWhenText)
+      // No leading "only": cost() already renders a gate as "(use only …)", and a predicate
+      // that supplies its own reads back as "use only only if …".
       RB.defineWhenText('sfd.chosenEnemyTwice', () =>
-        "only if you've chosen enemy units and/or gear twice this turn with spells or unit abilities");
+        "if you've chosen enemy units and/or gear twice this turn with spells or unit abilities");
 
     // "Units can't be played here" (sfd-216). A play destination is decided by the named
     // permissions in the engine's PLAY_WHERE table, which is a hook table — so the bar is
@@ -1041,6 +1043,28 @@
       const ab = RB.card(id).abilities;
       const extra = [];
       if (ab) {
+        // A trigger that is pure BOOKKEEPING prints nothing: sfd-116 records whether a
+        // battlefield was open as the showdown begins, so the conquer clause can ask
+        // afterwards, and sfd-248 counts the choices its gate reads. The core renders each
+        // as "When a showdown begins here, " with nothing after it — a dangling clause, and
+        // tools/audit-card-text.mjs is right to report one. The DATA says which triggers are
+        // silent, and exactly that many empty lines are dropped: a dangling line from any
+        // other trigger is a printed clause that went missing and must stay visible.
+        // A GATE is a printed sentence, not reminder text. The core renders one inside
+        // parentheses — "Exhaust me (use only if …): Draw 1." — and the auditor strips
+        // parentheses from both sides before comparing vocabulary, because that is where
+        // reminder text lives. A card whose gate is most of its text (sfd-248) therefore
+        // reads as 88% of its printed words missing. Said as the card says it, after the
+        // effect, it is both closer to print and visible to the check. Scoped to this
+        // pack's ids: another pack's rendering is not this file's to change.
+        if (String(id).startsWith('sfd-'))
+          base = base.split('\n').map(l =>
+            l.replace(/^(.*?) \(use only ([^)]+)\)(:\s.*)$/, '$1$3 Use only $2.')).join('\n');
+        let silent = (ab.triggers || []).filter(t => t.silent).length;
+        if (silent) base = base.split('\n').filter(l => {
+          if (silent && /,\s*$/.test(l)) { silent--; return false; }
+          return true;
+        }).join('\n');
         for (const st of ab.statics || []) {
           const mine = staticProse(st);
           if (!mine) continue;
@@ -1073,6 +1097,19 @@
         ' Energy, and enemy spells cost ' + (x.energy || 0) + ' Energy and ' + (x.power || 0) +
         ' Power more.';
     }
+    // A static that reaches another card's PLAY STEP. The price is spelled out rather than
+    // named, because the price is the half an auditor can check: "[Accelerate]" would read
+    // as correct whatever numbers were behind it.
+    if (st.grantsExtra) {
+      const x = st.grantsExtra;
+      const price = [x.energy ? x.energy + ' Energy' : null, x.power ? x.power + ' Power' : null]
+        .filter(Boolean).join(' and ') || 'nothing';
+      return 'Friendly ' + (st.tag ? st.tag + ' ' : '') +
+        (st.type ? st.type.toLowerCase() + 's' : 'cards') +
+        ' played from ' + (ZONE_TEXT[st.fromZone] || 'anywhere') +
+        ' may pay ' + price + ' as an additional cost' +
+        (x.entersReady ? ' to enter ready' : '') + '.';
+    }
     if (st.optionalExtraDiscount) {
       const d = st.optionalExtraDiscount;
       return 'Optional additional costs you pay cost ' + (d.energy || 0) + ' Energy or ' +
@@ -1095,6 +1132,7 @@
     revealed: "As I'm revealed from your deck",
   };
   const ORDINAL = { 1: 'first', 2: 'second', 3: 'third', 4: 'fourth' };
+  const ZONE_TEXT = { hand: 'a hand', champion: 'the Champion Zone', hidden: 'face down' };
 
   RB.sfdInstall = install;
   if (RB.registerCards) {

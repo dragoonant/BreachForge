@@ -42,7 +42,7 @@ RB.registerAbilities({
   // Soul Sword — [Equip] [C]. Equip is an activated ability keyword, so it is authored as
   // the activated ability it is; the +1 Might bonus while attached is already RB.mightOf.
   'unl-039': {
-    activated: [{ power: 1, domains: ['Calm'], effects: [{ op: 'equipSelf' }] }],
+    activated: [{ keyword: 'Equip', power: 1, domains: ['Calm'], effects: [{ op: 'equipSelf' }] }],
   },
 
   // Allay — [Deflect]; "While I'm at a battlefield, your other units here have [Deflect]."
@@ -354,6 +354,7 @@ RB.registerAbilities({
   'unl-158': {
     triggers: [{ on: 'played', effects: [{ op: 'xp', n: 1 }] }],
     activated: [{
+      keyword: 'Equip',
       when: { kind: 'haveXP', n: 1 },
       effects: [{ op: 'spendXP', n: 1 }, { op: 'equipSelf' }],
     }],
