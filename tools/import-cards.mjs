@@ -31,7 +31,15 @@ const printed = {};
 for (const c of pool) printed[id(c)] = (c.abilityEffective || '').trim();
 
 const decks = sel.map((d, i) => {
-  const entries = d.cards.map(x => ({ id: id(byDeckId[x.id]), qty: x.qty }));
+  // The source lists a card once per printing (a foil and a normal row both resolve to the
+  // same base id), so entries must be merged by id or a deck reads "2x Akshan / 1x Akshan"
+  // and every per-entry copy-limit check silently measures the wrong thing.
+  const merged = new Map();
+  for (const x of d.cards) {
+    const key = id(byDeckId[x.id]);
+    merged.set(key, (merged.get(key) || 0) + x.qty);
+  }
+  const entries = [...merged].map(([k, qty]) => ({ id: k, qty: qty }));
   const grab = t => entries.filter(e => byDeckId[e.id.toUpperCase()].cardType === t);
   // Some posted decklists omit part of the rune deck. A legal Riftbound deck has exactly
   // 12 runes matching the legend's domains, so the shortfall is filled with basic runes of

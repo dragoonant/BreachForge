@@ -59,6 +59,11 @@
         for (const x of grid.children) x.classList.remove('sel');
         t.classList.add('sel');
       };
+      const look = RB.el('btn', 'button');
+      look.textContent = 'List';
+      look.style.cssText = 'padding:.16rem .5rem;font-size:.66rem;align-self:flex-start';
+      look.onclick = ev => { ev.stopPropagation(); RB.audio.play('ui.click'); RB.showDeckList(d); };
+      t.appendChild(look);
       grid.appendChild(t);
     }
     $('#difficulty').onchange = e => { difficulty = e.target.value; };

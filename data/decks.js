@@ -59,7 +59,7 @@ RB.deckData = [
    },
    {
     "id": "sfd-109",
-    "qty": 1
+    "qty": 3
    },
    {
     "id": "unl-120",
@@ -67,7 +67,7 @@ RB.deckData = [
    },
    {
     "id": "sfd-105",
-    "qty": 2
+    "qty": 3
    },
    {
     "id": "ogn-077",
@@ -87,15 +87,15 @@ RB.deckData = [
    },
    {
     "id": "sfd-097",
-    "qty": 2
+    "qty": 3
    },
    {
     "id": "ogn-156",
-    "qty": 2
+    "qty": 3
    },
    {
     "id": "ogn-128",
-    "qty": 1
+    "qty": 2
    },
    {
     "id": "ogn-058",
@@ -103,34 +103,10 @@ RB.deckData = [
    },
    {
     "id": "sfd-045",
-    "qty": 1
-   },
-   {
-    "id": "unl-042",
-    "qty": 1
-   },
-   {
-    "id": "sfd-097",
-    "qty": 1
-   },
-   {
-    "id": "ogn-156",
-    "qty": 1
-   },
-   {
-    "id": "ogn-128",
-    "qty": 1
-   },
-   {
-    "id": "sfd-045",
-    "qty": 1
-   },
-   {
-    "id": "sfd-109",
     "qty": 2
    },
    {
-    "id": "sfd-105",
+    "id": "unl-042",
     "qty": 1
    },
    {
@@ -327,7 +303,7 @@ RB.deckData = [
    },
    {
     "id": "ogn-056",
-    "qty": 1
+    "qty": 2
    },
    {
     "id": "sfd-048",
@@ -363,7 +339,7 @@ RB.deckData = [
    },
    {
     "id": "ogn-169",
-    "qty": 1
+    "qty": 3
    },
    {
     "id": "ogn-183",
@@ -375,7 +351,7 @@ RB.deckData = [
    },
    {
     "id": "sfd-045",
-    "qty": 1
+    "qty": 2
    },
    {
     "id": "ogn-173",
@@ -383,30 +359,14 @@ RB.deckData = [
    },
    {
     "id": "unl-128",
-    "qty": 2
-   },
-   {
-    "id": "ogn-169",
-    "qty": 2
+    "qty": 3
    },
    {
     "id": "unl-131",
     "qty": 1
    },
    {
-    "id": "sfd-045",
-    "qty": 1
-   },
-   {
     "id": "sfd-145",
-    "qty": 1
-   },
-   {
-    "id": "unl-128",
-    "qty": 1
-   },
-   {
-    "id": "ogn-056",
     "qty": 1
    }
   ]
@@ -457,7 +417,7 @@ RB.deckData = [
    },
    {
     "id": "unl-152",
-    "qty": 2
+    "qty": 3
    },
    {
     "id": "ogn-236",
@@ -465,7 +425,7 @@ RB.deckData = [
    },
    {
     "id": "ogn-110",
-    "qty": 2
+    "qty": 3
    },
    {
     "id": "sfd-165",
@@ -501,7 +461,7 @@ RB.deckData = [
    },
    {
     "id": "ogn-224",
-    "qty": 1
+    "qty": 2
    },
    {
     "id": "unl-200",
@@ -510,18 +470,6 @@ RB.deckData = [
    {
     "id": "sfd-069",
     "qty": 2
-   },
-   {
-    "id": "ogn-224",
-    "qty": 1
-   },
-   {
-    "id": "unl-152",
-    "qty": 1
-   },
-   {
-    "id": "ogn-110",
-    "qty": 1
    },
    {
     "id": "ogn-105",
@@ -615,7 +563,7 @@ RB.deckData = [
    },
    {
     "id": "unl-106",
-    "qty": 1
+    "qty": 2
    },
    {
     "id": "ogn-128",
@@ -640,10 +588,6 @@ RB.deckData = [
    {
     "id": "ogn-207",
     "qty": 3
-   },
-   {
-    "id": "unl-106",
-    "qty": 1
    },
    {
     "id": "ogn-156",
@@ -725,7 +669,7 @@ RB.deckData = [
    },
    {
     "id": "ogn-192",
-    "qty": 1
+    "qty": 2
    },
    {
     "id": "sfd-186",
@@ -737,7 +681,7 @@ RB.deckData = [
    },
    {
     "id": "ogn-169",
-    "qty": 1
+    "qty": 2
    },
    {
     "id": "ogn-183",
@@ -753,7 +697,7 @@ RB.deckData = [
    },
    {
     "id": "ogn-173",
-    "qty": 2
+    "qty": 3
    },
    {
     "id": "sfd-145",
@@ -764,15 +708,7 @@ RB.deckData = [
     "qty": 1
    },
    {
-    "id": "ogn-169",
-    "qty": 1
-   },
-   {
     "id": "sfd-001",
-    "qty": 1
-   },
-   {
-    "id": "ogn-173",
     "qty": 1
    },
    {
@@ -782,10 +718,6 @@ RB.deckData = [
    {
     "id": "sfd-021",
     "qty": 2
-   },
-   {
-    "id": "ogn-192",
-    "qty": 1
    }
   ]
  },
@@ -875,7 +807,7 @@ RB.deckData = [
    },
    {
     "id": "sfd-145",
-    "qty": 1
+    "qty": 2
    },
    {
     "id": "unl-042",
@@ -883,15 +815,11 @@ RB.deckData = [
    },
    {
     "id": "unl-128",
-    "qty": 2
+    "qty": 3
    },
    {
     "id": "unl-044",
     "qty": 2
-   },
-   {
-    "id": "sfd-145",
-    "qty": 1
    },
    {
     "id": "unl-041",
@@ -900,10 +828,6 @@ RB.deckData = [
    {
     "id": "sfd-032",
     "qty": 2
-   },
-   {
-    "id": "unl-128",
-    "qty": 1
    }
   ]
  },
@@ -965,7 +889,7 @@ RB.deckData = [
    },
    {
     "id": "ogn-043",
-    "qty": 1
+    "qty": 3
    },
    {
     "id": "ogn-045",
@@ -993,7 +917,7 @@ RB.deckData = [
    },
    {
     "id": "ogn-224",
-    "qty": 2
+    "qty": 3
    },
    {
     "id": "sfd-154",
@@ -1004,15 +928,7 @@ RB.deckData = [
     "qty": 3
    },
    {
-    "id": "ogn-043",
-    "qty": 2
-   },
-   {
     "id": "sfd-045",
-    "qty": 1
-   },
-   {
-    "id": "ogn-224",
     "qty": 1
    },
    {
@@ -1068,7 +984,7 @@ RB.deckData = [
   "main": [
    {
     "id": "ogn-192",
-    "qty": 1
+    "qty": 2
    },
    {
     "id": "unl-118",
@@ -1080,7 +996,7 @@ RB.deckData = [
    },
    {
     "id": "ogn-181",
-    "qty": 1
+    "qty": 2
    },
    {
     "id": "ogn-186",
@@ -1139,19 +1055,11 @@ RB.deckData = [
     "qty": 1
    },
    {
-    "id": "ogn-181",
-    "qty": 1
-   },
-   {
     "id": "sfd-109",
     "qty": 2
    },
    {
     "id": "ogs-010",
-    "qty": 1
-   },
-   {
-    "id": "ogn-192",
     "qty": 1
    }
   ]
@@ -1238,7 +1146,7 @@ RB.deckData = [
    },
    {
     "id": "unl-131",
-    "qty": 1
+    "qty": 2
    },
    {
     "id": "ogs-011",
@@ -1250,14 +1158,10 @@ RB.deckData = [
    },
    {
     "id": "unl-128",
-    "qty": 2
+    "qty": 3
    },
    {
     "id": "sfd-135",
-    "qty": 1
-   },
-   {
-    "id": "unl-131",
     "qty": 1
    },
    {
@@ -1270,10 +1174,6 @@ RB.deckData = [
    },
    {
     "id": "sfd-145",
-    "qty": 1
-   },
-   {
-    "id": "unl-128",
     "qty": 1
    },
    {

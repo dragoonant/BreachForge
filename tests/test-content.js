@@ -59,7 +59,16 @@ export function run(t) {
       if (runes !== 12) bad.push(d.id + ': ' + runes + ' runes');
       const bf = d.battlefields.reduce((n, e) => n + e.qty, 0);
       if (bf !== 3) bad.push(d.id + ': ' + bf + ' battlefields');
-      for (const e of d.main) if (e.qty > 3) bad.push(d.id + ': ' + e.id + ' x' + e.qty);
+      // The copy limit is measured on the TOTAL for a card, not per list entry: a deck
+      // that lists the same id twice must not slip past by being under three each time.
+      const total = {};
+      for (const e of d.main) total[e.id] = (total[e.id] || 0) + e.qty;
+      for (const k of Object.keys(total)) if (total[k] > 3) bad.push(d.id + ': ' + k + ' x' + total[k]);
+      const seen = new Set();
+      for (const e of d.main) {
+        if (seen.has(e.id)) bad.push(d.id + ': ' + e.id + ' listed twice');
+        seen.add(e.id);
+      }
     }
     t.eq(bad.length, 0, bad.join('; '));
   });

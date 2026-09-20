@@ -60,7 +60,10 @@
     for (const d of RB.deckData) {
       const n = d.main.reduce((s, e) => s + e.qty, 0);
       if (n < 1) problems.push(d.id + ': empty main deck');
-      for (const e of d.main) if (e.qty > 3) problems.push(d.id + ': ' + e.id + ' x' + e.qty + ' exceeds the copy limit');
+      const total = {};
+      for (const e of d.main) total[e.id] = (total[e.id] || 0) + e.qty;
+      for (const k of Object.keys(total))
+        if (total[k] > 3) problems.push(d.id + ': ' + k + ' x' + total[k] + ' exceeds the copy limit');
     }
     return problems;
   };
