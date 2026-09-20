@@ -38,6 +38,19 @@
     }
     let universal = P.pool.any || 0;
     for (const opts of need) {
+      // Restricted POWER first, for the same reason restricted Energy goes first: it can
+      // buy nothing else. "[Add] [C], use only to play spells" is Power of the card's own
+      // domain, not Energy, and a tagged bucket that only held Energy made that card
+      // unsayable rather than merely restricted.
+      const tp = (P.pool.tagged || []).findIndex(t =>
+        t.power && t.n > 0 && RB.taggedApplies(t, cost) &&
+        (!t.domain || opts.includes(t.domain)));
+      if (tp >= 0) {
+        P.pool.tagged[tp].n--;                       // reserved on the probe, restored below
+        plan.fromPool.taggedPower = plan.fromPool.taggedPower || [];
+        plan.fromPool.taggedPower.push(tp);
+        continue;
+      }
       let d = opts.find(x => pool.power[x] > 0);
       if (d) { pool.power[d]--; plan.fromPool.power.push(d); continue; }
       // Universal Power pays any domain requirement (rules §165.3), and is spent only
@@ -48,6 +61,9 @@
       plan.recycle.push(ready[idx].iid);
       ready.splice(idx, 1);
     }
+    // planPayment is a PROBE — canPay calls it without paying — so anything it reserved
+    // on the real pool while solving must be put back before it returns.
+    for (const ix of plan.fromPool.taggedPower || []) P.pool.tagged[ix].n++;
     let e = cost.energy;
     // Restricted Energy is spent FIRST, because it is the resource that expires or that
     // nothing else can use — spending general Energy while a restricted pool sits unusable
@@ -58,7 +74,7 @@
     plan.fromPool.tagged = [];
     for (let ti = 0; ti < (P.pool.tagged || []).length; ti++) {
       const t = P.pool.tagged[ti];
-      if (!t.n || !RB.taggedApplies(t, cost)) continue;
+      if (t.power || !t.n || !RB.taggedApplies(t, cost)) continue;
       const use = Math.min(e, t.n);
       if (!use) continue;
       plan.fromPool.tagged.push({ ix: ti, n: use });
@@ -99,6 +115,19 @@
     const ab = RB.cardOf(state, iid).abilities || {};
     const all = (ab.additionalCosts || []).concat(
       RB.grantedExtras(state, RB.obj(state, iid).controller, iid, fromZone));
+    // `extraCombinations` mints x1, x2, … for an X cost's amounts, so this has to resolve
+    // them — a card printing one `x: true` entry has no entry called `x3`, and the first
+    // affordable amount threw, which meant an X-cost card could not be offered at all.
+    // Whoever mints an id owns resolving it.
+    const xm = /^x(\d+)$/.exec(id);
+    if (xm) {
+      const base = all.find(c => c.x);
+      if (!base) throw new Error(RB.cardOf(state, iid).id + ' has no X cost for ' + id);
+      const n = +xm[1];
+      return { id: id, x: true, amount: n, optional: true,
+        energy: (base.energyEach || 0) * n, power: (base.powerEach || 1) * n,
+        domains: base.domains, effects: base.effects };
+    }
     const x = all.find(c => c.id === id);
     if (!x) throw new Error(RB.cardOf(state, iid).id + ' has no additional cost ' + id +
       (fromZone ? ' from ' + fromZone : ' (no zone given — the caller must thread it)'));
@@ -245,6 +274,7 @@
     P.pool.energy -= plan.fromPool.energy;
     P.pool.showdownOnly -= (plan.fromPool.showdownOnly || 0);
     for (const t of plan.fromPool.tagged || []) P.pool.tagged[t.ix].n -= t.n;
+    for (const ix of plan.fromPool.taggedPower || []) P.pool.tagged[ix].n--;
     for (const d of plan.fromPool.power) { if (d === 'any') P.pool.any--; else P.pool.power[d]--; }
     for (const iid of plan.exhaust) {
       RB.obj(state, iid).exhausted = true;

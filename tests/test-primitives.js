@@ -491,6 +491,54 @@ export function run(t) {
     gc.abilities = saved;
   });
 
+  t.test('an X cost offers every affordable amount, and each one is priced and paid', () => {
+    const s = game();
+    const p = s.active;
+    const spell = RB.allCards().find(c => c.type === 'Spell');
+    const saved = RB.card(spell.id).abilities;
+    RB.card(spell.id).abilities = {
+      additionalCosts: [{ id: 'X', x: true, powerEach: 1 }],
+      effects: [{ op: 'damageX', target: { pick: 'enemyUnits', n: 1 } }],
+    };
+    const iid = RB.mint(s, spell.id, p);
+    s.players[p].hand.push(iid);
+    s.players[p].runes = []; s.players[p].pool.energy = 99; s.players[p].pool.any = 3;
+    const victim = put(s, RB.opponentOf(p), 0);
+    try {
+      // The lookup for a minted xN id must resolve: this threw before, while the action
+      // list was being built, so an X-cost card could not be offered at all.
+      let acts;
+      try { acts = RB.legalActions(s).filter(a => a.t === 'play' && a.iid === iid); }
+      catch (e) { throw new Error('legalActions threw on an X cost: ' + e.message); }
+      const amounts = acts.filter(a => a.pay).map(a => a.pay.find(x => /^x\d+$/.test(x)));
+      t.ok(amounts.includes('x1') && amounts.includes('x3'), 'every affordable amount offered');
+      t.ok(!amounts.includes('x4'), 'and nothing beyond what can be paid: ' + amounts.join(','));
+      const three = acts.find(a => a.pay && a.pay.includes('x3'));
+      const after = RB.apply(s, three);
+      let st = after;
+      for (let g = 0; g < 6 && st.chain.length; g++) st = RB.apply(st, { t: 'pass' });
+      t.eq(st.players[p].pool.any, 0, 'three Power were charged');
+      t.eq(RB.obj(st, victim).damage, 3, 'and X damage was dealt');
+    } finally { RB.card(spell.id).abilities = saved; }
+  });
+
+  t.test('restricted POWER is a different bucket from restricted Energy, and both are honoured', () => {
+    const s = game();
+    const p = s.active;
+    const src = put(s, p, 'base');
+    const domain = RB.cardOf(s, src).domain;
+    s.players[p].runes = []; s.players[p].pool.energy = 0; s.players[p].pool.any = 0;
+    RB.runEffects(s, [{ op: 'addRestrictedPower', n: 1, only: 'Spell' }], { p: p, source: src });
+    const spellCost = { energy: 0, power: 1, domains: [domain], each: false, forType: 'Spell' };
+    const unitCost = { energy: 0, power: 1, domains: [domain], each: false, forType: 'Unit' };
+    t.ok(RB.canPay(s, p, spellCost), 'a spell can spend it');
+    t.ok(!RB.canPay(s, p, unitCost), 'a unit cannot');
+    // canPay is a probe and must leave the pool exactly as it found it.
+    t.eq(s.players[p].pool.tagged[0].n, 1, 'probing did not consume it');
+    RB.pay(s, p, RB.planPayment(s, p, spellCost));
+    t.eq(s.players[p].pool.tagged[0].n, 0, 'paying did');
+  });
+
   // --- targeting -------------------------------------------------------------
   t.test('a human seat is ASKED to target, and the answer is what the effect uses', () => {
     let s = RB.newGame({ seed: 'ask', decks: [decks[0], decks[1]], humanSeat: 0 });

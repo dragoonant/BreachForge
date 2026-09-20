@@ -79,6 +79,9 @@
   RB.defineDescriber('withTag', e => lower((e.effects || []).map(line).join(' ')));                         // ops.withTag
   RB.defineDescriber('addRestrictedEnergy', e => 'Add ' + n(e) + ' Energy, spendable only to play ' +
     (e.only ? e.only.toLowerCase() + 's' : 'certain cards') + '.');                                         // ops.addRestrictedEnergy
+  RB.defineDescriber('addRestrictedPower', e => 'Add ' + n(e) + ' ' +
+    (e.domain ? e.domain + ' ' : '') + 'Power, spendable only to play ' +
+    (e.only ? e.only.toLowerCase() + 's' : 'certain cards') + '.');                                         // ops.addRestrictedPower
   RB.defineDescriber('extraTurn', e => 'Take a turn after this one' +
     (e.opponent ? ', for your opponent' : '') + '.');                                                       // ops.extraTurn
   RB.defineDescriber('perX', e => 'For each X paid, ' + lower((e.effects || []).map(line).join(' ')));      // ops.perX
@@ -209,6 +212,7 @@
   // which is the auditor going blind exactly where the continuous layer does its work.
   const AMOUNT = { points: 'your points', xp: 'your XP', counters: 'its counters' };
   const FLAG = {
+    bonusDamage: 'take 1 extra damage from spells and abilities',
     noCombatDamage: 'deal no combat damage',
     anyDamageKills: 'die to any amount of your damage',
     untargetableByEnemies: "can't be chosen by enemy spells and abilities",
@@ -276,7 +280,7 @@
       const fn = EXTRA_TEXT[x.pays];
       bits.push(fn ? fn(x) : x.pays.replace(/([A-Z])/g, ' $1').toLowerCase().trim());
     }
-    if (x.x) bits.push('any amount of Power');
+    if (x.x) bits.push('any amount of ' + (x.energyEach ? 'Energy' : 'Power'));
     let out = bits.join(' and ') || 'nothing';
     for (const k of Object.keys(EXTRA_NOTE)) if (x[k]) out += ' — ' + EXTRA_NOTE[k](x);
     return out;

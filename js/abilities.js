@@ -472,6 +472,17 @@
 
   // "Add [N], use only to <something>." Its own bucket, because one untagged pool makes
   // a restricted resource strictly better than the printed card.
+  RB.defineOp('addRestrictedPower', (s, e, ctx) => {
+    const P = s.players[ctx.p];
+    P.pool.tagged = P.pool.tagged || [];
+    // Power of the card's own domain unless one is named; `only` is what it may buy.
+    const domain = e.domain || RB.cardOf(s, ctx.source).domain;
+    const found = P.pool.tagged.find(t => t.power && t.only === e.only && t.domain === domain);
+    if (found) found.n += (e.n || 1);
+    else P.pool.tagged.push({ n: e.n || 1, only: e.only, power: true, domain: domain });
+    RB.log(s, 'addRestricted', { p: ctx.p, n: e.n || 1, only: e.only, domain: domain });
+  });
+
   RB.defineOp('addRestrictedEnergy', (s, e, ctx) => {
     const P = s.players[ctx.p];
     P.pool.tagged = P.pool.tagged || [];
