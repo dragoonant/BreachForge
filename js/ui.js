@@ -11,6 +11,13 @@
   U.me = 0;
   U.difficulty = 'normal';
 
+  // A standard move carries a SET of units (rule 144.4); every other action names one card
+  // in `iid`. Until the board offers multi-select, the human's affordances bind only the
+  // one-unit groups, so a click on a unit still means "move this one".
+  U.actsOn = function (a, iid) {
+    return a.t === 'move' ? (a.iids.length === 1 && a.iids[0] === iid) : a.iid === iid;
+  };
+
   RB.startGame = function (state, me, difficulty) {
     state.humanSeat = me;                 // from here the engine asks this seat to choose
     U.state = state; U.me = me; U.difficulty = difficulty || 'normal'; U.sel = null;
@@ -145,7 +152,7 @@
       return;
     }
     const acts = RB.legalActions(state);
-    const mine = acts.filter(a => a.iid === iid &&
+    const mine = acts.filter(a => U.actsOn(a, iid) &&
       (a.t === 'play' || a.t === 'move' || a.t === 'activate' || a.t === 'hide'));
     if (!mine.length) return;
     // Four states, four colours, and that is the whole targeting vocabulary.
@@ -176,11 +183,11 @@
     box.addEventListener('click', () => {
       if (!U.sel) return;
       const to = box.dataset.drop;
-      const a = RB.legalActions(state).find(x => x.iid === U.sel && x.to === to);
+      const a = RB.legalActions(state).find(x => U.actsOn(x, U.sel) && x.to === to);
       if (!a) { RB.audio.play('ui.invalid'); return; }
       RB.commit(a);
     });
-    if (U.sel && RB.legalActions(state).some(x => x.iid === U.sel && x.to === box.dataset.drop))
+    if (U.sel && RB.legalActions(state).some(x => U.actsOn(x, U.sel) && x.to === box.dataset.drop))
       box.classList.add('dropok');
     void me;
   };
@@ -263,8 +270,8 @@
       return;
     }
     if (U.sel) {
-      const dests = acts.filter(a => a.iid === U.sel && (a.t === 'play' || a.t === 'move'));
-      const hides = acts.filter(a => a.iid === U.sel && a.t === 'hide');
+      const dests = acts.filter(a => U.actsOn(a, U.sel) && (a.t === 'play' || a.t === 'move'));
+      const hides = acts.filter(a => U.actsOn(a, U.sel) && a.t === 'hide');
       say('<b>' + RB.cardOf(state, U.sel).name + '</b> selected — ' +
         (dests.length ? 'click a highlighted destination.'
                       : '<span style="color:#ff9a8a">no legal destination.</span>'));
@@ -282,7 +289,7 @@
     const playIids = new Set(acts.filter(a => a.t === 'play').map(a => a.iid));
     const champReady = state.players[me].champion && playIids.has(state.players[me].champion);
     const plays = [...playIids].filter(i => i !== state.players[me].champion).length;
-    const moves = new Set(acts.filter(a => a.t === 'move').map(a => a.iid)).size;
+    const moves = new Set(acts.filter(a => a.t === 'move').flatMap(a => a.iids)).size;
     const canHide = new Set(acts.filter(a => a.t === 'hide').map(a => a.iid)).size;
     const held = state.players[me].hand.length;
     say('Your main phase — <b>' + plays + '</b> of ' + held + ' card' + (held === 1 ? '' : 's') +
@@ -323,7 +330,18 @@
       switch (e.kind) {
         case 'turnStart': t = '— ' + (d.p === me ? 'Your turn' : 'Their turn') + ' ' + d.turn + ' —'; break;
         case 'play': t = you(d.p) + ' played <b>' + nm(d.iid) + '</b>'; break;
-        case 'move': t = you(d.p) + ' moved <b>' + nm(d.iid) + '</b>'; break;
+        // A standard move carries a set; an ability that relocates a unit logs a single
+        // `iid`. Both read as one sentence, and the destination is named because a group
+        // arriving somewhere is the sentence that explains the showdown on the next line.
+        case 'move': {
+          const names = (d.iids || [d.iid]).map(i => '<b>' + nm(i) + '</b>');
+          const list = names.length === 1 ? names[0]
+            : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+          t = you(d.p) + ' moved ' + list + ' to ' +
+            (d.to === 'base' ? (d.p === me ? 'your base' : 'their base')
+                             : '<b>' + RB.card(state.bf[+d.to.slice(2)].cardId).name + '</b>');
+          break;
+        }
         case 'showdownOpen': t = 'Showdown at <b>' + RB.card(state.bf[d.bf].cardId).name + '</b>'; break;
         case 'combatDamage': t = 'Might ' + d.attackerMight + ' vs ' + d.defenderMight; break;
         case 'die': t = '<b>' + nm(d.iid) + '</b> was destroyed'; break;

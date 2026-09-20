@@ -1110,8 +1110,10 @@
 
     // "Units can't move from here to base." A move whose origin forbids it is not a legal
     // action rather than one that fails on arrival.
+    // A standard move carries a SET of units, so the group is illegal if ANY member of it
+    // is forbidden to retreat — one pinned unit cannot be smuggled out inside a stack.
     if (acts.some(a => a.t === 'move'))
-      acts = acts.filter(a => !(a.t === 'move' && a.to === 'base' && noRetreat(s, a.iid)));
+      acts = acts.filter(a => !(a.t === 'move' && a.to === 'base' && a.iids.some(i => noRetreat(s, i))));
 
     // "Friendly units may be played to open battlefields." A permission granted from the
     // board, which playDestinations cannot read: it sees only the played card's own

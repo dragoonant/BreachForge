@@ -245,21 +245,86 @@
     return ['-'];   // spells: targets are chosen by the resolution queue
   }
 
-  function moveActions(state, p) {
+  // The Standard Move is an inherent ability of every UNIT (rule 144.4) — unattached Gear
+  // sitting in a base has no legs. It was offered one for as long as this function read the
+  // base as a flat list of movable things; nineteen Gear cards could walk onto a battlefield
+  // and be recalled again by the next cleanup.
+  function canStandardMove(state, p, iid) {
+    const o = RB.obj(state, iid);
+    if (RB.cardOf(state, iid).type !== 'Unit') return false;
+    return !o.exhausted && !o.cantMove;
+  }
+
+  // Which destinations may this one unit reach? Rule 144.4: Base -> a Battlefield, or
+  // Battlefield -> your Base; Ganking adds Battlefield -> Battlefield.
+  function moveDestinations(state, p, iid) {
     const out = [];
-    for (const iid of state.players[p].base) {
-      if (RB.obj(state, iid).exhausted || RB.obj(state, iid).cantMove) continue;
-      for (let i = 0; i < state.bf.length; i++) out.push({ t: 'move', iid: iid, to: 'bf' + i });
-    }
-    for (let i = 0; i < state.bf.length; i++) {
-      for (const iid of RB.unitsAt(state, i, p)) {
-        if (RB.obj(state, iid).exhausted || RB.obj(state, iid).cantMove) continue;
-        if (!RB.obj(state, iid).noMoveToBase) out.push({ t: 'move', iid: iid, to: 'base' });
-        if (RB.hasKeyword(state, iid, 'Ganking') || RB.bfGrantsGanking(state, i))
-          for (let j = 0; j < state.bf.length; j++) if (j !== i) out.push({ t: 'move', iid: iid, to: 'bf' + j });
-      }
+    const from = RB.locationOf(state, iid);
+    if (from.kind === 'base') {
+      for (let i = 0; i < state.bf.length; i++) out.push('bf' + i);
+    } else if (from.kind === 'bf') {
+      if (!RB.obj(state, iid).noMoveToBase) out.push('base');
+      if (RB.hasKeyword(state, iid, 'Ganking') || RB.bfGrantsGanking(state, from.bf))
+        for (let j = 0; j < state.bf.length; j++) if (j !== from.bf) out.push('bf' + j);
     }
     return out;
+  }
+
+  // Rule 144.4: "Multiple units may standard-move SIMULTANEOUSLY as one game action: same
+  // destination required, origins may differ, exhaust costs paid simultaneously." So the
+  // action is a SET of units, and the action space is every non-empty subset that shares a
+  // destination — not one action per unit.
+  //
+  // This is not a nicety. A move completes, a cleanup runs, and a staged showdown opens
+  // immediately (cleanup step 8). A unit sent alone into a defended battlefield is therefore
+  // locked into its showdown before a second unit could ever follow it, and attacking into
+  // anything held is unwinnable by construction. The simultaneous move is the only way the
+  // printed rules let you commit a force.
+  //
+  // The powerset is affordable because Might arrives exhausted and moving exhausts: across
+  // 3,236 sampled main phases the most units ever ready at once was five, for 31 subsets.
+  // MAX_GROUP bounds the pathological tail; see D-3 in DEVIATIONS.md.
+  const MAX_GROUP = 10;
+
+  function moveActions(state, p) {
+    const out = [];
+    const able = [];
+    for (const iid of state.players[p].base) if (canStandardMove(state, p, iid)) able.push(iid);
+    for (let i = 0; i < state.bf.length; i++)
+      for (const iid of RB.unitsAt(state, i, p)) if (canStandardMove(state, p, iid)) able.push(iid);
+
+    const dests = [];
+    for (let i = 0; i < state.bf.length; i++) dests.push('bf' + i);
+    dests.push('base');
+
+    for (const to of dests) {
+      const movers = able.filter(iid => moveDestinations(state, p, iid).includes(to));
+      for (const set of groupsOf(state, movers)) out.push({ t: 'move', iids: set, to: to });
+    }
+    return out;
+  }
+
+  // Every non-empty subset, smallest first so that the singletons — the only shape the UI
+  // binds today — stay at the front of the list.
+  function groupsOf(state, movers) {
+    const out = [];
+    if (!movers.length) return out;
+    if (movers.length > MAX_GROUP) {
+      // D-3: beyond the bound the powerset is abandoned for the sets a player would
+      // actually weigh — each unit alone, and the heaviest N for every N.
+      const ladder = movers.slice().sort((a, b) => RB.mightOf(state, b) - RB.mightOf(state, a));
+      for (const iid of movers) out.push([iid]);
+      for (let n = 2; n <= ladder.length; n++) out.push(ladder.slice(0, n));
+      return out;
+    }
+    const all = [];
+    for (let mask = 1; mask < (1 << movers.length); mask++) {
+      const set = [];
+      for (let b = 0; b < movers.length; b++) if (mask & (1 << b)) set.push(movers[b]);
+      all.push(set);
+    }
+    all.sort((a, b) => a.length - b.length);
+    return all;
   }
   // Where may this card be played, beyond your base? One predicate per printed phrase.
   const PLAY_WHERE = {
@@ -473,23 +538,34 @@
       : card.type === 'Gear' ? 'gear.equip' : 'card.play';
   }
 
+  // One game action, however many units it carries. The three phases below are the whole
+  // of "simultaneously" (rule 144.4): every cost is paid, then every unit arrives, and only
+  // then does anything get to react. Contested is applied once, after the last arrival, so
+  // the showdown that cleanup stages is against the whole group — resolving each unit in
+  // turn would open a showdown on the first one and strand the rest in the base.
   function doMove(s, p, a) {
-    const iid = a.iid;
-    RB.obj(s, iid).exhausted = true;                // exhausting is the cost. Rule 1525.
-    const from = RB.locationOf(s, iid);
-    if (from.kind === 'base') RB.removeFrom(s.players[p].base, iid);
-    else if (from.kind === 'bf') RB.removeFrom(s.bf[from.bf].units, iid);
-    if (a.to === 'base') s.players[p].base.push(iid);
-    else {
-      const i = +a.to.slice(2);
-      s.bf[i].units.push(iid);
-      RB.obj(s, iid).movedThisTurn++;
-      applyContested(s, i, p);
+    const iids = a.iids;
+    const froms = iids.map(iid => RB.locationOf(s, iid));
+
+    for (const iid of iids) RB.obj(s, iid).exhausted = true;   // exhausting is the cost. Rule 1525.
+
+    for (let k = 0; k < iids.length; k++) {
+      const iid = iids[k], from = froms[k];
+      if (from.kind === 'base') RB.removeFrom(s.players[p].base, iid);
+      else if (from.kind === 'bf') RB.removeFrom(s.bf[from.bf].units, iid);
+      if (a.to === 'base') s.players[p].base.push(iid);
+      else {
+        s.bf[+a.to.slice(2)].units.push(iid);
+        RB.obj(s, iid).movedThisTurn++;
+      }
     }
-    RB.log(s, 'move', { p: p, iid: iid, to: a.to }, 'unit.move');
-    RB.runTriggers(s, 'moved', { p: p, iid: iid,
-      bf: a.to === 'base' ? undefined : +a.to.slice(2),
-      fromBf: from.kind === 'bf' ? from.bf : undefined });
+    if (a.to !== 'base') applyContested(s, +a.to.slice(2), p);
+
+    RB.log(s, 'move', { p: p, iids: iids, to: a.to }, 'unit.move');
+    for (let k = 0; k < iids.length; k++)
+      RB.runTriggers(s, 'moved', { p: p, iid: iids[k],
+        bf: a.to === 'base' ? undefined : +a.to.slice(2),
+        fromBf: froms[k].kind === 'bf' ? froms[k].bf : undefined });
   }
 
   // Contested is applied when a unit of a player who does not control the battlefield

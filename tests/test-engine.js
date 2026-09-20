@@ -67,7 +67,7 @@ export function run(t) {
     s = RB.apply(s, { t: 'endTurn' });
     s = RB.apply(s, { t: 'endTurn' });        // back to the same player, unit readied
     t.ok(!RB.obj(s, play.iid).exhausted, 'awaken readies it');
-    const mv = RB.legalActions(s).find(a => a.t === 'move' && a.iid === play.iid);
+    const mv = RB.legalActions(s).find(a => a.t === 'move' && a.iids.includes(play.iid));
     if (!mv) return;
     t.ok(RB.obj(RB.apply(s, mv), play.iid).exhausted, 'moving exhausts it');
   });
@@ -99,6 +99,74 @@ export function run(t) {
     const i = +mv.to.slice(2);
     t.eq(after.bf[i].controller, me, 'control established');
     t.ok(after.players[me].points >= 1, 'and the conquer scored');
+  });
+
+  // --- the simultaneous standard move (rule 144.4) --------------------------
+  // A move completes, a cleanup runs, and a staged showdown opens at once. So a unit sent
+  // alone into a defended battlefield fights alone, and committing a force is possible ONLY
+  // through the simultaneous move. These three tests are the rule, not the old behaviour.
+
+  const stack = (t2, n, might, seed) => {
+    const s = game(seed || 'grp');
+    const card = RB.allCards().find(c => c.type === 'Unit');
+    const me = s.active, them = RB.opponentOf(me);
+    const mine = [];
+    for (let i = 0; i < n; i++) {
+      const iid = RB.mint(s, card.id, me);
+      RB.obj(s, iid).buffs = might - card.might;
+      s.players[me].base.push(iid);
+      mine.push(iid);
+    }
+    return { s: s, me: me, them: them, mine: mine, card: card };
+  };
+
+  t.test('several units may standard-move to one destination as a single game action', () => {
+    const g = stack(t, 3, 2);
+    const acts = RB.legalActions(g.s).filter(a => a.t === 'move' && a.to === 'bf0');
+    t.ok(acts.some(a => a.iids.length === 3), 'the whole group is offered');
+    t.ok(acts.some(a => a.iids.length === 2), 'and every pair');
+    t.eq(acts.length, 7, 'every non-empty subset of three units — 2^3 - 1');
+  });
+
+  t.test('a simultaneous move exhausts every unit in the group and arrives together', () => {
+    const g = stack(t, 3, 2);
+    const mv = RB.legalActions(g.s).find(a => a.t === 'move' && a.to === 'bf0' && a.iids.length === 3);
+    const after = RB.apply(g.s, mv);
+    for (const iid of g.mine) t.ok(RB.obj(after, iid).exhausted, 'exhausting is the cost, paid by each');
+    t.eq(RB.unitsAt(after, 0, g.me).length, 3, 'all three are standing on the battlefield');
+  });
+
+  t.test('a group takes a defended battlefield that its units would lose one at a time', () => {
+    // THE reported defect: three 2-might units fed in singly are three dead units and no
+    // battlefield; sent together they are 6 Might against 5 and the field changes hands.
+    const g = stack(t, 3, 2, 'defended');
+    const big = RB.allCards().find(c => c.type === 'Unit');
+    const def = RB.mint(g.s, big.id, g.them);
+    RB.obj(g.s, def).buffs = 5 - big.might;          // a 5-might defender
+    g.s.bf[0].units.push(def);
+    g.s.bf[0].controller = g.them;
+
+    const settle = st => { let n = 0; while (st.showdown && n++ < 8) st = RB.apply(st, { t: 'pass' }); return st; };
+
+    const solo = RB.legalActions(g.s).find(a => a.t === 'move' && a.to === 'bf0' && a.iids.length === 1);
+    const afterSolo = settle(RB.apply(g.s, solo));
+    t.eq(afterSolo.bf[0].controller, g.them, 'one unit alone does not take it');
+
+    const group = RB.legalActions(g.s).find(a => a.t === 'move' && a.to === 'bf0' && a.iids.length === 3);
+    const afterGroup = settle(RB.apply(g.s, group));
+    t.eq(afterGroup.bf[0].controller, g.me, 'the same three units together take it');
+  });
+
+  t.test('the standard move is an inherent ability of units — Gear in a base has no legs', () => {
+    // Rule 144.4. Nineteen Gear cards were being offered a move for as long as the base was
+    // read as a flat list of movable things.
+    const s = game('gear');
+    const gear = RB.allCards().find(c => c.type === 'Gear');
+    if (!gear) return;
+    const iid = RB.mint(s, gear.id, s.active);
+    s.players[s.active].base.push(iid);
+    t.ok(!RB.legalActions(s).some(a => a.t === 'move' && a.iids.includes(iid)),
+      'gear is offered no standard move');
   });
 
   t.test('a unit is played to your base unless it has Ambush or a card says otherwise', () => {

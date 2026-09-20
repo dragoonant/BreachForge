@@ -109,3 +109,14 @@ with a champion of the legend's own name in the deck's domains (`unl-172`, `unl-
 deckbuilding decision and this is a guess at it.
 *Fix:* a decklist source that records the Champion Zone.
 Owner: unassigned.
+
+**D-12 — The simultaneous standard move is bounded at ten units.**
+Rule 144.4 lets any number of units standard-move as one action, so the legal action space is
+every non-empty subset of the units sharing a destination. `moveActions` generates that powerset
+exactly, up to `MAX_GROUP = 10` movers per destination. Beyond it the powerset is abandoned for
+the sets a player would actually weigh — each unit alone, and the heaviest N for every N — which
+is a real, if unlikely, loss of legal actions. The bound is far outside anything observed: across
+3,236 sampled main phases the most units ever ready at once was five, and 1v1 has only two
+battlefields, so the worst case measured is 31 subsets per destination against a ceiling of 1,023.
+*Fix:* generate the subsets lazily, so the bound can be removed without the action list growing.
+Owner: unassigned.
