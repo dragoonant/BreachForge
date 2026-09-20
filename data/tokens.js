@@ -25,7 +25,14 @@ RB.tokenData = [
 ];
 RB.tokenAbilities = {
   'tok-sand-soldier': { vanilla: true },
-  'tok-gold': { vanilla: true },
+  // Gold's printed ability: "Kill this, [E]: Add [A]." Six Spiritforged cards make one,
+  // and a Gold that produces nothing is an inert token wearing a resource's name.
+  'tok-gold': {
+    activated: [{
+      energy: 0, power: 0, exhaustSelf: true, killSelf: true, tags: ['Reaction'],
+      effects: [{ op: 'addPower', domain: 'any', n: 1 }],
+    }],
+  },
   'tok-reflection': { vanilla: true },
   'tok-bird': { vanilla: true },
   'tok-sprite': { vanilla: true },

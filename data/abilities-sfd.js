@@ -1,8 +1,10 @@
 // Spiritforged (sfd) ability data. Keyed by card id; the shape is docs/grammar.md. The ops
 // and hooks this pack leans on that the core does not ship live in js/ops-sfd.js, which is
 // loaded first. A card whose printed text this grammar cannot say exactly carries
-// `unimplemented` and is rejected from any registered deck — deliberately, because a card
-// that plays with a clause missing is the wrong card.
+// `unimplemented`, naming the clause that is missing: it then plays as its printed body
+// and is MARKED as partial on its own face (js/cards.js RB.isPartial). Half-authoring a
+// card instead — dropping the clause and shipping the rest unmarked — is the defect this
+// marker exists to prevent.
 //
 // Two conventions used throughout:
 //   * `sfdTriggers` are the set-local events js/ops-sfd.js broadcasts (death, anyDeath,
@@ -37,11 +39,7 @@
     },
 
     'sfd-025': {
-      unimplemented: "Rengar's \"I can be played to a battlefield you're attacking\" is a " +
-        'play-destination permission, and destinations are decided by the core engine: the only ' +
-        "lever the grammar has is playTo: 'battlefield', which offers every battlefield (too many) " +
-        'and forbids the base (too few). The permission cannot be widened to an attacked ' +
-        'battlefield nor narrowed to one, so Assault 2 and Reaction are held back with it.',
+      unimplemented: '"I can be played to a battlefield you\'re attacking" is a play-location permission, and the only lever the grammar has is playTo:\'battlefield\', which offers EVERY battlefield and takes the base away — a blanket where the card is narrow.',
     },
 
     // ---------------------------------------------------------------- Calm
@@ -78,10 +76,7 @@
     },
 
     'sfd-045': {
-      unimplemented: 'Counter an enemy spell or ability that chooses a friendly unit or gear. ' +
-        'Countering is the chain\'s own internals — a chain item cannot be negated through the ' +
-        'grammar — and nothing records which objects a pending item chose, so the condition ' +
-        'cannot be tested either.',
+      unimplemented: 'Counters an enemy spell or ability conditioned on what it chose: the chain\'s internals are not reachable from an op, and nothing records the objects a pending item picked.',
     },
 
     // "When I move, draw 1."
@@ -104,9 +99,7 @@
     },
 
     'sfd-070': {
-      unimplemented: 'Hidden. There is no facedown space at a battlefield and no way to play a ' +
-        'card from one, so the whole first line would have to be dropped; the engine has no ' +
-        'hidden-card concept to extend.',
+      unimplemented: '[Hidden]: there is no facedown space at a battlefield and no way to play a card from one, so the card\'s first line has no shape in the grammar.',
     },
 
     // ---------------------------------------------------------------- Body
@@ -122,18 +115,12 @@
     },
 
     'sfd-109': {
-      unimplemented: 'Akshan needs three things the engine does not have: Weaponmaster (attach an ' +
-        'Equipment by paying its Equip cost as a play effect), an optional additional cost paid ' +
-        'while playing, and taking control of an enemy gear until this unit leaves the board — a ' +
-        'duration-scoped control change with no home in the state.',
+      unimplemented: '[Weaponmaster], an optional additional cost paid while playing, and taking control of an enemy gear until I leave the board — three concepts the engine does not have.',
     },
 
     // ---------------------------------------------------------------- Chaos
     'sfd-128': {
-      unimplemented: 'A Defend trigger. Showdowns are opened inside the engine\'s closure (the ' +
-        'exported RB.openShowdown is not the one cleanup calls), so the moment a unit gains the ' +
-        'Defender designation cannot be observed; killing me as a cost and recalling an attacker ' +
-        'would both be reachable, the trigger is not.',
+      unimplemented: 'Triggers when I become a defender; showdowns open inside js/engine.js\'s own closure and run no triggers, so the event never reaches ability data.',
     },
 
     // "When I move, play a Gold gear token exhausted."
@@ -153,33 +140,23 @@
     },
 
     'sfd-136': {
-      unimplemented: 'Counter a spell unless its controller pays [2], plus [Repeat]. Countering a ' +
-        'chain item and offering its controller a ransom are both chain internals, and the ' +
-        'ransom has no window to be offered in.',
+      unimplemented: 'Counters a spell unless its controller pays [2], plus [Repeat]: the chain\'s internals are not reachable from an op, and there is no window in which to offer the ransom.',
     },
 
     'sfd-140': {
-      unimplemented: 'Play a spell from your trash ignoring its Energy cost, then recycle it. ' +
-        'Playing runs through the engine\'s own play action from hand only; there is no way for ' +
-        'ability data to start a play from another zone, let alone with a modified cost.',
+      unimplemented: 'Plays a spell out of your trash ignoring its Energy cost; playing is a core action from hand only and no op can start one from another zone.',
     },
 
     'sfd-145': {
-      unimplemented: 'Hidden, and swapping the Might of two units. Neither exists: there is no ' +
-        'facedown space, and Might is derived on demand from printed value plus buffs, with no ' +
-        'layer that can hold a swapped value for a turn.',
+      unimplemented: '[Hidden] (no facedown space), and swapping two units\' Might — RB.mightOf derives Might on demand, with no layer that can hold a swapped value for a turn.',
     },
 
     'sfd-146': {
-      unimplemented: 'A continuous cost-modification layer ("while I\'m in combat, friendly spells ' +
-        'cost [1][A] less to a minimum of [1], and enemy spells cost [1][A] more"). RB.costOf reads ' +
-        'the printed cost with no modifier layer, and "while I\'m in combat" has no representation.',
+      unimplemented: 'A continuous cost-modification layer over both players\' spells while I am in combat; RB.costOf reads the printed cost and has no modifier layer.',
     },
 
     'sfd-150': {
-      unimplemented: 'The Equip cost includes "Recycle 2 cards from your trash". An activated ' +
-        "ability's cost in this grammar is Energy, Power and exhausting the source; a " +
-        'non-standard cost can neither be checked for legality nor paid.',
+      unimplemented: 'The Equip cost includes recycling 2 cards from your trash; an activated ability\'s cost in this grammar is Energy, Power and exhausting the source, so it can be neither checked nor paid.',
     },
 
     // ---------------------------------------------------------------- Order
@@ -189,8 +166,7 @@
     },
 
     'sfd-154': {
-      unimplemented: 'Hidden. The token and the "you may pay [C] to ready it" follow-up are both ' +
-        'sayable, but the first line is not, and the card is played from the facedown space.',
+      unimplemented: '[Hidden]: there is no facedown space at a battlefield and no way to play a card from one, so the card\'s first line has no shape in the grammar.',
     },
 
     // "[Equip] [C]"
@@ -206,9 +182,7 @@
     },
 
     'sfd-165': {
-      unimplemented: 'Deathknell that plays a unit from your trash ignoring its cost. The death ' +
-        'trigger itself is fine; playing a card out of the trash is not reachable from ability ' +
-        'data, which is also why the cost filter cannot be honoured.',
+      unimplemented: 'Deathknell that plays a unit out of your trash ignoring its cost; playing is a core action from hand only, which is also why the cost filter cannot be honoured.',
     },
 
     // "[Deathknell] — If I was [Mighty], draw 2." Mighty is Might 5 or more.
@@ -237,9 +211,7 @@
     },
 
     'sfd-195': {
-      unimplemented: 'Blade Dancer\'s first line is a Targeting Effect ("when you choose a friendly ' +
-        'unit"). Nothing in the engine announces that a spell or ability chose an object — targets ' +
-        'are resolved inside RB.select at resolution — so the trigger can never fire.',
+      unimplemented: 'First clause is a Targeting Effect ("when you choose a friendly unit"); nothing announces that a spell or ability chose an object, so the trigger can never fire.',
     },
 
     // "Give a unit +2 [S] this turn and another unit -2 [S] this turn."
@@ -252,10 +224,7 @@
     },
 
     'sfd-197': {
-      unimplemented: 'Grants Weaponmaster to your Sand Soldiers — a continuous ability-granting ' +
-        'layer over a tag, which the engine has only for battlefield statics, and Weaponmaster ' +
-        'itself is not implemented. The activated ability is also gated on "if you\'ve played an ' +
-        'Equipment this turn", which nothing tracks.',
+      unimplemented: 'Grants [Weaponmaster] to your Sand Soldiers — a continuous ability-granting layer, which the engine has for battlefield cards only — and the activated ability is gated on having played an Equipment this turn, which nothing tracks.',
     },
 
     // "Play a 2 [M] Sand Soldier unit token for each Equipment you control. Then do this:
@@ -281,14 +250,11 @@
     },
 
     'sfd-205': {
-      unimplemented: '"When one of your units becomes [Mighty]" is a state-change event on a ' +
-        'derived characteristic. Might is computed on demand and nothing records its previous ' +
-        'value, so the moment a unit crosses 5 Might cannot be detected.',
+      unimplemented: 'Triggers when one of your units BECOMES [Mighty]; Might is derived on demand and nothing records its previous value, so the crossing cannot be detected.',
     },
 
     'sfd-206': {
-      unimplemented: 'Counter a spell and buff by that spell\'s Energy cost. Countering is chain ' +
-        'internals; the grammar cannot name a pending chain item, let alone remove it.',
+      unimplemented: 'Counters a spell and buffs by that spell\'s Energy cost — the chain\'s internals are not reachable from an op.',
     },
 
     // ------------------------------------------------------------ Battlefields
@@ -323,9 +289,7 @@
     },
 
     'sfd-215': {
-      unimplemented: 'A Defend trigger (see sfd-128) plus revealing the top of the Main Deck and ' +
-        'sorting it by type. The reveal is expressible; the trigger is not, because showdowns open ' +
-        'inside the engine\'s closure.',
+      unimplemented: 'Triggers when you defend here; showdowns open inside js/engine.js\'s own closure and run no triggers, so the event never reaches ability data.',
     },
 
     // "When you conquer here, draw 1 for each other battlefield you or allies control."
@@ -363,9 +327,7 @@
     },
 
     'sfd-225': {
-      unimplemented: 'Deflect (a mandatory additional Power cost on enemy spells and abilities that ' +
-        'choose me) has no cost layer to live in, and "when you choose or ready me" needs both a ' +
-        'Targeting Effect and a became-ready event, neither of which the engine announces.',
+      unimplemented: '[Deflect] is a mandatory additional Power cost on enemy spells and abilities that choose me, and there is no cost layer for it; "when you choose or ready me" also needs a Targeting Effect and a became-ready event, neither of which the engine announces.',
     },
 
   });

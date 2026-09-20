@@ -36,9 +36,13 @@
       if (cost.each) for (const d of cost.domains) need.push([d]);
       else for (let i = 0; i < cost.power; i++) need.push(cost.domains.slice());
     }
+    let universal = P.pool.any || 0;
     for (const opts of need) {
       let d = opts.find(x => pool.power[x] > 0);
       if (d) { pool.power[d]--; plan.fromPool.power.push(d); continue; }
+      // Universal Power pays any domain requirement (rules §165.3), and is spent only
+      // after matching Power, so it is never wasted on a cost a rune could have covered.
+      if (universal > 0) { universal--; plan.fromPool.power.push('any'); continue; }
       const idx = ready.findIndex(r => opts.includes(r.domain));
       if (idx < 0) return null;
       plan.recycle.push(ready[idx].iid);
@@ -75,7 +79,7 @@
   RB.pay = function (state, p, plan) {
     const P = state.players[p];
     P.pool.energy -= plan.fromPool.energy;
-    for (const d of plan.fromPool.power) P.pool.power[d]--;
+    for (const d of plan.fromPool.power) { if (d === 'any') P.pool.any--; else P.pool.power[d]--; }
     for (const iid of plan.exhaust) {
       RB.obj(state, iid).exhausted = true;
       RB.log(state, 'runeExhaust', { p: p, iid: iid }, 'rune.channel');

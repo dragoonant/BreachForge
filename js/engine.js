@@ -83,6 +83,7 @@
       ab.activated.forEach((a, ix) => {
         if (mode !== 'main' && !(a.tags || []).some(t => t === 'Action' || t === 'Reaction')) return;
         if (a.exhaustSelf && RB.obj(state, iid).exhausted) return;
+        if (a.killSelf && RB.locationOf(state, iid).kind === 'nowhere') return;
         const cost = { energy: a.energy || 0, power: a.power || 0, domains: a.domains || [], each: false };
         if (!RB.canPay(state, p, cost)) return;
         out.push({ t: 'activate', iid: iid, ix: ix });
@@ -242,6 +243,9 @@
     RB.pay(s, p, plan);
     if (ab.exhaustSelf) RB.obj(s, a.iid).exhausted = true;
     RB.log(s, 'activate', { p: p, iid: a.iid, ix: a.ix }, 'legend.activate');
+    // An ability may cost the source's own life ("Kill this, [E]: …"). Killing it is part
+    // of paying, so it happens before the effect, not after.
+    if (ab.killSelf) RB.kill(s, a.iid);
     s.chain.push({ iid: a.iid, controller: p, kind: 'ability', ix: a.ix });
     s.priority = RB.opponentOf(p);
     s.passes = 0;
@@ -318,6 +322,7 @@
     RB.draw(s, p);
     for (let q = 0; q < 2; q++) {
       s.players[q].pool.energy = 0;
+      s.players[q].pool.any = 0;
       for (const d of RB.DOMAINS) s.players[q].pool.power[d] = 0;
     }
     s.phase = 'main';

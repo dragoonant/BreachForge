@@ -1,29 +1,37 @@
 // Ability data for the Unleashed set (43 cards). Keyed by card id; the shape is
 // docs/grammar.md. New ops live in js/ops-unl.js, which loads before this file.
 //
-// Two standing decisions, both taken so a clause is never silently dropped:
+// Three standing decisions, all of them about not dropping a clause quietly:
 //
-//  * KEYWORDS ARE DECLARED, NOT EXPANDED. `[Assault 2]`, `[Ambush]`, `[Deflect]` and the
-//    rest go in `keywords` in the documented shape (docs/grammar.md ships `Assault 2` as
-//    its own example). Whether js/state.js and js/combat.js honour each one is core
-//    engine work; hand-expanding a keyword into triggers here would double-apply the day
-//    the core learns it.
-//
-//  * OPTIONALITY IS NOT APPROXIMATED. The core has `may`/`choose` queue steps, but no UI
-//    path renders them (js/ui.js knows only `mulligan` and `chooseShowdown`), so a card
-//    that queued one would hang a human seat. A printed "you may" is therefore only
-//    authored where DECLINING CANNOT HELP the controller — unl-193, whose whole cost is
-//    exhausting a legend that has no other use. Every other "you may" is unimplemented,
-//    because taking it always is a different card from choosing.
+//  * KEYWORDS THE CORE CAN HONOUR ARE DECLARED, NOT EXPANDED. `[Assault 2]`, `[Ambush]`,
+//    `[Deflect]`, `[Shield 2]`, `[Tank]` go in `keywords` in the documented shape, so the
+//    day js/combat.js learns one, it applies once rather than twice.
+//  * A KEYWORD THE CORE CANNOT HONOUR, BUT THE GRAMMAR CAN SAY EXACTLY, IS EXPANDED.
+//    `[Temporary]` is the engine's o.temporary flag, which only an op ever sets, and
+//    `[Hunt 2]` is precisely a conquer/hold trigger that adds XP. Declaring either as a
+//    bare keyword would leave it inert, which is the defect this file exists to avoid.
+//    Each expansion says so at the card.
+//  * OPTIONALITY IS NEVER APPROXIMATED. A printed "you may" is `may`; a printed choice
+//    whose *both* branches do something is `choose`, because js/ops-sfd.js overrides the
+//    core `may` with a version that has no `otherwise` branch and this file will not
+//    redefine another pack's op to get one back.
 RB.registerAbilities({
 
   // Inferna — [Ambush] [Assault 2]
   'unl-002': { keywords: ['Ambush', { name: 'Assault', value: 2 }] },
 
-  // Grim Apothecary — the play effect is "you MAY return a friendly unit"; returning
-  // your own unit is a real cost, so forcing it is a different card and there is no way
-  // to put the choice to the player.
-  'unl-021': { unimplemented: 'Play effect is an optional "you may return a friendly unit at a battlefield to its owner\'s hand"; the grammar has no optional-effect wrapper, and the queue step that would ask is unrenderable, so the clause can only be authored as compulsory — which it is not.' },
+  // Grim Apothecary — [Ambush]; "When you play me, you may return a friendly unit at a
+  // battlefield to its owner's hand."
+  'unl-021': {
+    keywords: ['Ambush'],
+    triggers: [{
+      on: 'played',
+      effects: [{
+        op: 'may', prompt: "Return a friendly unit at a battlefield to its owner's hand?",
+        effects: [{ op: 'returnToHand', target: { pick: 'myUnits', at: 'battlefield', low: true } }],
+      }],
+    }],
+  },
 
   // Mutated Mouser — [Shield 2] [Tank]
   'unl-036': { keywords: [{ name: 'Shield', value: 2 }, 'Tank'] },
@@ -31,20 +39,41 @@ RB.registerAbilities({
   // Soul Sword — [Equip] [C]. Equip is an activated ability keyword, so it is authored as
   // the activated ability it is; the +1 Might bonus while attached is already RB.mightOf.
   'unl-039': {
-    activated: [{ power: 1, domains: ['Calm'], effects: [{ op: 'attach', target: { pick: 'myUnits' } }] }],
+    activated: [{ power: 1, domains: ['Calm'], effects: [{ op: 'equipSelf' }] }],
   },
 
-  'unl-041': { unimplemented: 'Second clause grants [Deflect] to your other units at this battlefield — a continuous ability-granting layer emitted by a unit. RB.battlefieldStatics is the only continuous layer in the engine and it reads battlefield cards only.' },
+  // Allay — [Deflect]; "While I'm at a battlefield, your other units here have [Deflect]."
+  // scope 'hereMine' is exactly that: it reaches only while this card is itself at a
+  // battlefield, only that battlefield, only its controller's units, and never itself.
+  'unl-041': {
+    keywords: ['Deflect'],
+    statics: [{ grant: 'Deflect', scope: 'hereMine' }],
+  },
 
-  'unl-042': { unimplemented: 'Needs the Stun status (no engine concept: RB.mightOf and combat.js have no way to zero a unit\'s combat contribution) and "if you played this from your hand", which requires distinguishing a hand play from a Hidden facedown play.' },
+  'unl-042': { unimplemented: '"If you played this from your hand, draw 1" needs the Hidden facedown zone to tell a hand play from a facedown play; the Hide action has no engine support (D-5).' },
 
-  'unl-044': { unimplemented: 'Modal ("choose one") with a Counter branch — the chain\'s internals are not reachable from an op — and a four-token branch; there is no Bird token card id in RB.cardData for the token op to mint.' },
+  // Flurry of Feathers — [Reaction]; "Choose one — Counter a spell. / Play four 1 [S] Bird
+  // unit tokens with [Deflect]."
+  'unl-044': {
+    keywords: ['Reaction'],
+    effects: [{
+      op: 'choose',
+      options: [
+        { label: 'Counter a spell', effects: [{ op: 'counter' }] },
+        { label: 'Play four 1 Might Bird unit tokens with Deflect',
+          effects: [{ op: 'keywordToken', cardId: 'tok-bird', n: 4, might: 1, keywords: ['Deflect'] }] },
+      ],
+    }],
+  },
 
-  'unl-053': { unimplemented: 'Deathknell: there is no death trigger event. RB.kill in js/engine.js never calls RB.runTriggers, and the effect also reveals an opponent\'s hand and reads their facedown cards, neither of which the engine models.' },
+  'unl-053': { unimplemented: 'Its Deathknell reveals an opponent\'s hand and then lets you READ THEIR FACEDOWN CARDS for the turn; facedown cards have no engine support (D-5), and dropping that half would leave the wrong card.' },
 
-  'unl-060': { unimplemented: '"Enemy units here with less Might than me don\'t deal combat damage" is a continuous, comparative suppression of combat damage; js/combat.js sums RB.mightOf with no hook for exempting a unit.' },
+  'unl-060': { unimplemented: '"Enemy units here with less Might than me don\'t deal combat damage" suppresses a unit\'s combat contribution. js/combat.js sums RB.mightOf with no exemption hook, and zeroing their Might instead would also make them die to any damage.' },
 
-  'unl-067': { unimplemented: 'Deathknell only: there is no death trigger event — RB.kill in js/engine.js never calls RB.runTriggers, and a trigger on an event that never fires would drop the whole card silently.' },
+  // Ruined Rex — [Deathknell][>] Deal 4 to an enemy unit.
+  'unl-067': {
+    triggers: [{ on: 'deathknell', effects: [{ op: 'damage', n: 4, target: { pick: 'enemyUnits' } }] }],
+  },
 
   // Turn to Dust — "Give a gear Temporary." The pool is every gear as printed; only which
   // legal gear is taken is a heuristic (an opponent's first, then the biggest bonus).
@@ -52,17 +81,59 @@ RB.registerAbilities({
     effects: [{ op: 'giveTemporary', target: { pick: 'gear', prefer: 'enemy' } }],
   },
 
-  'unl-074': { unimplemented: 'Triggers on drawing your SECOND card each turn; the engine has no draw event and no per-turn draw counter, and RB.draw is core.' },
+  'unl-074': { unimplemented: 'Triggers on drawing your SECOND card each turn; there is no draw event and no per-turn draw counter, and RB.draw is core.' },
 
-  'unl-078': { unimplemented: 'Deathknell (no death trigger event), plus a Sprite token that has no card id in RB.cardData, plus [Temporary] on a gear that the engine only ever sets through the token op.' },
+  // Sprite Fountain — [Temporary]; play effect makes a 3 Might Sprite; Deathknell repeats
+  // that play effect. [Temporary] is expanded (see the header): the engine's sweep reads
+  // o.temporary, which only an op sets, so the keyword alone would be inert.
+  'unl-078': {
+    triggers: [
+      { on: 'played', effects: [
+        { op: 'giveTemporary', target: 'self' },
+        { op: 'token', cardId: 'tok-sprite', might: 3, ready: true, temporary: true },
+      ] },
+      { on: 'deathknell', effects: [
+        { op: 'token', cardId: 'tok-sprite', might: 3, ready: true, temporary: true },
+      ] },
+    ],
+  },
 
-  'unl-079': { unimplemented: 'Triggers when a showdown begins at this battlefield — RB.openShowdown runs no triggers — and then asks the controller to pay [1] mid-resolution, which the grammar has no shape for.' },
+  'unl-079': { unimplemented: 'Triggers when a showdown BEGINS at this battlefield — RB.openShowdown runs no triggers — and then asks the controller to pay [1] mid-resolution, which no cost shape in the grammar covers.' },
 
-  'unl-080': { unimplemented: 'Triggers on moving (no move event; js/engine.js doMove runs no triggers) and then branches on the TYPE OF THE CARD JUST DISCARDED, which the discard op does not report.' },
+  // Hwei — "When I move, draw 1, then discard 1. Then, do the following based on the
+  // discarded card's type." The branch needs the discarded card's type, which the core
+  // discard op does not report, so discardByType does both halves.
+  'unl-080': {
+    triggers: [{
+      on: 'moved',
+      effects: [{
+        op: 'cond', test: { eventIsSelf: true },
+        effects: [
+          { op: 'draw', n: 1 },
+          { op: 'discardByType',
+            spell: [{ op: 'draw', n: 1 }],
+            gear: [{ op: 'ready', what: 'runes', n: 2 }],
+            unit: [{ op: 'buff', n: 3, target: 'self' }] },
+        ],
+      }],
+    }],
+  },
 
-  'unl-106': { unimplemented: 'Counters an enemy spell or ability conditioned on what it chose — both the chain\'s internals and targeting data are outside anything an op can reach.' },
+  'unl-106': { unimplemented: 'It counters only a spell "that chooses it and no other friendly unit", and chain items carry no targeting data — nothing populates item.targets — so the condition is unverifiable and an unconditional counter is far broader than the card.' },
 
-  'unl-113': { unimplemented: '[Level 6] is a dependent keyword granting [Deflect] and [Ganking] while you have 6+ XP: a conditional, continuous keyword-granting layer, and nothing in the core reads the XP counter.' },
+  // Master Yi — [Hunt 2] expanded (see the header: nothing in the core reads the Hunt
+  // keyword, so declaring it would leave it inert); [Level 6] as two conditional statics
+  // that read the controller's XP.
+  'unl-113': {
+    triggers: [
+      { on: 'conquer', mine: true, here: true, effects: [{ op: 'xp', n: 2 }] },
+      { on: 'hold', mine: true, here: true, effects: [{ op: 'xp', n: 2 }] },
+    ],
+    statics: [
+      { grant: 'Deflect', scope: 'self', when: { xpAtLeast: 6 } },
+      { grant: 'Ganking', scope: 'self', when: { xpAtLeast: 6 } },
+    ],
+  },
 
   // Poppy — [Deflect]; "When you play me, if an opponent's score is within 3 points of
   // the Victory Score, ready me and gain 3 XP."
@@ -72,12 +143,12 @@ RB.registerAbilities({
       on: 'played',
       effects: [{
         op: 'cond', test: { opponentScoreWithin: 3 },
-        effects: [{ op: 'ready', target: 'self' }, { op: 'gainXP', n: 3 }],
+        effects: [{ op: 'ready', target: 'self' }, { op: 'xp', n: 3 }],
       }],
     }],
   },
 
-  'unl-118': { unimplemented: '"Any amount of your damage is enough to kill enemy units" rewrites the lethal-damage rule for one player\'s damage — a replacement layer in RB.cleanup and js/combat.js, not an effect.' },
+  'unl-118': { unimplemented: '"Any amount of your damage is enough to kill enemy units" rewrites the lethal-damage rule for one player\'s damage. Statics carry might and grant only; the lethality test lives in RB.cleanup and js/combat.js.' },
 
   'unl-120': { unimplemented: 'Both clauses are play-location permissions (Ambush\'s "where you have units" plus "where there are enemy units"). The only lever is playTo:\'battlefield\', which offers EVERY battlefield — a blanket where the card is narrow.' },
 
@@ -98,9 +169,30 @@ RB.registerAbilities({
     ],
   },
 
-  'unl-131': { unimplemented: 'Counters a spell and redirects it to its owner\'s hand — the chain\'s internals are not reachable from an op.' },
+  // Abandon — [Reaction]; counter a spell, returning it to hand rather than to the trash;
+  // then Predict.
+  'unl-131': {
+    keywords: ['Reaction'],
+    effects: [{ op: 'counterToHand' }, { op: 'predict', n: 1 }],
+  },
 
-  'unl-134': { unimplemented: 'Needs the Stun status (no engine concept) including a "already stunned" branch, and [Repeat] [2], an optional additional cost that re-executes the chain item.' },
+  // Existential Dread — [Action]; [Repeat] [2]; stun an attacking enemy unit, or bounce it
+  // if it is already stunned. DEVIATION: Repeat is printed as an optional additional cost
+  // paid as you play; there is no additional-cost shape, so it is asked and paid at
+  // resolution instead — the same 2 Energy for the same second execution, decided later.
+  'unl-134': {
+    keywords: ['Action'],
+    effects: [
+      { op: 'stunOrReturn', target: { pick: 'enemyUnits', role: 'attacker' } },
+      { op: 'cond', test: { energyAtLeast: 2 }, effects: [{
+        op: 'may', prompt: "Repeat: pay 2 Energy to execute this spell's effect one more time?",
+        effects: [
+          { op: 'payEnergy', n: 2 },
+          { op: 'stunOrReturn', target: { pick: 'enemyUnits', role: 'attacker' } },
+        ],
+      }] },
+    ],
+  },
 
   // Scryer's Bloom — enters exhausted; then "Kill this, [1], [T]: Predict 2, then draw 1.
   // Gain 1 XP." The self-kill is a cost on the card and the first instruction here; the
@@ -113,20 +205,36 @@ RB.registerAbilities({
         { op: 'kill', target: 'self' },
         { op: 'predict', n: 2 },
         { op: 'draw', n: 1 },
-        { op: 'gainXP', n: 1 },
+        { op: 'xp', n: 1 },
       ],
     }],
   },
 
-  'unl-141': { unimplemented: 'The play effect fires only when played FROM FACE DOWN, which needs the Hidden facedown zone; the engine has no hidden cards and cannot tell the two plays apart.' },
+  'unl-141': { unimplemented: 'Its play effect fires only when played FROM FACE DOWN; facedown cards have no engine support (D-5) and the two plays cannot be told apart.' },
 
-  'unl-142': { unimplemented: 'Killing a friendly unit is an ADDITIONAL COST — it gates whether the spell can be played at all, which the grammar\'s cost shape (energy/power/exhaustSelf) cannot say — and the payoff plays a unit from the trash bounded by the killed unit\'s cost.' },
+  'unl-142': { unimplemented: 'Killing a friendly unit is an ADDITIONAL COST — it decides whether the spell can be played at all, which the grammar\'s cost shape (energy/power/exhaustSelf) cannot say — so authored as an effect the spell would be castable as a blank.' },
 
-  'unl-147': { unimplemented: 'Creates a Baron Pit battlefield token (no battlefield-creation op and no such card id), is untargetable by enemy spells, and gives other friendly units +2 Might — two continuous layers on top.' },
+  'unl-147': { unimplemented: 'Adds the Baron Pit BATTLEFIELD token (no battlefield token id in data/tokens.js and no op that adds a battlefield to s.bf) and is untargetable by enemy spells, which has no engine concept. The "+2 Might to other friendly units" half is a plain static and would be fine alone.' },
 
-  'unl-152': { unimplemented: 'Deathknell: there is no death trigger event — RB.kill in js/engine.js never calls RB.runTriggers — so the channel clause would never fire.' },
+  // Black Rose Dignitary — [Assault] (X omitted is 1); Deathknell channels a rune exhausted.
+  'unl-152': {
+    keywords: [{ name: 'Assault', value: 1 }],
+    triggers: [{ on: 'deathknell', effects: [{ op: 'channel', n: 1, exhausted: true }] }],
+  },
 
-  'unl-158': { unimplemented: 'Its Equip ability is paid by SPENDING 1 XP. An activated ability\'s cost may only be energy, power or exhausting itself, so the ability would be free and always legal — strictly better than the card.' },
+  // Shepherd's Heirloom — "When you play this, gain 1 XP."; "[Equip] — Spend 1 XP".
+  // DEVIATION: an activated ability's cost may only be energy, power or exhausting itself,
+  // so the XP price is enforced on resolution instead. With no XP the ability is still
+  // offered but does nothing, which costs nothing — it is never free to actually equip.
+  'unl-158': {
+    triggers: [{ on: 'played', effects: [{ op: 'xp', n: 1 }] }],
+    activated: [{
+      effects: [{
+        op: 'cond', test: { xpAtLeast: 1 },
+        effects: [{ op: 'spendXP', n: 1 }, { op: 'equipSelf' }],
+      }],
+    }],
+  },
 
   // Shadow's Call — choose a friendly unit without Temporary, give it Temporary, draw 2.
   // Compulsory as printed; the unit taken is the smallest legal one.
@@ -137,43 +245,159 @@ RB.registerAbilities({
     ],
   },
 
-  'unl-169': { unimplemented: 'Reveals an opponent\'s hand, banishes a card chosen from it, and sets a delayed ability that returns it when THEY hold — hidden-zone selection plus a delayed effect that outlives its source.' },
+  'unl-169': { unimplemented: 'Banishes a card from an opponent\'s hand and returns it "when they hold, even if I\'m no longer on the board" — a delayed ability that outlives its source, which the trigger table cannot express because every trigger is asked of cards still in play.' },
 
-  'unl-173': { unimplemented: 'Killing a friendly Mighty unit is an ADDITIONAL COST that gates legality; authored as an effect the spell would be playable with no Mighty unit in play, which is a different card.' },
+  'unl-173': { unimplemented: 'Killing a friendly [Mighty] unit is an ADDITIONAL COST that gates legality; authored as an effect the spell would be playable with no Mighty unit in play, which is a different card.' },
 
-  'unl-179': { unimplemented: 'Triggers on moving to a battlefield (no move event) and carries a Deathknell (no death trigger event); it also looks at the top 3 and reveals from among them.' },
+  // Rift Herald — a move trigger that digs 3 for a unit, and a Deathknell that puts a unit
+  // out of hand for free. The dig is `choose` and not `may` because BOTH answers recycle
+  // the cards that were looked at.
+  'unl-179': {
+    triggers: [
+      { on: 'moved', effects: [{
+        op: 'cond', test: { eventIsSelf: true, toBattlefield: true },
+        effects: [{
+          op: 'choose',
+          options: [
+            { label: 'Reveal a unit from the top 3 and draw it',
+              effects: [{ op: 'digUnit', n: 3, take: true }] },
+            { label: 'Recycle all three', effects: [{ op: 'digUnit', n: 3, take: false }] },
+          ],
+        }],
+      }] },
+      { on: 'deathknell', effects: [{ op: 'playFromHand', type: 'Unit', to: 'base', ignoreEnergy: true }] },
+    ],
+  },
 
   // Gloomist — "When you or an ally hold, you may exhaust me to draw 1." 1v1: "you or an
-  // ally" is you. The option is authored compulsory: the whole cost is exhausting a
-  // legend with no other ability, so declining can never help. See the header note.
+  // ally" is you. The cond gate is the cost check — an exhausted legend cannot pay — and
+  // the may is the printed option.
   'unl-193': {
     triggers: [{
       on: 'hold', mine: true,
       effects: [{
         op: 'cond', test: { selfReady: true },
-        effects: [{ op: 'exhaust', target: 'self' }, { op: 'draw', n: 1 }],
+        effects: [{
+          op: 'may', prompt: 'Exhaust Gloomist to draw 1?',
+          effects: [{ op: 'exhaust', target: 'self' }, { op: 'draw', n: 1 }],
+        }],
       }],
     }],
   },
 
-  'unl-198': { unimplemented: 'Chooses a battlefield, then "you MAY move up to one enemy unit" there — pulling an enemy into your own battlefield can hand them the showdown, so compelling it is a different card, and the grammar has no optional-effect wrapper.' },
+  // Moonfall — [Action]; choose a battlefield where you have units, optionally pull one
+  // enemy unit there, then weaken the enemy units there. `choose` and not `may`, because
+  // the weaken happens on both answers and a queued `may` would run it before the answer.
+  'unl-198': {
+    keywords: ['Action'],
+    effects: [{
+      op: 'chooseMyBattlefield',
+      effects: [{
+        op: 'choose',
+        options: [
+          { label: 'Move an enemy unit there first',
+            effects: [
+              { op: 'moveUnit', target: { pick: 'enemyUnits' }, to: 'here' },
+              { op: 'debuff', n: 2, target: 'hereEnemy' },
+            ] },
+          { label: 'Move no one',
+            effects: [{ op: 'debuff', n: 2, target: 'hereEnemy' }] },
+        ],
+      }],
+    }],
+  },
 
-  'unl-199': { unimplemented: 'The trigger costs a DISCARD, which is a real price, so its "you may" cannot be authored compulsory; the grammar also has no optional-effect wrapper for it.' },
+  // Deceiver — on conquer or hold, you may discard 1 and exhaust this legend to copy a
+  // unit at that battlefield. The cond is the cost check: a ready legend, a card to
+  // discard, and a unit there to copy.
+  'unl-199': {
+    triggers: [
+      { on: 'conquer', mine: true, effects: [{
+        op: 'cond', test: { selfReady: true, handMin: 1, nonEmpty: 'here' },
+        effects: [{
+          op: 'may', prompt: 'Discard 1 and exhaust Deceiver to copy a unit there?',
+          effects: [
+            { op: 'discard', n: 1 },
+            { op: 'exhaust', target: 'self' },
+            { op: 'copyToken', target: { pick: 'here' }, to: 'here', ready: true, temporary: true },
+          ],
+        }],
+      }] },
+      { on: 'hold', mine: true, effects: [{
+        op: 'cond', test: { selfReady: true, handMin: 1, nonEmpty: 'here' },
+        effects: [{
+          op: 'may', prompt: 'Discard 1 and exhaust Deceiver to copy a unit there?',
+          effects: [
+            { op: 'discard', n: 1 },
+            { op: 'exhaust', target: 'self' },
+            { op: 'copyToken', target: { pick: 'here' }, to: 'here', ready: true, temporary: true },
+          ],
+        }],
+      }] },
+    ],
+  },
 
   // Mirror Image — choose a unit, play a ready token copy of it to your base, Temporary.
   // A copy carries the copied card's printed characteristics, so the token is minted on
-  // that card id rather than on a Reflection card that does not exist in RB.cardData.
+  // that card id rather than on a blank Reflection that would copy nothing.
   'unl-200': {
     effects: [{ op: 'copyToken', target: { pick: 'allUnits' }, to: 'base', ready: true, temporary: true }],
   },
 
-  'unl-205': { unimplemented: 'Triggers when a player plays a SPELL; the engine has no spell-played event, and the reward is an optional +1 Might the controller may decline.' },
+  'unl-205': { unimplemented: 'Triggers when a player plays a SPELL. The trigger table has played · unitPlayed · conquer · hold · beginningPhase · endOfTurn · combatEnd · died · moved · deathknell, and a spell\'s own `played` trigger only ever fires for that spell.' },
 
-  'unl-209': { unimplemented: 'The beginningPhase trigger exists, but the reward is an optional "you may KILL a unit you control here to draw 1" — killing your own unit is a real price, so it cannot be authored compulsory.' },
+  // Dusk Rose Lab — "At the start of your Beginning Phase, you may kill a unit you control
+  // here to draw 1." A battlefield's triggers fire with no location, so atThisBattlefield
+  // supplies it before `hereMine` is asked.
+  'unl-209': {
+    triggers: [{
+      on: 'beginningPhase',
+      effects: [{
+        op: 'atThisBattlefield',
+        effects: [{
+          op: 'cond', test: { nonEmpty: 'hereMine' },
+          effects: [{
+            op: 'may', prompt: 'Kill a unit you control here to draw 1?',
+            effects: [
+              { op: 'sacrifice', target: { pick: 'hereMine', low: true } },
+              { op: 'draw', n: 1 },
+            ],
+          }],
+        }],
+      }],
+    }],
+  },
 
-  'unl-210': { unimplemented: '"While a unit here is defending alone, it has -2 Might" is a conditional continuous modifier on one unit; a battlefield static applies its might to every unit standing there, unconditionally.' },
+  // Forbidding Waste — "While a unit here is defending alone, it has -2 [S]."
+  'unl-210': {
+    statics: [{ might: -2, scope: 'here', when: 'defendingAlone' }],
+  },
 
-  'unl-215': { unimplemented: 'Needs a per-turn, per-player "first time a NON-TOKEN unit is played HERE" trigger — unitPlayed carries no battlefield and no token flag, and there is no once-per-turn tracking — then an optional move.' },
+  // Star Spring — "The first time a player plays a non-token unit here each turn, they may
+  // move another unit they control here to its base." unitPlayed carries no battlefield,
+  // so the location is supplied and then checked against where the played unit landed.
+  'unl-215': {
+    triggers: [{
+      on: 'unitPlayed',
+      effects: [{
+        op: 'atThisBattlefield',
+        effects: [{
+          op: 'cond', test: { eventUnitHere: true, eventUnitIsToken: false },
+          effects: [{
+            op: 'firstEachTurn', key: 'starSpring',
+            effects: [{
+              op: 'cond', test: { nonEmpty: { pick: 'hereMine', notEventUnit: true } },
+              effects: [{
+                op: 'may', prompt: 'Move another unit you control here to its base?',
+                effects: [{ op: 'moveUnit', to: 'base',
+                  target: { pick: 'hereMine', notEventUnit: true, low: true } }],
+              }],
+            }],
+          }],
+        }],
+      }],
+    }],
+  },
 
   'unl-234': { unimplemented: 'Adds Energy that may only be spent during showdowns. The rune pool is a single untagged number in js/cost.js, so the ability would produce unrestricted Energy — strictly better than the card.' },
 

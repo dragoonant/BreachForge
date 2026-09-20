@@ -10,7 +10,7 @@
     return {
       deckId: deckId, hand: [], deck: [], runeDeck: [], trash: [], banished: [],
       runes: [], base: [], points: 0, legend: null, champion: null,
-      pool: { energy: 0, power: EMPTY_POWER() },
+      pool: { energy: 0, power: EMPTY_POWER(), any: 0 },
       scoredThisTurn: [], firstTurnDone: false,
     };
   }

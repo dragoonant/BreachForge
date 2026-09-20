@@ -206,12 +206,12 @@
       }
       return;
     }
-    for (const g of targets(s, { pick: e.side === 'enemy' ? 'enemyGear' : 'gear', n: num(e, 'n', 1) }, ctx))
+    for (const g of targets(s, { pick: 'gear', n: num(e, 'n', 1), prefer: e.prefer }, ctx))
       killGear(s, g);
   });
   say('killGear', e => e.scope === 'all' ? 'Kill all gear.'
     : e.scope === 'each' ? 'Each player kills one of their gear.'
-      : 'Kill ' + selText({ pick: e.side === 'enemy' ? 'enemyGear' : 'gear', n: num(e, 'n', 1) }) + '.');
+      : 'Kill ' + selText({ pick: 'gear', n: num(e, 'n', 1) }) + '.');
 
   def('eachKillsUnit', (s, e, ctx) => {
     void e; void ctx;
@@ -262,7 +262,8 @@
       fireLeave(s, iid, o.controller);
     }
   });
-  say('bounce', e => 'Return ' + selText(e.target) + " to its owner's hand.");
+  say('bounce', e => e.target === 'self' ? "Return me to my owner's hand."
+    : 'Return ' + selText(e.target) + " to its owner's hand.");
 
   def('makeTemporary', (s, e, ctx) => {
     void e;
@@ -319,7 +320,7 @@
     }
   });
   say('moveUnit', e => 'Move ' + selText(e.target) +
-    (e.to === 'base' ? ' to its base' : e.to === 'here' ? ' here' : ' to a battlefield') +
+    (e.to === 'base' ? ' to base' : e.to === 'here' ? ' here' : ' to a battlefield') +
     (e.ready ? ' and ready it' : '') + '.');
 
   def('readyOther', (s, e, ctx) => {
@@ -392,7 +393,8 @@
       return;
     }
   });
-  say('playUnitFromTrash', () => 'Play a unit from your trash, ignoring its Energy cost.');
+  say('playUnitFromTrash', () =>
+    'Play a unit from your trash, ignoring its Energy cost. You must still pay its Power cost.');
 
   // Reveal from the top UNTIL a unit turns up — not "look at the top N": the whole deck
   // is walked if it has to be, which is the difference between this card and a cantrip.
@@ -426,7 +428,7 @@
     }
   });
   say('discardChosen', e => 'Choose an opponent. They reveal their hand. Choose ' +
-    num(e, 'n', 1) + ' card from it, and they discard that card.');
+    (num(e, 'n', 1) === 1 ? 'a' : num(e, 'n', 1)) + ' card from it, and they discard that card.');
 
   def('recycleFromHand', (s, e, ctx) => {
     const who = e.opponent ? RB.opponentOf(ctx.p) : ctx.p;
@@ -478,11 +480,11 @@
     myBuff: (s, ctx) => unitsOf(s, ctx.p).some(i => RB.obj(s, i).ognBuff),
   };
   const TEST_WORDS = {
-    here: 'if it is this battlefield, ',
-    atBattlefield: "while I'm at a battlefield, ",
-    selfMoved: 'if it is me, ',
-    anyGear: 'if there is a gear on the board, ',
-    myBuff: 'if you control a buffed unit, ',
+    here: 'If it is this battlefield, ',
+    atBattlefield: "While I'm at a battlefield, ",
+    selfMoved: 'If it is me, ',
+    anyGear: 'If there is a gear on the board, ',
+    myBuff: 'If you control a buffed unit, ',
   };
   def('when', (s, e, ctx) => {
     const t = TESTS[e.test];
@@ -501,7 +503,7 @@
     o.ognSeen.push(ctx.p);
     RB.runEffects(s, e.effects, ctx);
   });
-  say('onceEachPlayer', e => 'the first time each player does so, ' + lower(lines(e.effects)));
+  say('onceEachPlayer', e => 'The first time each player does so, ' + lower(lines(e.effects)));
 
   // --- game-level modifiers -------------------------------------------------
   def('raiseVictoryScore', (s, e, ctx) => {

@@ -125,7 +125,13 @@
   RB.defineOp('exhaust', (s, e, ctx) => { for (const iid of asList(s, e.target || 'self', ctx)) RB.obj(s, iid).exhausted = true; });
   RB.defineOp('channel', (s, e, ctx) => RB.channel(s, ctx.p, e.n || 1, !!e.exhausted));
   RB.defineOp('addEnergy', (s, e, ctx) => { s.players[ctx.p].pool.energy += e.n || 1; });
-  RB.defineOp('addPower', (s, e, ctx) => { s.players[ctx.p].pool.power[e.domain] = (s.players[ctx.p].pool.power[e.domain] || 0) + (e.n || 1); });
+  RB.defineOp('addPower', (s, e, ctx) => {
+    const P = s.players[ctx.p];
+    // "[A]" is Power of any domain (rules §135.2.d). Universal power is held in its own
+    // bucket so the payment solver can spend it against any domain requirement.
+    if (e.domain === 'any') { P.pool.any = (P.pool.any || 0) + (e.n || 1); return; }
+    P.pool.power[e.domain] = (P.pool.power[e.domain] || 0) + (e.n || 1);
+  });
   RB.defineOp('gainPoint', (s, e, ctx) => { s.players[ctx.p].points += e.n || 1; RB.log(s, 'score', { p: ctx.p, how: 'effect', points: s.players[ctx.p].points }, 'point.score'); });
   RB.defineOp('discard', (s, e, ctx) => {
     const P = s.players[e.opponent ? RB.opponentOf(ctx.p) : ctx.p];

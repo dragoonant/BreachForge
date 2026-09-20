@@ -26,7 +26,8 @@
   RB.defineDescriber('channel', e => 'Channel ' + n(e) + ' rune' + (n(e) === 1 ? '' : 's') +
     (e.exhausted ? ' exhausted' : '') + '.');                                                               // ops.channel
   RB.defineDescriber('addEnergy', e => 'Add ' + n(e) + ' Energy.');                                         // ops.addEnergy
-  RB.defineDescriber('addPower', e => 'Add ' + n(e) + ' ' + e.domain + ' Power.');                          // ops.addPower
+  RB.defineDescriber('addPower', e => 'Add ' + n(e) + ' ' +
+    (e.domain === 'any' ? 'Power of any domain' : e.domain + ' Power') + '.');                          // ops.addPower
   RB.defineDescriber('gainPoint', e => 'Gain ' + n(e) + ' point' + (n(e) === 1 ? '' : 's') + '.');           // ops.gainPoint
   RB.defineDescriber('discard', e => (e.opponent ? 'Your opponent discards ' : 'Discard ') + n(e) + '.');   // ops.discard
   RB.defineDescriber('recycleRune', e => 'Recycle ' + n(e) + ' rune' + (n(e) === 1 ? '' : 's') + '.');       // ops.recycleRune
@@ -86,6 +87,7 @@
     if (a.energy) bits.push(a.energy + ' Energy');
     if (a.power) bits.push(a.power + ' Power');
     if (a.exhaustSelf) bits.push('Exhaust me');
+    if (a.killSelf) bits.push('Kill me');
     return bits.join(', ') || 'Free';
   }
 })(window.RB = window.RB || {});
