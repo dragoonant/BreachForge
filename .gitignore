@@ -10,3 +10,9 @@ elevenlabs.token*
 .DS_Store
 *.pdf
 .hf_token
+# Key files, in every spelling. A leading-dot underscore name does not match "*.token".
+.hf_token
+.elevenlabs_token
+*_token
+*token*
+!data/tokens.js
