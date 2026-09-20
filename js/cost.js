@@ -283,7 +283,9 @@
     for (const d of plan.fromPool.power) { if (d === 'any') P.pool.any--; else P.pool.power[d]--; }
     for (const iid of plan.exhaust) {
       RB.obj(state, iid).exhausted = true;
-      RB.log(state, 'runeExhaust', { p: p, iid: iid }, 'rune.channel');
+      // Spending a rune is not channelling one — and it happens several times a turn,
+      // against twice for a channel, so it gets its own far quieter sound.
+      RB.log(state, 'runeExhaust', { p: p, iid: iid }, 'rune.exhaust');
     }
     for (const iid of plan.recycle) RB.recycleRune(state, p, iid);
   };

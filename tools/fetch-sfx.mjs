@@ -38,7 +38,10 @@ const SFX = [
   { tag: 'unit.die',            secs: 1.5, gain: 0.55, prompt: 'armored knight collapses, metal clatter on stone' },
   { tag: 'gear.equip',          secs: 1.0, gain: 0.55, prompt: 'metal buckle clasps onto armor, sharp click' },
   { tag: 'spell.cast',          secs: 1.5, gain: 0.55, prompt: 'magic spell released, airy whoosh with sparkle' },
-  { tag: 'rune.channel',        secs: 2.0, gain: 0.50, prompt: 'arcane energy charging, rising crystalline hum' },
+  // A rune is PLACED, twice a turn, next to several payments. "Rising" anything is a
+  // gesture — it has a beginning and an end and asks to be followed — and a gesture heard
+  // six times a turn becomes a siren. Short, tactile, no pitch movement.
+  { tag: 'rune.channel',        secs: 1.0, gain: 0.45, prompt: 'small stone tile set down on wood, soft dull click' },
   { tag: 'showdown.start',      secs: 2.0, gain: 0.60, prompt: 'low war horn blast, tense drum hit' },
   { tag: 'showdown.win',        secs: 1.5, gain: 0.55, prompt: 'bright metallic clash, victorious ring' },
   { tag: 'showdown.lose',       secs: 1.5, gain: 0.55, prompt: 'dull heavy clash, metal scrape down' },

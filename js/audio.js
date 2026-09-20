@@ -74,7 +74,7 @@ window.RB = window.RB || {};
     'unit.die': { file: 'unit-die', gain: 0.55 },
     'gear.equip': { file: 'gear-equip', gain: 0.55 },
     'spell.cast': { file: 'spell-cast', gain: 0.55 },
-    'rune.channel': { file: 'rune-channel', gain: 0.5 },
+    'rune.channel': { file: 'rune-channel', gain: 0.45 },
     'showdown.start': { file: 'showdown-start', gain: 0.6 },
     'showdown.win': { file: 'showdown-win', gain: 0.55 },
     'showdown.lose': { file: 'showdown-lose', gain: 0.55 },
@@ -442,14 +442,38 @@ window.RB = window.RB || {};
     },
 
     // --- runes -------------------------------------------------------------
+    // The rune sounds are the most-heard in the game — channelling twice a turn, and one
+    // per rune on every single payment — so none of them may be a gesture. A rising sweep
+    // is a gesture: it has a beginning and an end and asks to be followed, which is why
+    // the old channel sound read as a siren by the third time you heard it. These are
+    // placements instead: a transient, a short body, and gone.
+    //
+    // Channelling a rune is setting a stone down on the table.
     'rune.channel': function (t) {
-      vSweep(t, { dur: 0.46, noise: true, from: 320, to: 2400, q: 2.6, peak: 0.20 });
-      vBlip(t + 0.05, { dur: 0.36, type: 'sine', freq: 196, freqTo: 294, peak: 0.16, cut: 1600, cutTo: 3200, rel: 0.34 });
+      vNoise(t, { dur: 0.026, filter: 'highpass', from: 2600, peak: 0.075, a: 0.001, rel: 0.024 });
+      vFM(t, { dur: 0.17, freq: 168, freqTo: 132, ratio: 1.0, index: 14, indexTo: 1,
+        peak: 0.20, a: 0.004, rel: 0.16 });
+      // A faint glassy partial: enough to say "rune" rather than "block", not enough to
+      // be a note you could hum.
+      vBlip(t + 0.008, { dur: 0.15, type: 'sine', freq: 784, peak: 0.055, cut: 2400, a: 0.004, rel: 0.14 });
     },
+    // Recycling sends a rune back into the deck. Same family, but it LEAVES — so the
+    // body falls instead of sitting, and the air moves away from you rather than up.
     'rune.recycle': function (t) {
-      vBlip(t, { dur: 0.14, type: 'triangle', freq: 494, freqTo: 330, peak: 0.14, cut: 2600, rel: 0.13 });
-      vBlip(t + 0.10, { dur: 0.18, type: 'triangle', freq: 392, freqTo: 587, peak: 0.15, cut: 3000, rel: 0.17 });
-      vNoise(t, { dur: 0.16, filter: 'bandpass', q: 2.4, from: 1400, to: 2800, peak: 0.14, a: 0.02, rel: 0.15 });
+      vNoise(t, { dur: 0.20, filter: 'bandpass', q: 1.6, from: 1900, to: 620, peak: 0.085,
+        a: 0.012, rel: 0.19 });
+      vFM(t, { dur: 0.20, freq: 196, freqTo: 138, ratio: 1.0, index: 12, indexTo: 1,
+        peak: 0.13, a: 0.005, rel: 0.19 });
+    },
+    // Spending a rune for Energy. This is the single most frequent sound in the game —
+    // several per turn, every turn — so it is a dry tick and nothing more. It shared the
+    // channel sound before, which meant the loudest gesture in the kit fired on every
+    // payment.
+    'rune.exhaust': function (t) {
+      vNoise(t, { dur: 0.034, filter: 'bandpass', q: 3.0, from: 1500, peak: 0.055,
+        a: 0.001, rel: 0.032 });
+      vFM(t, { dur: 0.07, freq: 124, ratio: 1.0, index: 8, indexTo: 1, peak: 0.075,
+        a: 0.003, rel: 0.065 });
     },
     'rune.ready': function (t) {
       vFM(t, { dur: 0.52, freq: 1046, ratio: 3.51, index: 700, indexTo: 12, peak: 0.20, rel: 0.50 });

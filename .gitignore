@@ -16,3 +16,6 @@ elevenlabs.token*
 *_token
 *token*
 !data/tokens.js
+
+# Superseded generated audio, archived by tools/fetch-sfx.mjs --force
+audio/sfx/_archive/
