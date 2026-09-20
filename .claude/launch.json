@@ -1,6 +1,6 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "breachforge", "runtimeExecutable": "node", "runtimeArgs": ["tools/serve.mjs", "8777"], "port": 8777 }
+    { "name": "breachforge", "runtimeExecutable": "node", "runtimeArgs": ["tools/serve.mjs"], "port": 8777, "autoPort": true }
   ]
 }

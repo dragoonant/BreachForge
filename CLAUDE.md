@@ -58,8 +58,10 @@ Read before touching anything: `CARD-GAME-LESSONS.md`, `CARD-GAME-LESSONS-2.md`,
     ```
 
     Own index, own HEAD, shared history and object store. Put it outside the OneDrive folder
-    so it does not sync, and give its dev server its own port: `.claude/launch.json` names
-    8777 and two servers cannot both hold it.
+    so it does not sync. The dev server sorts itself out — `.claude/launch.json` sets
+    `autoPort` and `tools/serve.mjs` reads `PORT` from the environment, so every worktree
+    gets its own. Do not put a port back in `runtimeArgs`: 8777 hardcoded there is why the
+    second agent's server could not start at all.
 
     A checkout has ONE index and ONE HEAD, and both are *shared mutable state*. In a single
     afternoon of two agents in one tree: `git add <file>` staged the whole file including the
