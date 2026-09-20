@@ -57,6 +57,15 @@
     lg.textContent = 'Log';
     lg.onclick = () => { $('#log').classList.toggle('open'); RB.audio.play('ui.click'); };
     btns.appendChild(lg);
+    // The black box. "That card did something weird" becomes a file with a seed, two deck
+    // ids and every action taken — one run of tools/replay-report.mjs instead of a
+    // conversation.
+    const bug = el('btn', 'button');
+    bug.style.cssText = 'padding:.2rem .6rem;font-size:.7rem';
+    bug.textContent = '🐞';
+    bug.title = 'Save a bug trace — hand it to tools/replay-report.mjs';
+    bug.onclick = () => RB.downloadBugReport(window.prompt('What looked wrong?') || '');
+    btns.appendChild(bug);
     bar.appendChild(btns);
   }
 

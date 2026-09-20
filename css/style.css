@@ -47,7 +47,11 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   text-shadow:0 1px 2px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.9),0 0 9px rgba(0,0,0,.75)}
 .pip.cost{color:#ffd9a0}
 .pip.pwr{color:#c9e6ff}
-.pip.dom{font-size:.62em;letter-spacing:.04em;text-transform:uppercase}
+.pip.dom{display:flex;align-items:center;gap:.14em;padding:.1rem .18rem}
+.pip.dom .dot{width:.46em;height:.46em;border-radius:50%;display:inline-block;
+  box-shadow:0 0 0 1px rgba(0,0,0,.75),0 0 5px rgba(0,0,0,.9),0 0 7px currentColor}
+.card-preview .pip.dom .dot{width:.6em;height:.6em}
+.pip.dom .domname{font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;color:#cfdcf0;margin-left:.15em}
 .card-preview .pip{font-size:.8em}
 .card-plate{position:relative;z-index:2;margin-top:auto;padding:.26rem .34rem .3rem;
   text-shadow:0 1px 2px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.9),0 0 10px rgba(0,0,0,.8),0 0 18px rgba(0,0,0,.6)}

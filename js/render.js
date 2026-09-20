@@ -22,11 +22,16 @@
 
     const corners = document.createElement('div');
     corners.className = 'card-corners';
+    // A domain is a colour, not a letter: Calm and Chaos both start with C, and a "C" pip
+    // read as the wrong domain on the board. One coloured lozenge per domain, named in the
+    // tooltip and spelled out in the preview where there is room.
+    const doms = (card.domains && card.domains.length ? card.domains : [card.domain]).filter(Boolean);
     const left = document.createElement('span');
     left.className = 'pip dom';
-    left.style.color = 'var(--d-' + (card.domain || 'Colorless') + ')';
-    left.textContent = (card.domains && card.domains.length ? card.domains : [card.domain])
-      .filter(Boolean).map(d => d[0]).join('');
+    left.title = doms.join(' / ');
+    left.innerHTML = doms.map(d =>
+      '<span class="dot" style="background:var(--d-' + d + ')"></span>').join('') +
+      (size === 'preview' ? '<span class="domname">' + esc(doms.join(' · ')) + '</span>' : '');
     corners.appendChild(left);
     if (card.energy != null || card.power != null) {
       const c = document.createElement('span');

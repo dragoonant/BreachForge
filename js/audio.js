@@ -66,7 +66,10 @@ window.RB = window.RB || {};
   // full oscillator set and breaks nothing. Tags absent from this table (the
   // UI ticks, point.score, and the rest) are synth-only by design.
   var SAMPLES = {
-    // filled in by tools/fetch-sfx.mjs — see docs/sound.md
+    /* BEGIN GENERATED SAMPLES — written by tools/fetch-sfx.mjs, do not hand-edit */
+    'unit.deploy': { file: 'unit-deploy', gain: 0.60 },
+    'unit.die': { file: 'unit-die', gain: 0.55 },
+    /* END GENERATED SAMPLES */
   };
 
   // Preferred container order. We never create an <audio> element to sniff
@@ -86,9 +89,13 @@ window.RB = window.RB || {};
   var unlockArmed = false;
   var voices = 0;
 
-  var buffers = {};          // file -> AudioBuffer
-  var loading = {};          // file -> Promise<AudioBuffer>
+  var buffers = {};          // music file -> AudioBuffer
+  var loading = {};          // music file -> Promise<AudioBuffer>
   var format = null;         // settled container once one decodes
+
+  var sampleBufs = {};       // tag -> AudioBuffer
+  var sampleLoad = {};       // tag -> Promise
+  var sampleGone = {};       // tag -> true once both formats have failed
 
   var cur = null;            // { screen, src, gain, loop }
   var wantScreen = null;     // last screen asked for, survives mute + autoplay block
@@ -654,20 +661,19 @@ window.RB = window.RB || {};
 
   // ----------------------------------------------------------------- music --
 
-  function url(file, fmt) { return MUSIC_DIR + file + '.' + fmt; }
-
   // Fetch + decode into the one context. Tries Opus first, falls back to AAC
-  // if either the fetch or the decode refuses, and remembers which one won.
-  function loadTrack(file) {
-    if (buffers[file]) return Promise.resolve(buffers[file]);
-    if (loading[file]) return loading[file];
+  // if either the fetch or the decode refuses, and remembers which one won so
+  // later files only pay for one request. Used for music AND sample one-shots.
+  function loadAudio(base, cache, pending, key) {
+    if (cache[key]) return Promise.resolve(cache[key]);
+    if (pending[key]) return pending[key];
 
     var order = format ? [format] : FORMATS.slice();
 
     var p = (function attempt(i) {
-      if (i >= order.length) return Promise.reject(new Error('no playable format for ' + file));
+      if (i >= order.length) return Promise.reject(new Error('no playable format for ' + base));
       var fmt = order[i];
-      return fetch(url(file, fmt), { cache: 'force-cache' })
+      return fetch(base + '.' + fmt, { cache: 'force-cache' })
         .then(function (r) {
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.arrayBuffer();
@@ -681,15 +687,42 @@ window.RB = window.RB || {};
         })
         .then(function (buf) {
           format = fmt;
-          buffers[file] = buf;
+          cache[key] = buf;
           return buf;
         })
         .catch(function () { return attempt(i + 1); });
     })(0);
 
-    loading[file] = p;
-    p.catch(function () {}).then(function () { delete loading[file]; });
+    pending[key] = p;
+    p.catch(function () {}).then(function () { delete pending[key]; });
     return p;
+  }
+
+  function loadTrack(file) {
+    return loadAudio(MUSIC_DIR + file, buffers, loading, file);
+  }
+
+  // A sample is best-effort. If it will not load we mark the tag and never ask
+  // again — the synthesised voice covers it for the rest of the session.
+  function loadSample(tag) {
+    return loadAudio(SFX_DIR + SAMPLES[tag].file, sampleBufs, sampleLoad, tag)
+      .catch(function () { sampleGone[tag] = true; });
+  }
+
+  function playSample(tag, t, o) {
+    var def = SAMPLES[tag];
+    var src = ctx.createBufferSource();
+    src.buffer = sampleBufs[tag];
+
+    var g = ctx.createGain();
+    g.gain.value = def.gain * (o && typeof o.gain === 'number' ? o.gain : 1);
+    src.connect(g);
+    g.connect(outlet(o));
+
+    // Fresh BufferSource from sample 0 every time: always rewound, so a tag
+    // fired twice in a row is never silent the second time.
+    src.start(t);
+    retire(src, t + src.buffer.duration + 0.05);
   }
 
   function fadeOut(entry, secs) {
@@ -755,7 +788,8 @@ window.RB = window.RB || {};
       if (muted) return;
 
       var make = TAGS[tag];
-      if (!make) return;                 // unknown tag: nothing, no warning
+      var sample = SAMPLES[tag];
+      if (!make && !sample) return;      // unknown tag: nothing, no warning
 
       if (!ensureCtx()) return;
       wake();
@@ -768,7 +802,14 @@ window.RB = window.RB || {};
       if (voices > MAX_VOICES) return;
 
       try {
-        make(now + LOOKAHEAD, opts || {});
+        if (sample && sampleBufs[tag]) {
+          playSample(tag, now + LOOKAHEAD, opts || {});
+        } else {
+          // Sample not here yet (or gone for good): start the fetch and let
+          // the oscillator recipe cover this hit. No latency, no silence.
+          if (sample && !sampleGone[tag]) loadSample(tag);
+          if (make) make(now + LOOKAHEAD, opts || {});
+        }
       } catch (e) {
         // A bad recipe must never take the game down with it.
         if (window.console && console.warn) console.warn('[audio] tag failed:', tag, e);
@@ -851,7 +892,8 @@ window.RB = window.RB || {};
 
     // Read-only constant, not part of the call surface — handy for a settings
     // screen or a test harness that wants to enumerate what exists.
-    TAGS: Object.freeze(Object.keys(TAGS)),
+    TAGS: Object.freeze(Object.keys(TAGS).concat(
+      Object.keys(SAMPLES).filter(function (t) { return !TAGS[t]; })).sort()),
 
     // Internal, for the scratch verification page only.
     _debug: function () {
@@ -865,7 +907,12 @@ window.RB = window.RB || {};
         want: wantScreen,
         decoded: Object.keys(buffers).map(function (f) {
           return { file: f, duration: buffers[f].duration, channels: buffers[f].numberOfChannels };
-        })
+        }),
+        sampleTags: Object.keys(SAMPLES),
+        samplesLoaded: Object.keys(sampleBufs).map(function (t) {
+          return { tag: t, duration: +sampleBufs[t].duration.toFixed(3) };
+        }),
+        samplesMissing: Object.keys(sampleGone)
       };
     }
   };

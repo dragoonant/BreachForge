@@ -283,7 +283,34 @@ console.log(`characters spent this run: ${after.used - before.used}`);
 console.log(`built ${built.length}/${todo.length} tags, ${total} B ` +
   `(${(total / 1024).toFixed(1)} KB) added`);
 
-console.log('\n--- paste-ready for js/audio.js SAMPLES ---');
-for (const b of built) {
-  console.log(`    '${b.item.tag}': { file: '${FILE(b.item.tag)}', gain: ${b.item.gain} },`);
+// Wire the built samples into js/audio.js between its markers, so a run is a
+// single command rather than a run plus a hand-edit. Same idea as
+// tools/import-cards.mjs generating data/*.js. Only the block between the
+// markers is touched; everything else in the file is left alone.
+function wire() {
+  const F = 'js/audio.js';
+  const BEGIN = '/* BEGIN GENERATED SAMPLES';
+  const END = '/* END GENERATED SAMPLES */';
+  let src = fs.readFileSync(F, 'utf8');
+  const a = src.indexOf(BEGIN), b = src.indexOf(END);
+  if (a < 0 || b < 0) {
+    console.error(`\ncould not find the generated-samples markers in ${F}; ` +
+      'paste this in by hand:');
+    for (const x of built) {
+      console.error(`    '${x.item.tag}': { file: '${FILE(x.item.tag)}', gain: ${x.item.gain} },`);
+    }
+    return;
+  }
+  // Keep any entry whose files are still on disk, so --only or a partial run
+  // never drops tags that a previous run built.
+  const keep = SFX.filter(x => done(x));
+  const lines = keep.map(x =>
+    `    '${x.tag}': { file: '${FILE(x.tag)}', gain: ${x.gain} },`).join('\n');
+
+  const head = src.slice(0, a) + BEGIN + ' — written by tools/fetch-sfx.mjs, do not hand-edit */\n';
+  src = head + (lines ? lines + '\n' : '') + '    ' + src.slice(b);
+  fs.writeFileSync(F, src);
+  console.log(`\nwired ${keep.length} sample tag(s) into ${F}`);
 }
+
+wire();
