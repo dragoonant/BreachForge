@@ -10,6 +10,17 @@
   RB.DOMAINS = ['Fury', 'Calm', 'Mind', 'Body', 'Order', 'Chaos'];
   RB.VICTORY_SCORE = 8;
 
+  // Tokens a card pack brings with it. A pack that needs a token nobody printed should
+  // declare it through a door rather than pushing into RB.tokenData, so data/tokens.js
+  // stays the list of tokens and not merely most of them.
+  RB.defineToken = function (def, abilities) {
+    RB.tokenData = RB.tokenData || [];
+    if (RB.tokenData.some(t => t.id === def.id)) return;
+    RB.tokenData.push(def);
+    RB.tokenAbilities = RB.tokenAbilities || {};
+    RB.tokenAbilities[def.id] = abilities || { vanilla: true };
+  };
+
   RB.registerCards = function () {
     // Tokens register alongside real cards so every selector, describer and renderer sees
     // one card table. A token's might can still be overridden at mint time by the card
