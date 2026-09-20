@@ -22,6 +22,12 @@
     $('#start').onclick = () => { RB.audio.play('ui.click'); RB.showDeckPicker(); };
     $('#howto').onclick = () => $('#help').classList.toggle('hidden');
     $('#help').onclick = () => $('#help').classList.add('hidden');
+    // The notice links wherever this is published from, so it is a live link on the one
+    // screen everybody sees rather than only a line in a repo file.
+    const nl = document.getElementById('noticelink');
+    if (nl) nl.href = (location.hostname.endsWith('github.io')
+      ? 'https://github.com/' + location.pathname.split('/').filter(Boolean)[0]
+      : '') + '#notice';
     RB.showScreen('title');
     RB.audio.music('title');
     document.addEventListener('pointerdown', () => RB.audio.init(), { once: true });

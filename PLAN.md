@@ -47,6 +47,17 @@ convention, written into `docs/grammar.md`.
 5. **Eleven of twenty decks have a reconstructed Chosen Champion** (D-11) and seventeen a
    reconstructed rune split (D-3) — the decklist source records neither in full.
 
+### The publication decision — owner, 2026-09-20
+
+Both of Riot's policies were read and recorded in `docs/sources.md` before this was decided, and
+what they say is written there plainly, including the three prohibitions this project sits
+against. **With that in front of him, the owner chose to deploy publicly**, on the stated basis
+that if Riot asks for it to come down, it comes down.
+
+Recorded here with the date so nobody re-opens it. `docs/takedown.md` holds the contact and the
+two commands that end the deployment, so the undertaking is a ten-second operation rather than a
+good intention.
+
 ### Deliberate scope decisions
 
 - **1v1 only.** More than two seats breaks the zero-sum identity the evaluator relies on.

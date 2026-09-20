@@ -1,8 +1,13 @@
 # BreachForge
 
 A browser reproduction of the mechanics of **Riftbound: The League of Legends TCG**, played
-against an AI. Twenty tournament-winning decks, one per legend, across all six domains. Not
-affiliated with Riot Games — see [NOTICE.md](NOTICE.md).
+against an AI. Twenty tournament-winning decks, one per legend, across all six domains.
+
+> BreachForge was created under Riot Games' "Legal Jibber Jabber" policy using assets owned by
+> Riot Games. Riot Games does not endorse or sponsor this project.
+
+Non-commercial. No official artwork or audio is used — every image here is the project's own.
+See [NOTICE.md](NOTICE.md), and [docs/takedown.md](docs/takedown.md) for the takedown contact.
 
 ## Play it
 
