@@ -18,13 +18,14 @@ in the pool are multi-domain and six of them carry a power cost, so this is the 
 per-domain cost lands.
 Owner: unassigned.
 
-**D-2 — "Choose a unit" does not ask the player.**
-A clause that chooses a target resolves against the best candidate by a stated rule
-(`RB.autoPick`: highest might among the filtered pool) instead of opening a targeting prompt.
-The engine already models `pendingChoice` as a queue step; the three targeting UIs from
-`CARD-LOG-AND-TARGETING-SPEC.md` are not built yet.
-*Fix:* build the targeting UIs and route every `{ pick: … }` selector through a queue step.
-Owner: unassigned. This is the largest single gap in the interface.
+**D-2 — RETIRED in the core, 2026-09-20; the three card packs are still being routed through it.**
+The human seat is asked to choose its targets: the question is parked on the state as a `target`
+queue step, the resolution restarts with the answer pre-filled, and the player answers by clicking
+the real card. `RB.offerChoice` is the one door, and everything the core resolves goes through it.
+**What remains:** each of the three set packs builds and slices its own target pool in its ops
+file rather than handing the ordered pool to `offerChoice`, so a card authored in a pack still
+auto-picks. It is a one-line change per pack and all three have it; until it lands, cards whose
+targeting lives in a pack do not ask.
 
 **D-3 — Rune decks are reconstructed to twelve.**
 Several posted decklists record only part of the rune deck (one records none at all). A legal
