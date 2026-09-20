@@ -8,9 +8,25 @@ export function run(t) {
     t.eq(missing.length, 0, missing.slice(0, 6).join('; '));
   });
 
-  t.test('no registered card carries an unimplemented marker or a skeleton default', () => {
-    const bad = RB.validate().filter(p => /unimplemented|skeleton/.test(p));
+  t.test('no registered card carries a skeleton default a real value would replace', () => {
+    const bad = RB.validate().filter(p => /skeleton/.test(p));
     t.eq(bad.length, 0, bad.slice(0, 6).join('; '));
+  });
+
+  t.test('every partial card states which clause is missing, and is marked as partial', () => {
+    const bad = [];
+    for (const c of RB.allCards()) {
+      if (!c.abilities || !c.abilities.unimplemented) continue;
+      if (typeof c.abilities.unimplemented !== 'string' || c.abilities.unimplemented.length < 12)
+        bad.push(c.id + ': unimplemented marker does not say what is missing');
+      if (!RB.isPartial(c.id)) bad.push(c.id + ': marker not surfaced by isPartial');
+    }
+    t.eq(bad.length, 0, bad.slice(0, 5).join('; '));
+  });
+
+  t.test('at least half the decks are offered — a gate that hides everything is a failure', () => {
+    t.ok(RB.playableDecks().length >= 5,
+      'only ' + RB.playableDecks().length + ' of ' + RB.deckData.length + ' decks are offered');
   });
 
   t.test('every op named in ability data has a handler and a describer', () => {

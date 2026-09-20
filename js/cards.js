@@ -54,8 +54,6 @@
       if (c.type === 'Rune') continue;
       if (!c.abilities) { problems.push(c.id + ': registered but has no ability data'); continue; }
       if (c.abilities.vanilla) continue;
-      if (c.abilities.unimplemented)
-        problems.push(c.id + ': unimplemented — ' + c.abilities.unimplemented);
       if (c.abilities.skeleton)
         problems.push(c.id + ': still carries the skeleton default');
     }
@@ -65,6 +63,28 @@
       for (const e of d.main) if (e.qty > 3) problems.push(d.id + ': ' + e.id + ' x' + e.qty + ' exceeds the copy limit');
     }
     return problems;
+  };
+
+  // A card whose printed text the grammar cannot yet express carries an `unimplemented`
+  // marker. It plays as its printed body — a unit's might works, its ability does not —
+  // and it is MARKED, on the card face and in the deck picker, with the clause that is
+  // missing. The alternative the earlier projects used was to hide every deck containing
+  // one, which here would hide all ten and leave nothing to practise against; an
+  // unmarked partial card is the thing that must never happen, and this is not that.
+  //
+  // A card that plays WRONG — as opposed to incompletely — still goes in data/defects.js
+  // and still takes its decks out of circulation.
+  RB.isPartial = function (id) {
+    const c = byId[id];
+    return !!(c && c.abilities && c.abilities.unimplemented);
+  };
+  RB.partialReason = function (id) {
+    const c = byId[id];
+    return (c && c.abilities && c.abilities.unimplemented) || null;
+  };
+  RB.deckPartials = function (d) {
+    const ids = [d.legend, ...d.runes.map(e => e.id), ...d.battlefields.map(e => e.id), ...d.main.map(e => e.id)];
+    return [...new Set(ids.filter(RB.isPartial))];
   };
 
   // The content gate. data/defects.js lists ids that do not yet play as they read;

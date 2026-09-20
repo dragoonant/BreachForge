@@ -42,10 +42,16 @@
       c.classList.add('tile-art');
       t.appendChild(c);
       const m = RB.el('');
+      const partial = RB.deckPartials(d);
       m.innerHTML = '<div class="nm">' + legend.name + '</div>' +
         '<div class="meta">' + d.domains.map(x =>
           '<span class="dombadge" style="color:var(--d-' + x + ')">' + x + '</span>').join('') +
-        '<br>' + d.main.reduce((s, e) => s + e.qty, 0) + ' cards · ' + d.result + ' · ' + d.event + '</div>';
+        '<br>' + d.main.reduce((s, e) => s + e.qty, 0) + ' cards · ' + d.result + ' · ' + d.event +
+        (partial.length ? '<br><span class="partialbadge" title="' +
+          partial.map(id => RB.card(id).name + ': ' + RB.partialReason(id)).join(' — ').replace(/"/g, "'") +
+          '">' + partial.length + ' card' + (partial.length === 1 ? '' : 's') +
+          ' not yet fully implemented</span>' : '') +
+        '</div>';
       t.appendChild(m);
       t.onclick = () => {
         RB.audio.play('ui.click');

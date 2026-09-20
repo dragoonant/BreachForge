@@ -209,3 +209,13 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   .bf .bftext{display:none}
   .runes{width:4.2rem}
 }
+
+/* A card whose printed ability the grammar cannot yet express. Marked, never hidden. */
+.partial-mark{position:absolute;left:.26rem;bottom:.24rem;z-index:4;
+  width:.95em;height:.95em;line-height:.95em;text-align:center;border-radius:50%;
+  font-size:.66em;font-weight:800;color:#0b0f18;background:#ffca63;
+  box-shadow:0 0 0 1px rgba(0,0,0,.6),0 0 6px rgba(255,202,99,.6);cursor:help}
+.card-preview .partial-mark{font-size:.9rem;width:1.3rem;height:1.3rem;line-height:1.3rem}
+.partial-note{margin-top:.5rem;font-size:.72rem;line-height:1.35;color:#ffca63;
+  border-left:2px solid #ffca63;padding-left:.5rem}
+.partialbadge{color:#ffca63;font-size:.68rem;cursor:help}

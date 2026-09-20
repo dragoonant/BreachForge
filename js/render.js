@@ -56,6 +56,21 @@
     }
     el.appendChild(plate);
 
+    // A card whose ability the grammar cannot yet say is marked on its own face, with the
+    // missing clause in the tooltip. An unmarked partial card is the failure mode that
+    // matters; this is the opposite of it.
+    if (RB.isPartial(card.id)) {
+      el.classList.add('card-partial');
+      const w = document.createElement('div');
+      w.className = 'partial-mark';
+      w.textContent = '!';
+      w.title = 'Not yet implemented: ' + RB.partialReason(card.id);
+      el.appendChild(w);
+      if (size === 'preview')
+        plate.innerHTML += '<div class="partial-note">Not yet implemented — ' +
+          esc(RB.partialReason(card.id)) + '. This card plays as its printed body only.</div>';
+    }
+
     if (card.might != null) {
       const st = document.createElement('div');
       st.className = 'card-stats';
