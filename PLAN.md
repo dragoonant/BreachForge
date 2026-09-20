@@ -1,46 +1,51 @@
 # BreachForge — plan and status
 
-## Status — 2026-09-20, third session
+## Status — 2026-09-20, fourth session
 
-**Twenty decks, twenty distinct legends, across all six domains.** A complete 1v1 game start to
-finish against an AI, with generated art on every card and on every area of the board, sound on
-every event, and the player choosing their own targets.
+**Every card in all twenty decks plays as printed, and the audit agrees.**
 
 | | |
 |---|---|
-| Decks | **20**, all legal — one legend each, 12 runes, 3 battlefields, a Chosen Champion in a public zone |
-| Cards | **264 registered** (256 + 8 tokens); **all 264 have art**, nothing falls back |
-| Authoring | 237 authored at the start of this session; the last 16 are being closed against ten new primitives |
-| Effect grammar | 150+ ops, one describer each, and no authored card the auditor renders nothing for |
-| Tests | 69, green in ~10s including 200 fuzzed games and 40 AI games |
-| AI | one-ply evaluator; 40 games across all 20 decks complete with no failures, and it beats random play 19/20 |
+| Decks | **20**, twenty distinct legends, all six domains, every one legal |
+| Cards | **264 registered** (256 + 8 tokens); **all have art**; **0 partial** |
+| Authoring | Origins 96 · Spiritforged 68 · Unleashed 84 · 3 vanilla (the basic runes) |
+| Audit | `tools/audit-card-text.mjs`: **0 findings across 250 cards** |
+| Grammar | ~180 ops, one describer each, every hook with a prose twin |
+| Tests | 76, green; `--full` 25s including 200 fuzzed games and the targeting soak |
+| AI | beats random 22/24 across all twenty decks |
 
-**What the previous version of this section got wrong:** it described ten decks and 170 cards, and
-listed targeting as the largest remaining gap. There are twenty decks now, and targeting is done.
+**What the previous version of this section got wrong:** it listed sixteen partial cards and
+five wrappers. The partials are gone, and the wrappers are down to the two that name the hook
+that would close them.
 
-### The two things a session should know about how this code is shaped
+### The lesson this session taught, three times over
 
-**One door per rule, and the door is the point.** The recurring failure in this project has not
-been a wrong card — it has been a *second path around a rule*. Damage written directly to
-`obj.damage` skips prevention and bonus layers. A target pool sliced in a pack skips the player,
-Deflect, and the `chosen` trigger. A token pushed into `RB.tokenData` skips whatever builds a work
-list from `data/tokens.js`. Each of those looked fine and played wrong. The doors that now exist:
-`RB.dealDamage`, `RB.offerChoice`, `RB.defineToken`, `RB.staticsOn`, `RB.totalCost`,
-`RB.isLethalDamage`, `RB.combatMightOf`, `RB.keywordValue`, `RB.settle`.
+**A rule with two homes is worse than a rule with none**, because one home is always subtly
+wrong and nothing points at it. Each of these was found by a card pack, not by a test, and each
+had been shipping:
 
-**Primitives, not card fixes.** Twice now a large block of cards has been stuck — 47, then 16 —
-and both times the answer was roughly ten missing engine concepts, not N card problems. When a
-pack reports a card it cannot author, the reason it gives is usually the name of the primitive.
+- A **Buff** was a Might modifier in one field and a spendable counter in another, with the rule
+  tying them together in a *pack wrapper* — so a unit buffed by one pack granted Might that a
+  cost printed by another could not see.
+- **Damage** was written straight to the object in eleven places, each one stepping over damage
+  prevention and the bonus-damage layer.
+- A **target pool** was sliced inside each pack, skipping the player, Deflect and the `chosen`
+  trigger — which is why targeting did not ask until all three packs routed through one door.
+- A **pack wrapper** around `RB.additionalCost` dropped an argument the core later added, and
+  broke zone-scoped grants for the whole project.
+
+`tools/check-pages.mjs` now greps for the two bypasses that have actually happened. The rest is
+convention, written into `docs/grammar.md`.
 
 ### Known gaps, in the order they matter
 
-1. **Combat damage is assigned by the engine** (D-10), within the printed constraints — lethal
-   first, no overkill, Tank first. A player who would spread damage differently cannot.
-2. **Five wrappers remain across two packs** (D-8), each naming the hook that would close it.
+1. **Combat damage is assigned by the engine** (D-10), within the printed constraints.
+2. **Two pack wrappers remain** (D-8): `RB.recycleRune` (no event exists for a recycled rune) and
+   `RB.score` (the score lock has no hook table). Both name their own fix.
 3. **Focus is not separated from Priority** (D-4).
-4. **No animation layer** (D-7). The structured log carries everything one would need.
-5. **Eleven of twenty decks have a reconstructed Chosen Champion** (D-11) and seventeen have a
-   reconstructed rune split (D-3), because the decklist source records neither in full.
+4. **No animation layer** (D-7).
+5. **Eleven of twenty decks have a reconstructed Chosen Champion** (D-11) and seventeen a
+   reconstructed rune split (D-3) — the decklist source records neither in full.
 
 ### Deliberate scope decisions
 
