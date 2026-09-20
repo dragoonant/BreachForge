@@ -45,15 +45,34 @@
   };
 
   // The audio layer rides the log: a new entry with a sound tag voices at the moment of
-  // the picture, and a tag with no clip is simply ignored.
+  // the picture, and a tag with no clip is simply ignored. The spotlight rides it too —
+  // the opponent acts on a 420ms beat and a card played off-screen is a card the player
+  // never saw.
   function soundFor(after, before) {
     for (let i = before.log.length; i < after.log.length; i++) {
       const e = after.log[i];
+      if (e.kind === 'play' && e.data.p !== U.me) RB.spotlight(after, e.data.iid);
       if (!e.sound) continue;
       if (e.kind === 'score') RB.audio.play('point.score', { points: e.data.points, mine: e.data.p === U.me });
       else RB.audio.play(e.sound);
     }
   }
+
+  // Spotlight: the card the opponent just played, shown large for a beat. It is a
+  // decoration over the board, so it never takes a click.
+  let spotTimer = null;
+  RB.spotlight = function (state, iid) {
+    const box = $('#spotlight');
+    box.innerHTML = '';
+    box.appendChild(RB.renderCard(RB.cardOf(state, iid), { size: 'preview' }));
+    box.classList.remove('hidden');
+    box.classList.add('in');
+    clearTimeout(spotTimer);
+    spotTimer = setTimeout(() => {
+      box.classList.remove('in');
+      spotTimer = setTimeout(() => box.classList.add('hidden'), 260);
+    }, 1500);
+  };
 
   // --- selection ------------------------------------------------------------
   U.bindCard = function (elm, state, iid, role) {

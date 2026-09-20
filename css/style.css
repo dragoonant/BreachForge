@@ -219,3 +219,10 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .partial-note{margin-top:.5rem;font-size:.72rem;line-height:1.35;color:#ffca63;
   border-left:2px solid #ffca63;padding-left:.5rem}
 .partialbadge{color:#ffca63;font-size:.68rem;cursor:help}
+
+/* The card the opponent just played. A decoration over the board — it never takes a click. */
+#spotlight{position:fixed;left:50%;top:44%;z-index:90;pointer-events:none;
+  transform:translate(-50%,-50%) scale(.86);opacity:0;transition:opacity .22s ease,transform .22s ease;
+  filter:drop-shadow(0 18px 40px rgba(0,0,0,.7))}
+#spotlight.in{opacity:1;transform:translate(-50%,-50%) scale(1)}
+#spotlight .card-preview{width:clamp(13rem,19vw,17rem);min-height:0}
