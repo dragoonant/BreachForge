@@ -34,7 +34,10 @@
 //    Each reads only `ogn`-prefixed fields plus `o.counters`, which is the core's own Buff
 //    representation (RB.defineExtraCost('spendBuff') spends exactly that). The wrapper of
 //    RB.runTriggers that used to carry "at the end of this turn" is gone: that is the
-//    core's `delayed` now.
+//    core's `delayed` now. The lookup shim on RB.additionalCost that stood here while the
+//    core could not resolve the x1…xN ids it minted itself is gone: the core resolves
+//    them, and the shim's signature was one argument short of the core's, which broke
+//    zone-scoped grants for every pack.
 (function (RB) {
   'use strict';
 
@@ -225,8 +228,15 @@
   // --- damage and removal ---------------------------------------------------
   // The core's `damage`/`kill` take the core's selectors, which cannot say "a unit"
   // (either side's) while still picking the one a player would pick.
+  //
+  // Every amount below goes through RB.dealDamage, the one door, and none of them writes
+  // `obj.damage`. That is where the layers between a source and a unit are applied —
+  // `preventEffectDamage` (ogn-145 Unyielding Spirit) and the `bonusDamage` static
+  // (ogn-296 Void Gate) — and a direct write bypasses both, so those two cards would
+  // play wrong without ever looking broken. `kind` is left at its default, 'effect':
+  // everything this pack deals is spell and ability damage, never combat damage.
   def('damage', (s, e, ctx) => {
-    for (const iid of targets(s, e.target, ctx)) RB.obj(s, iid).damage += num(e, 'n', 1);
+    for (const iid of targets(s, e.target, ctx)) RB.dealDamage(s, iid, num(e, 'n', 1), ctx);
   });
   say('damage', e => 'Deal ' + num(e, 'n', 1) + ' to ' +
     ((e.target && e.target.n > 1) ? 'each of ' : '') + selText(e.target) + '.');
@@ -242,8 +252,8 @@
     (e.ownerDraws ? ' Its controller draws ' + e.ownerDraws + '.' : ''));
 
   def('damageAll', (s, e, ctx) => {
-    void ctx;
-    for (const bf of s.bf) for (const iid of bf.units.slice()) RB.obj(s, iid).damage += num(e, 'n', 1);
+    for (const bf of s.bf)
+      for (const iid of bf.units.slice()) RB.dealDamage(s, iid, num(e, 'n', 1), ctx);
   });
   say('damageAll', e => 'Deal ' + num(e, 'n', 1) + ' to all units at battlefields.');
 
@@ -293,8 +303,8 @@
     const theirs = targets(s, { pick: 'enemyUnits' }, ctx)[0];
     if (!mine || !theirs) return;
     const a = RB.mightOf(s, mine), b = RB.mightOf(s, theirs);
-    RB.obj(s, mine).damage += b;
-    RB.obj(s, theirs).damage += a;
+    RB.dealDamage(s, mine, b, ctx);
+    RB.dealDamage(s, theirs, a, ctx);
     RB.log(s, 'duel', { a: mine, b: theirs });
   });
   say('duel', () => 'Choose a friendly unit and an enemy unit. They deal damage equal to ' +
@@ -533,16 +543,15 @@
     (e.filter === 'nonUnit' ? 'non-unit ' : '') + 'card from it, and recycle that card.');
 
   // --- wave two -------------------------------------------------------------
-  // The Recruit token (rules §185.3: 1 Might, tag Recruit). It is not in data/tokens.js,
-  // which is not this author's file, so it is added here guarded — four Origins cards
-  // make one, and Viktor reads "non-Recruit", so the tag has to be real. Move it to
-  // data/tokens.js when convenient and this block becomes a no-op.
-  if (RB.tokenData && !RB.tokenData.some(t => t.id === 'tok-recruit')) {
-    RB.tokenData.push({ id: 'tok-recruit', name: 'Recruit', nameId: 'recruit', type: 'Unit',
-      domain: 'Colorless', domains: [], tags: ['Recruit', 'Token'],
-      energy: 0, power: 0, might: 1, rarity: 'Token', set: 'Token', artist: null });
-    if (RB.tokenAbilities) RB.tokenAbilities['tok-recruit'] = { vanilla: true };
-  }
+  // The Recruit token (rules §185.3: 1 Might, tag Recruit) — four Origins cards make one,
+  // and Viktor reads "non-Recruit", so the tag has to be real. Declared through the door,
+  // which is what puts it in the one token list every reader walks: pushing into
+  // RB.tokenData instead kept it out of the art pipeline's work list, which reads
+  // data/tokens.js, and left it the one card in the game with no art.
+  RB.defineToken({ id: 'tok-recruit', name: 'Recruit', nameId: 'recruit', type: 'Unit',
+    domain: 'Colorless', domains: [], tags: ['Recruit', 'Token'],
+    energy: 0, power: 0, might: 1, rarity: 'Token', set: 'Token', artist: null },
+  { vanilla: true });
 
   // "Play a … token here" — at the location of the card whose ability this is, which the
   // core's `to: 'here'` cannot say because a play trigger carries no event battlefield.
@@ -688,6 +697,171 @@
   });
   say('fragileThisTurn', () => 'When any unit takes damage this turn, kill it.');
 
+  // --- wave three -----------------------------------------------------------
+  // The four cards that were waiting on a primitive the core has since grown. Three of
+  // them are pure card data now (an extra turn, a damage-prevention layer, a bonus-damage
+  // static); what is left here is what those primitives still do not reach.
+
+  // "Banish this." A spell is in NO zone while its own effects run: the core takes it out
+  // of hand as it is played and puts it in the trash only after the effects have finished,
+  // so at the moment this clause is read there is nothing anywhere to banish. The core
+  // fires `spellPlayed` immediately after that trash push, and a delayed ability is
+  // dispatched before any board trigger and does not need its source in play — so that
+  // event is the first instant the card is somewhere a banish can take it from. The op
+  // schedules itself there and finishes the job on the way through.
+  def('banishSelf', (s, e, ctx) => {
+    void e;
+    const iid = ctx.source;
+    const o = s.objects[iid];
+    if (!o) return;
+    const loc = RB.locationOf(s, iid);
+    if (loc.kind === 'nowhere') {
+      s.delayed = s.delayed || [];
+      s.delayed.push({ on: 'spellPlayed', p: ctx.p, source: iid, once: true,
+        effects: [{ op: 'ogn.banishSelf' }], data: {} });
+      return;
+    }
+    if (loc.kind === 'trash') RB.removeFrom(s.players[loc.p].trash, iid);
+    else if (loc.kind === 'base') RB.removeFrom(s.players[loc.p].base, iid);
+    else if (loc.kind === 'bf') RB.removeFrom(s.bf[loc.bf].units, iid);
+    else return;
+    o.banished = true;
+    s.players[o.owner].banished.push(iid);
+    RB.log(s, 'banish', { p: o.owner, iid: iid });
+  });
+  say('banishSelf', () => 'Banish me.');
+
+  // "Pay any amount of [C] to deal that much damage to all enemy units at a battlefield."
+  // The X is the core's — `ctx.xPaid` is what was paid — but the shape of the damage is
+  // not: the card picks a BATTLEFIELD and every enemy unit standing there is hit. None of
+  // those units is chosen, so none of them charges Deflect and none of them raises the
+  // `chosen` trigger; RB.offerChoice does both to everything handed to it, which is right
+  // for a unit and wrong for a battlefield. So this one choice is resolved by a stated
+  // rule, and the describer says which rule it is: the battlefield where the damage kills
+  // the most enemy units, and among those the one where it hits the most.
+  def('damageXAtBattlefield', (s, e, ctx) => {
+    void e;
+    const n = ctx.xPaid || 0;
+    if (n <= 0) return;                       // paying nothing deals no instance of damage
+    const foe = RB.opponentOf(ctx.p);
+    let best = -1, bestKills = -1, bestHits = -1;
+    for (let i = 0; i < s.bf.length; i++) {
+      const units = RB.unitsAt(s, i, foe);
+      if (!units.length) continue;
+      const kills = units.filter(u => RB.obj(s, u).damage + n >= RB.mightOf(s, u)).length;
+      if (kills > bestKills || (kills === bestKills && units.length > bestHits)) {
+        best = i; bestKills = kills; bestHits = units.length;
+      }
+    }
+    if (best < 0) return;
+    for (const iid of RB.unitsAt(s, best, foe).slice()) RB.dealDamage(s, iid, n, ctx);
+    RB.log(s, 'damageAt', { p: ctx.p, bf: best, n: n });
+  });
+  say('damageXAtBattlefield', () => 'Deal that much damage to all enemy units at a ' +
+    'battlefield — the one where it kills the most enemy units.');
+
+  // --- The Boss: an optional replacement with a cost ------------------------
+  //
+  // "If a buffed unit you control would die, you may pay [C], exhaust me, and spend its
+  // buff to heal it, exhaust it, and recall it instead."
+  //
+  // A replacement has to answer in front of the death, synchronously, and the only
+  // optionality primitive is `may`, which parks a question on the queue and is answered
+  // by a later action. So the card is split across that answer, and the unit waits in
+  // between where nothing can see it: the death IS replaced, the unit is lifted out of
+  // its zone — it was leaving that zone either way — and held in no zone at all while the
+  // question stands. Answering yes pays the cost and finishes the printed replacement:
+  // heal, exhaust, recall. Answering no puts the unit back exactly where it died and kills
+  // it for real, with this replacement disarmed for that death so it is not offered twice.
+  //
+  // Holding the unit in no zone is what keeps that window honest. While the question is
+  // open the unit is not standing at a battlefield, so it cannot hold one, cannot be
+  // counted by a combat that is still resolving, and cannot take damage — both answers
+  // reach the board the printed card would reach, one action apart. Authored as a
+  // compulsion instead it would spend the buff and exhaust the legend without ever asking,
+  // which is a different card.
+
+  // [C] is Power matching the card's own Domain; a domainless card processes it as [A].
+  function ownDomains(s, iid) {
+    const c = RB.card(RB.obj(s, iid).cardId);
+    const d = (c.domains && c.domains.length ? c.domains : [c.domain])
+      .filter(x => x && x !== 'Colorless');
+    return d.length ? d : RB.DOMAINS.slice();
+  }
+  const saveCost = (s, iid, power) => ({ energy: 0, power: power,
+    domains: ownDomains(s, iid), each: false });
+
+  RB.defineReplacementText('ogn.saveBuffedForCost', r =>
+    'If a buffed unit you control would die, you may pay ' + (r.power == null ? 1 : r.power) +
+    ' Power, exhaust me, and spend its buff to heal it, exhaust it, and recall it instead.');
+  RB.defineReplacement('ogn.saveBuffedForCost', (s, e) => {
+    const dying = s.objects[e.dying], src = s.objects[e.source];
+    if (!dying || !src) return false;
+    if (e.source === e.dying) return false;
+    if (src.controller !== dying.controller) return false;       // a unit YOU control
+    if (RB.card(dying.cardId).type !== 'Unit') return false;     // a UNIT
+    if (!(dying.counters > 0)) return false;                     // a BUFFED unit
+    if (dying.ognSaveDeclined) return false;                     // already offered, and declined
+    if (src.exhausted) return false;                             // "exhaust me" is part of the cost
+    const power = e.spec.power == null ? 1 : e.spec.power;
+    if (!RB.canPay(s, src.controller, saveCost(s, e.source, power))) return false;
+    const loc = RB.locationOf(s, e.dying);
+    if (loc.kind === 'bf') RB.removeFrom(s.bf[loc.bf].units, e.dying);
+    else if (loc.kind === 'base') RB.removeFrom(s.players[loc.p].base, e.dying);
+    else return false;
+    dying.ognLimbo = loc;
+    s.queue.push({
+      kind: 'may', who: src.controller, source: e.source,
+      prompt: 'Pay ' + power + ' Power, exhaust ' + RB.card(src.cardId).name + ', and spend ' +
+        RB.card(dying.cardId).name + "'s buff to save it?",
+      ctx: { p: src.controller, source: e.source,
+        event: { p: dying.controller, iid: e.dying } },
+      onAnswer: [[{ op: 'ogn.saveBuffed', power: power }], [{ op: 'ogn.finishDeath' }]],
+    });
+    return true;
+  });
+
+  def('saveBuffed', (s, e, ctx) => {
+    const iid = ctx.event && ctx.event.iid;
+    const o = iid ? s.objects[iid] : null;
+    const src = s.objects[ctx.source];
+    if (!o || !src || !o.ognLimbo) return;
+    const plan = RB.planPayment(s, ctx.p, saveCost(s, ctx.source, num(e, 'power', 1)));
+    // The cost was payable when the offer was made and the answer is the very next action,
+    // so this should not happen; if it does, the replacement simply does not happen, which
+    // is the death it was standing in front of.
+    if (!plan || src.exhausted || !(o.counters > 0)) { RB.ops['ogn.finishDeath'](s, {}, ctx); return; }
+    RB.pay(s, ctx.p, plan);
+    src.exhausted = true;                            // …exhaust me…
+    o.counters--;                                    // …and spend its buff…
+    delete o.ognLimbo;
+    o.damage = 0;                                    // heal it,
+    o.exhausted = true;                              // exhaust it,
+    delete o.role;
+    s.players[o.controller].base.push(iid);          // and recall it — not a move (rule 449).
+    RB.log(s, 'recall', { iid: iid, p: o.controller }, 'unit.move');
+  });
+  say('saveBuffed', () => 'Heal it, exhaust it, and recall it.');
+
+  def('finishDeath', (s, e, ctx) => {
+    void e;
+    const iid = ctx.event && ctx.event.iid;
+    const o = iid ? s.objects[iid] : null;
+    if (!o) return;
+    const loc = o.ognLimbo;
+    delete o.ognLimbo;
+    if (!loc) return;
+    // Back where it died, so its Deathknell is noted at the place it died (rule 808) and
+    // every other replacement still gets its turn in front of this death. Only THIS one is
+    // disarmed, and only for this death.
+    if (loc.kind === 'bf') s.bf[loc.bf].units.push(iid);
+    else s.players[loc.p].base.push(iid);
+    o.ognSaveDeclined = true;
+    RB.kill(s, iid);
+    delete o.ognSaveDeclined;
+  });
+  say('finishDeath', () => 'It dies.');
+
   // --- the chain ------------------------------------------------------------
   // Counter, but only a spell inside a printed cost bound. The core's `counterIf` reads
   // an Energy bound; this card's bound is on both halves of the cost, and a head outside
@@ -786,7 +960,6 @@
     cost.energy += m.energy || 0;
     cost.power += m.power || 0;
   });
-
   // "If a friendly unit would die, kill this instead. Heal that unit, exhaust it, and
   // recall it." The shipped `dieInstead` heals and kills the source; this one also
   // exhausts the saved unit and RECALLS it — a relocation to its base that is not a move

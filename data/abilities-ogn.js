@@ -469,9 +469,16 @@ RB.registerAbilities({
       effects: [{ op: 'addPower', domain: 'Mind', n: 1 }] }],
   },
 
-  'ogn-122': { unimplemented: 'Take a turn after this one. There is no additional-turn ' +
-    'concept: the turn loop hands play to the opponent unconditionally, and a spell ' +
-    'cannot reach it — endTurn is internal and takes no queue.' },
+  // Take a turn after this one. Banish this.
+  // The extra turn is the core's queue in front of the turn loop. The banish is not the
+  // core's `banishInstead`, which is a replacement for a death: this card banishes ITSELF
+  // on resolution, and a resolving spell is in no zone at the moment its effects run —
+  // js/ops-ogn.js says where that clause lands instead.
+  'ogn-122': {
+    effects: [
+      { op: 'extraTurn' },
+      { op: 'ogn.banishSelf' }],
+  },
 
   // Exhaust all friendly units, then deal 12 to ALL units at battlefields.
   'ogn-123': {
@@ -480,10 +487,14 @@ RB.registerAbilities({
       { op: 'ogn.damageAll', n: 12 }],
   },
 
-  'ogn-145': { unimplemented: 'Prevent all spell and ability damage this turn. Damage has ' +
-    'no single door — every op marks it on the unit itself — so there is nothing for a ' +
-    'prevention layer to stand in front of, and a layer that caught only this pack\'s ' +
-    'damage would be the wrong card.' },
+  // [Reaction] Prevent all spell and ability damage this turn.
+  // Damage now has one door, and this is the layer that stands in it. It catches `effect`
+  // damage only — the Combat Damage Step is tagged `combat` and is untouched, which is the
+  // difference between this card and one that also stops a showdown.
+  'ogn-145': {
+    keywords: ['Reaction'],
+    effects: [{ op: 'preventEffectDamage' }],
+  },
 
   // When I'm played and when I conquer, buff me. · Spend my buff: Give me +4 [S] this turn.
   'ogn-164': {
@@ -535,9 +546,19 @@ RB.registerAbilities({
         then: [{ op: 'ogn.token', cardId: 'tok-recruit', to: 'base' }] }] }],
   },
 
-  'ogn-268': { unimplemented: 'Pay any amount of [C] to deal that much damage — an X cost. ' +
-    'Additional costs are discrete named entries and the payment solver has no variable ' +
-    'amount, so "any amount" would have to become a fixed list, which is a different card.' },
+  // [Action] Pay any amount of [C] to deal that much damage to all enemy units at a
+  // battlefield.
+  //
+  // An X cost: `x: true` with a per-unit price, so every affordable amount becomes its own
+  // play action and `ctx.xPaid` is what was paid. [C] is Power of this card's own domains
+  // (Body or Chaos), which is what the engine charges — `powerEach: 1`, priced against the
+  // card's own domain list.
+  //
+  'ogn-268': {
+    keywords: ['Action'],
+    additionalCosts: [{ id: 'x', x: true, powerEach: 1 }],
+    effects: [{ op: 'ogn.damageXAtBattlefield' }],
+  },
 
   // Buff a friendly unit in your base, then move it to a battlefield.
   'ogn-270': {
@@ -557,15 +578,31 @@ RB.registerAbilities({
   // the board and a line in the audit — a bespoke static flag has no prose hook yet.
   'ogn-295': { statics: [{ ognNoRetreat: true, grant: 'No Retreat', scope: 'here' }] },
 
-  'ogn-296': { unimplemented: 'Spells and abilities deal 1 Bonus Damage to units here. ' +
-    'Damage has no single door — every op marks it on the unit itself — so a bonus-damage ' +
-    'layer cannot stand in front of it, and one that caught only this pack\'s damage ' +
-    'would be the wrong card.' },
+  // Spells and abilities deal 1 Bonus Damage to units here. `bonusDamage` is read inside
+  // RB.dealDamage for `effect` damage only, so combat damage here is unchanged — which is
+  // what "spells and abilities" says. It reaches both sides' units, as printed, and
+  // js/text.js now renders the flag itself, so the clause needs nothing beside it.
+  'ogn-296': { statics: [{ bonusDamage: 1, scope: 'here' }] },
 
-  'ogn-299': { unimplemented: 'Add [C], "use only to play spells". The rune pool is ' +
-    'untagged and the payment solver is never told what is being paid for, so a ' +
-    'spell-only resource cannot be restricted — adding ordinary Power instead would be ' +
-    'strictly better than the printed card.' },
+  // [T]: [Reaction] — [Add] [C]. Use only to play spells.
+  //
+  // Restricted POWER, in its own bucket, spent before general Power and reachable only by
+  // a spell. The domain is the one place this card needs a word of its own: a tagged
+  // bucket carries ONE domain, and [C] on a multi-domain card is "any of its domains"
+  // (rules §135.2.d), which here is Fury or Mind. Taking the default — the card's primary
+  // domain, Fury — would be a strictly weaker card, and a bucket with no domain at all
+  // would be [A] and strictly stronger. So the domain is CHOSEN as the Power is added,
+  // which is what every other Power in this engine has: one domain, decided when it
+  // arrives. The one residual: a player who picks Fury and then needs Mind has paid for
+  // the reading, where "spendable on either" would not have.
+  'ogn-299': {
+    activated: [{ exhaustSelf: true, tags: ['Reaction'], effects: [
+      { op: 'choose', options: [
+        { label: 'Add 1 Fury Power, spendable only to play spells',
+          effects: [{ op: 'addRestrictedPower', n: 1, only: 'Spell', domain: 'Fury' }] },
+        { label: 'Add 1 Mind Power, spendable only to play spells',
+          effects: [{ op: 'addRestrictedPower', n: 1, only: 'Spell', domain: 'Mind' }] }] }] }],
+  },
 
   // [1], [T]: Play a 1 [S] Recruit unit token.
   'ogn-308': {
@@ -580,16 +617,29 @@ RB.registerAbilities({
         target: { pick: 'allUnits', prefer: 'mine' } }] }],
   },
 
-  'ogn-310': { unimplemented: 'An OPTIONAL replacement with a cost ("you may pay [C], ' +
-    'exhaust me, and spend its buff … instead"). A replacement must answer in front of ' +
-    'the death, synchronously, and the only optionality primitive is `may`, which opens a ' +
-    'queue step that cannot be answered there. Authored as a compulsion it would spend ' +
-    'the buff and exhaust the legend without being asked, which is a different card.' },
+  // If a buffed unit you control would die, you may pay [C], exhaust me, and spend its
+  // buff to heal it, exhaust it, and recall it instead. · When you conquer, ready me.
+  //
+  // The replacement is optional AND it has a cost, which is the shape the pack had no way
+  // to say: a replacement answers synchronously and `may` is answered by a later action.
+  // js/ops-ogn.js splits it across that answer and holds the unit in no zone in between —
+  // the full argument is there. `power: 1` is [C], priced against this legend's own
+  // domains (Body or Order). The conquer trigger carries `mine` but not `here`: a legend
+  // is at no battlefield, and `here` would silence it.
+  'ogn-310': {
+    replaces: [{ event: 'death', kind: 'ogn.saveBuffedForCost', power: 1 }],
+    triggers: [{ on: 'conquer', mine: true, effects: [{ op: 'ready', target: 'self' }] }],
+  },
 
-  'ogs-014': { unimplemented: 'Add [2], "use only to play spells". The rune pool is ' +
-    'untagged and the payment solver is never told what is being paid for, so a ' +
-    'spell-only resource cannot be restricted — adding ordinary Energy instead would be ' +
-    'strictly better than the printed card.' },
+  // [T]: [Reaction] — [Add] [2]. Use only to play spells.
+  // [2] is Energy, so both halves land: the restricted bucket holds Energy, is spent
+  // before general Energy so it is never wasted, and `only: 'Spell'` is matched against
+  // what the cost is FOR — a spell CARD being played, not an ability that happens to cost
+  // Energy. An untagged 2 Energy here would be strictly better than the printed card.
+  'ogs-014': {
+    activated: [{ exhaustSelf: true, tags: ['Reaction'],
+      effects: [{ op: 'addRestrictedEnergy', n: 2, only: 'Spell' }] }],
+  },
 
   // When you play a spell that costs [5] or more, draw 1.
   'ogs-021': {
