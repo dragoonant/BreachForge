@@ -86,7 +86,10 @@
    * ------------------------------------------------------------------ */
 
   function hex2rgb(h) {
-    var v = parseInt(h.slice(1), 16);
+    var t = String(h).trim().replace('#', '');
+    if (t.length === 3) t = t[0] + t[0] + t[1] + t[1] + t[2] + t[2];
+    var v = parseInt(t.slice(0, 6), 16);
+    if (isNaN(v)) return [128, 128, 128];
     return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
   }
   function rgb2css(c, a) {
@@ -100,76 +103,117 @@
   }
   function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
+  function rgb2hsl(c) {
+    var r = c[0] / 255, g = c[1] / 255, b = c[2] / 255;
+    var mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    var h = 0, sat = 0, l = (mx + mn) / 2, d = mx - mn;
+    if (d > 1e-6) {
+      sat = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+      if (mx === r) h = ((g - b) / d + (g < b ? 6 : 0));
+      else if (mx === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h *= 60;
+    }
+    return [h, sat, l];
+  }
+  function hsl2rgb(h, sat, l) {
+    h = ((h % 360) + 360) % 360;
+    sat = clamp(sat, 0, 1); l = clamp(l, 0, 1);
+    var cc = (1 - Math.abs(2 * l - 1)) * sat;
+    var x = cc * (1 - Math.abs(((h / 60) % 2) - 1));
+    var m = l - cc / 2;
+    var r = 0, g = 0, b = 0;
+    if (h < 60) { r = cc; g = x; }
+    else if (h < 120) { r = x; g = cc; }
+    else if (h < 180) { g = cc; b = x; }
+    else if (h < 240) { g = x; b = cc; }
+    else if (h < 300) { r = x; b = cc; }
+    else { r = cc; b = x; }
+    return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
+  }
+
   /* ------------------------------------------------------------------ *
    * Domain palettes
    *
-   * Each palette is a small painting kit: a three-stop sky, a light colour, the colour of the
-   * light source itself, three ridge values (far -> near, deliberately separated so the silhouette
-   * stack still reads at 34px), an accent for rim light and hard shapes, and a particle colour.
+   * There is ONE home for the domain colours: css/style.css, as --d-Fury ... --d-Colorless (the
+   * six official domain colours plus slate). We read those at runtime and derive a full painting
+   * kit from each hue — a three-stop sky, the light and its halo, three ridge values deliberately
+   * separated so the silhouette stack still reads at 34px, an accent for rim light, and motes.
+   * The hex literals below are only a fallback for when the stylesheet is not loaded (the scratch
+   * harness, a worker); they are copies of the CSS values, not a second source of truth.
    * ------------------------------------------------------------------ */
 
-  var RAW_PALETTES = {
-    Fury: {
-      sky: ['#1a0604', '#5f1408', '#d4410f'],
-      halo: '#ff9436', light: '#ffe0b0', sun: '#ff7a1c',
-      ridge: ['#8c3418', '#4a170b', '#1c0705'],
-      accent: '#ff7c33', particle: '#ffc074', ground: '#140403'
-    },
-    Calm: {
-      sky: ['#031824', '#0c4c5e', '#63d6d6'],
-      halo: '#9df0ea', light: '#e6fdff', sun: '#bff3f6',
-      ridge: ['#186273', '#0c3543', '#041720'],
-      accent: '#63dbe8', particle: '#c4f4ff', ground: '#03121a'
-    },
-    Mind: {
-      sky: ['#120826', '#391d73', '#a97cf5'],
-      halo: '#c9a4ff', light: '#f2e6ff', sun: '#b98bff',
-      ridge: ['#3f2a80', '#1f1348', '#0b0720'],
-      accent: '#9a6bff', particle: '#dcc6ff', ground: '#09051a'
-    },
-    Body: {
-      sky: ['#150e05', '#5e410f', '#f0b355'],
-      halo: '#ffd489', light: '#fff0cc', sun: '#ffb84d',
-      ridge: ['#6b5019', '#31401a', '#111a0c'],
-      accent: '#a9d158', particle: '#ffdb96', ground: '#0e1008'
-    },
-    Order: {
-      sky: ['#3c3218', '#a98c4c', '#ffeec2'],
-      halo: '#fff6dc', light: '#ffffff', sun: '#fff3d0',
-      ridge: ['#9b8350', '#544426', '#241c0d'],
-      accent: '#ffe6a4', particle: '#fff6dd', ground: '#1d170a'
-    },
-    Chaos: {
-      sky: ['#0a0310', '#4d0835', '#ff45b4'],
-      halo: '#ff8ad4', light: '#ffd9f0', sun: '#ff3fae',
-      ridge: ['#6b0a49', '#2c0521', '#0a0208'],
-      accent: '#a6ff3d', particle: '#d4ff6b', ground: '#080107'
-    },
-    Colorless: {
-      sky: ['#0d1218', '#3a4653', '#c2cedb'],
-      halo: '#dbe6f0', light: '#f2f7fc', sun: '#cfdbe8',
-      ridge: ['#4f5d6b', '#2a333c', '#10161c'],
-      accent: '#9db0c2', particle: '#d8e3ee', ground: '#0b0f14'
-    }
+  var DOMAIN_HEX_FALLBACK = {
+    Fury: '#e04a3c',      // red
+    Calm: '#46c06a',      // green
+    Mind: '#4a93e8',      // blue
+    Body: '#e08a33',      // orange
+    Chaos: '#9a5ce0',     // purple
+    Order: '#e3cb63',     // yellow
+    Colorless: '#8794ab'  // slate
   };
 
-  var PALETTES = {};
-  (function bake() {
-    for (var k in RAW_PALETTES) {
-      if (!Object.prototype.hasOwnProperty.call(RAW_PALETTES, k)) continue;
-      var p = RAW_PALETTES[k];
-      PALETTES[k] = {
-        sky: p.sky.map(hex2rgb),
-        halo: hex2rgb(p.halo),
-        light: hex2rgb(p.light),
-        sun: hex2rgb(p.sun),
-        ridge: p.ridge.map(hex2rgb),
-        accent: hex2rgb(p.accent),
-        particle: hex2rgb(p.particle),
-        ground: hex2rgb(p.ground)
-      };
+  /* Per-domain character: how far the sky's upper reaches rotate away from the domain hue, how
+     dark or high-key the painting sits, and where the accent lands relative to the hue. Small
+     numbers — the domain colour still has to be the first thing you read. */
+  var CHARACTER = {
+    Fury:      { topShift: -14, accentShift:  16, topL: 0.055, midL: 0.20, horizL: 0.56, sat: 1.00, accentSat: 1.00 },
+    Calm:      { topShift: -34, accentShift:  16, topL: 0.055, midL: 0.19, horizL: 0.56, sat: 0.95, accentSat: 1.00 },
+    Mind:      { topShift: -22, accentShift:  10, topL: 0.060, midL: 0.20, horizL: 0.58, sat: 0.95, accentSat: 1.00 },
+    /* Body sits warmer and lower than Fury so the two adjacent hues do not collide. */
+    Body:      { topShift: -26, accentShift:  10, topL: 0.055, midL: 0.19, horizL: 0.56, sat: 1.00, accentSat: 1.00 },
+    Chaos:     { topShift: -20, accentShift:  26, topL: 0.055, midL: 0.20, horizL: 0.58, sat: 1.00, accentSat: 1.00 },
+    /* Order is the high-key one: a pale gold dawn, so it never reads as Body's orange. */
+    Order:     { topShift: -26, accentShift:   6, topL: 0.100, midL: 0.31, horizL: 0.72, sat: 0.78, accentSat: 0.88 },
+    Colorless: { topShift: -10, accentShift:   4, topL: 0.060, midL: 0.21, horizL: 0.60, sat: 0.70, accentSat: 0.70 }
+  };
+
+  function derivePalette(hex, ch) {
+    var hsl = rgb2hsl(hex2rgb(hex));
+    var h = hsl[0];
+    var S = clamp(hsl[1] * ch.sat, 0, 1);
+    return {
+      sky: [
+        hsl2rgb(h + ch.topShift, S * 0.92, ch.topL),
+        hsl2rgb(h + ch.topShift * 0.35, S * 0.98, ch.midL),
+        hsl2rgb(h + 4, Math.min(1, S * 1.02), ch.horizL)
+      ],
+      sun: hsl2rgb(h + 6, Math.min(1, S * 1.0), ch.horizL + 0.04),
+      halo: hsl2rgb(h + ch.accentShift * 0.6, S * 0.88, ch.horizL + 0.18),
+      light: hsl2rgb(h + ch.accentShift * 0.6, S * 0.5, ch.horizL + 0.34),
+      ridge: [
+        hsl2rgb(h + ch.topShift * 0.2, S * 0.78, ch.midL * 1.0 + 0.04),
+        hsl2rgb(h + ch.topShift * 0.4, S * 0.72, ch.topL * 1.3 + 0.045),
+        hsl2rgb(h + ch.topShift * 0.6, S * 0.66, ch.topL * 0.7)
+      ],
+      accent: hsl2rgb(h + ch.accentShift, clamp(S * 1.05 * ch.accentSat / Math.max(ch.sat, 0.01), 0, 1), ch.horizL + 0.06),
+      particle: hsl2rgb(h + ch.accentShift * 0.8, S * 0.75, Math.min(0.9, ch.horizL + 0.26)),
+      ground: hsl2rgb(h + ch.topShift, S * 0.6, ch.topL * 0.55)
+    };
+  }
+
+  var PALETTES = null;
+  function getPalettes() {
+    if (PALETTES) return PALETTES;
+    var css = null;
+    try {
+      if (typeof document !== 'undefined' && document.documentElement && global.getComputedStyle) {
+        css = global.getComputedStyle(document.documentElement);
+      }
+    } catch (e) { css = null; }
+
+    PALETTES = {};
+    for (var name in DOMAIN_HEX_FALLBACK) {
+      if (!Object.prototype.hasOwnProperty.call(DOMAIN_HEX_FALLBACK, name)) continue;
+      var hex = DOMAIN_HEX_FALLBACK[name];
+      if (css) {
+        var v = (css.getPropertyValue('--d-' + name) || '').trim();
+        if (/^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(v)) hex = v;
+      }
+      PALETTES[name] = derivePalette(hex, CHARACTER[name] || CHARACTER.Colorless);
     }
-  })();
+    return PALETTES;
+  }
 
   function blendPalettes(a, b, t) {
     return {
@@ -179,7 +223,7 @@
       sun: mix(a.sun, b.sun, t),
       ridge: [mix(a.ridge[0], b.ridge[0], t), mix(a.ridge[1], b.ridge[1], t), mix(a.ridge[2], b.ridge[2], t)],
       /* the second domain keeps its own accent and motes — a Fury/Chaos card should still flash
-         acid green through an ember sky rather than average into mud. */
+         the second colour through the first one's sky rather than average into mud. */
       accent: b.accent,
       particle: mix(a.particle, b.particle, 0.65),
       ground: mix(a.ground, b.ground, t)
@@ -187,10 +231,11 @@
   }
 
   function paletteFor(card) {
+    var P = getPalettes();
     var list = (card && card.domains && card.domains.length ? card.domains : [card && card.domain]) || [];
-    var first = PALETTES[list[0]] || PALETTES[card && card.domain] || PALETTES.Colorless;
-    if (list.length > 1 && PALETTES[list[1]] && list[1] !== list[0]) {
-      return blendPalettes(first, PALETTES[list[1]], 0.38);
+    var first = P[list[0]] || P[card && card.domain] || P.Colorless;
+    if (list.length > 1 && P[list[1]] && list[1] !== list[0]) {
+      return blendPalettes(first, P[list[1]], 0.38);
     }
     return first;
   }
@@ -387,29 +432,61 @@
     var beast = rnd() < 0.32;
 
     if (!beast) {
-      var headR = W * rnd.range(0.072, 0.09);
-      var headY = plinthTopY - H * rnd.range(0.30, 0.38);
-      var neckY = headY + headR * 1.55;
-      var shoulderY = neckY + headR * 0.75;
-      var shoulderW = headR * rnd.range(3.6, 4.8);
-      var waistW = shoulderW * rnd.range(0.7, 0.85);
-      var hemW = shoulderW * rnd.range(1.15, 1.55);
-      var waistY = shoulderY + (plinthTopY - shoulderY) * 0.42;
+      var headR = W * rnd.range(0.062, 0.078);
+      var headY = plinthTopY - H * rnd.range(0.31, 0.39);
+      var neckY = headY + headR * 1.5;
+      var shoulderY = neckY + headR * 0.55;
+      var shoulderW = headR * rnd.range(5.2, 6.6);   /* shoulders are the widest point, not the hem */
+      var waistW = shoulderW * rnd.range(0.5, 0.62);
+      var hemW = shoulderW * rnd.range(0.84, 1.05);
+      var waistY = shoulderY + (plinthTopY - shoulderY) * 0.34;
+      var footY = plinthTopY + H * 0.004;
+
+      /* cape thrown to one side — breaks the symmetry that made this read as a chess piece */
+      var capeSide = rnd.pick([1, -1]);
+      ctx.beginPath();
+      ctx.moveTo(cx - capeSide * shoulderW * 0.36, shoulderY);
+      ctx.quadraticCurveTo(cx + capeSide * shoulderW * 0.95, waistY, cx + capeSide * shoulderW * rnd.range(0.7, 1.05), footY);
+      ctx.lineTo(cx + capeSide * shoulderW * 0.1, footY);
+      ctx.quadraticCurveTo(cx + capeSide * shoulderW * 0.2, waistY, cx + capeSide * shoulderW * 0.3, shoulderY);
+      ctx.closePath();
+      silhouette(ctx, W, pal, s.lx, { color: shade(dark, 0.08), rim: 0.7 });
 
       ctx.beginPath();
-      ctx.moveTo(cx - hemW / 2, plinthTopY + H * 0.004);
-      ctx.quadraticCurveTo(cx - waistW * 0.62, waistY, cx - waistW / 2, shoulderY + headR * 0.2);
-      /* pauldron: a hard shoulder corner, then a genuine neck notch */
-      ctx.lineTo(cx - shoulderW / 2, shoulderY);
-      ctx.quadraticCurveTo(cx - shoulderW * 0.46, neckY + headR * 0.1, cx - headR * 0.72, neckY);
-      ctx.lineTo(cx - headR * 0.7, headY + headR * 0.55);
-      ctx.arc(cx, headY, headR, Math.PI * 0.86, Math.PI * 0.14, false);
-      ctx.lineTo(cx + headR * 0.7, neckY);
-      ctx.quadraticCurveTo(cx + shoulderW * 0.46, neckY + headR * 0.1, cx + shoulderW / 2, shoulderY);
-      ctx.lineTo(cx + waistW / 2, shoulderY + headR * 0.2);
-      ctx.quadraticCurveTo(cx + waistW * 0.62, waistY, cx + hemW / 2, plinthTopY + H * 0.004);
+      /* left leg, hip, waist */
+      ctx.moveTo(cx - hemW * 0.46, footY);
+      ctx.lineTo(cx - hemW * 0.42, waistY + (footY - waistY) * 0.25);
+      ctx.quadraticCurveTo(cx - waistW * 0.56, waistY, cx - waistW / 2, shoulderY + headR * 0.55);
+      /* arm hanging outside the torso, then the pauldron corner */
+      ctx.lineTo(cx - shoulderW * 0.44, waistY - (waistY - shoulderY) * 0.1);
+      ctx.lineTo(cx - shoulderW * 0.5, shoulderY + headR * 0.32);
+      ctx.quadraticCurveTo(cx - shoulderW * 0.5, shoulderY - headR * 0.18, cx - shoulderW * 0.33, shoulderY - headR * 0.1);
+      /* neck notch */
+      ctx.lineTo(cx - headR * 0.62, neckY);
+      ctx.lineTo(cx - headR * 0.6, headY + headR * 0.6);
+      ctx.arc(cx, headY, headR, Math.PI * 0.84, Math.PI * 0.16, false);
+      ctx.lineTo(cx + headR * 0.6, neckY);
+      ctx.lineTo(cx + shoulderW * 0.33, shoulderY - headR * 0.1);
+      ctx.quadraticCurveTo(cx + shoulderW * 0.5, shoulderY - headR * 0.18, cx + shoulderW * 0.5, shoulderY + headR * 0.32);
+      ctx.lineTo(cx + shoulderW * 0.44, waistY - (waistY - shoulderY) * 0.1);
+      ctx.quadraticCurveTo(cx + waistW * 0.56, waistY, cx + hemW * 0.42, waistY + (footY - waistY) * 0.25);
+      ctx.lineTo(cx + hemW * 0.46, footY);
+      /* a V notch between the legs, so the base is not one solid skirt */
+      ctx.lineTo(cx + hemW * 0.14, footY);
+      ctx.lineTo(cx, footY - (footY - waistY) * rnd.range(0.25, 0.45));
+      ctx.lineTo(cx - hemW * 0.14, footY);
       ctx.closePath();
       silhouette(ctx, W, pal, s.lx, { color: dark, rim: 1 });
+
+      /* a crest, horn or topknot on the helm — a third of them get one */
+      if (rnd() < 0.42) {
+        ctx.beginPath();
+        ctx.moveTo(cx - headR * 0.5, headY - headR * 0.75);
+        ctx.lineTo(cx + rnd.range(-0.2, 0.6) * headR, headY - headR * rnd.range(1.8, 2.8));
+        ctx.lineTo(cx + headR * 0.55, headY - headR * 0.7);
+        ctx.closePath();
+        silhouette(ctx, W, pal, s.lx, { color: dark, rim: 0.8 });
+      }
 
       /* a weapon line: haft + head, or a bow arc, or a pair of blades — always asymmetric */
       var side = rnd.pick([1, -1]);
@@ -508,52 +585,98 @@
     ctx.fillRect(0, H * 0.86, W, H * 0.15);
   }
 
-  /* Legend — a tall backlit throne / summit reaching most of the frame height. */
+  /* Legend — a tall backlit throne between flanking pillars, crowned and haloed. Portrait
+     proportion: the mass runs from the very bottom of the frame to roughly a fifth from the top,
+     which is what separates a Legend from a Unit at thumbnail size. */
   function archSummit(ctx, W, H, s) {
     var pal = s.pal, rnd = s.rnd;
     var cx = W * 0.5;
-    var peakY = H * rnd.range(0.14, 0.22);
-    var baseY = H * 1.01;
-    var baseW = W * rnd.range(0.66, 0.84);
-    var neckW = W * rnd.range(0.2, 0.28);
+    var peakY = H * rnd.range(0.15, 0.21);
+    var baseY = H * 1.02;
+    var dark = shade(pal.ridge[2], -0.5);
 
-    /* halo ring behind the summit */
-    var hr = W * rnd.range(0.32, 0.4);
+    /* sunburst + rings behind everything */
+    var hy = peakY + H * rnd.range(0.14, 0.2);
+    var hr = W * rnd.range(0.34, 0.42);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
+    var spokes = rnd.int(12, 18);
+    var sRot = rnd.range(0, Math.PI);
+    for (var i = 0; i < spokes; i++) {
+      var a = sRot + (i / spokes) * Math.PI * 2;
+      var l0 = hr * 0.72, l1 = hr * rnd.range(1.15, 1.6);
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * l0, hy + Math.sin(a) * l0);
+      ctx.lineTo(cx + Math.cos(a) * l1, hy + Math.sin(a) * l1);
+      ctx.strokeStyle = rgb2css(pal.halo, rnd.range(0.1, 0.3));
+      ctx.lineWidth = Math.max(0.6, W * rnd.range(0.008, 0.022));
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
     ctx.beginPath();
-    ctx.arc(cx, peakY + hr * 0.62, hr, 0, Math.PI * 2);
+    ctx.arc(cx, hy, hr, 0, Math.PI * 2);
     ctx.strokeStyle = rgb2css(pal.halo, 0.42);
-    ctx.lineWidth = Math.max(1, W * 0.016);
+    ctx.lineWidth = Math.max(1, W * 0.014);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(cx, peakY + hr * 0.62, hr * 1.22, 0, Math.PI * 2);
-    ctx.strokeStyle = rgb2css(pal.halo, 0.18);
-    ctx.lineWidth = Math.max(0.7, W * 0.007);
+    ctx.arc(cx, hy, hr * 1.2, 0, Math.PI * 2);
+    ctx.strokeStyle = rgb2css(pal.accent, 0.16);
+    ctx.lineWidth = Math.max(0.6, W * 0.006);
     ctx.stroke();
     ctx.restore();
 
-    /* throne back: a tall arch with flanking wings */
+    /* flanking pillars, uneven heights, with capitals */
+    var pw = W * rnd.range(0.085, 0.115);
+    for (var sgn = -1; sgn <= 1; sgn += 2) {
+      var px = cx + sgn * W * rnd.range(0.28, 0.34);
+      var pTop = H * rnd.range(0.4, 0.55);
+      ctx.beginPath();
+      ctx.rect(px - pw / 2, pTop, pw, baseY - pTop);
+      silhouette(ctx, W, pal, s.lx, { color: mix(dark, pal.ridge[1], 0.22), rim: 0.65 });
+      ctx.beginPath();
+      ctx.rect(px - pw * 0.78, pTop - H * 0.028, pw * 1.56, H * 0.03);
+      silhouette(ctx, W, pal, s.lx, { color: mix(dark, pal.ridge[1], 0.28), rim: 0.7 });
+    }
+
+    /* the throne: a broad base narrowing to a shaft, crowned with spikes */
+    var baseW = W * rnd.range(0.44, 0.54);
+    var shaftW = W * rnd.range(0.2, 0.26);
+    var shoulderY = H * rnd.range(0.5, 0.58);
     ctx.beginPath();
     ctx.moveTo(cx - baseW / 2, baseY);
-    ctx.lineTo(cx - baseW * 0.36, H * 0.62);
-    ctx.lineTo(cx - neckW * 0.95, H * 0.52);
-    ctx.quadraticCurveTo(cx - neckW * 0.85, peakY + H * 0.06, cx, peakY);
-    ctx.quadraticCurveTo(cx + neckW * 0.85, peakY + H * 0.06, cx + neckW * 0.95, H * 0.52);
-    ctx.lineTo(cx + baseW * 0.36, H * 0.62);
+    ctx.lineTo(cx - baseW * 0.42, H * 0.72);
+    ctx.lineTo(cx - shaftW * 0.62, shoulderY);
+    ctx.lineTo(cx - shaftW / 2, peakY + H * 0.05);
+    ctx.lineTo(cx + shaftW / 2, peakY + H * 0.05);
+    ctx.lineTo(cx + shaftW * 0.62, shoulderY);
+    ctx.lineTo(cx + baseW * 0.42, H * 0.72);
     ctx.lineTo(cx + baseW / 2, baseY);
     ctx.closePath();
-    silhouette(ctx, W, pal, s.lx, { color: shade(pal.ridge[2], -0.45), rim: 0.95 });
+    silhouette(ctx, W, pal, s.lx, { color: dark, rim: 1 });
 
-    /* stair steps climbing to it */
-    var steps = rnd.int(3, 4);
-    for (var i = 0; i < steps; i++) {
-      var f = i / steps;
-      var y = H * (0.82 + f * 0.16);
-      var wS = W * (0.5 + f * 0.6);
+    /* crown: three to five spikes of uneven height along the shaft top */
+    var pts = rnd.int(3, 5);
+    for (var c = 0; c < pts; c++) {
+      var t = (c + 0.5) / pts;
+      var sx = cx - shaftW / 2 + t * shaftW;
+      var hgt = H * rnd.range(0.05, 0.12) * (1 - Math.abs(t - 0.5) * 0.9);
       ctx.beginPath();
-      ctx.rect(cx - wS / 2, y, wS, H * 0.05);
-      silhouette(ctx, W, pal, s.lx, { color: shade(pal.ridge[2], -0.28 - f * 0.18), rim: 0.35 });
+      ctx.moveTo(sx - shaftW / (pts * 2.2), peakY + H * 0.055);
+      ctx.lineTo(sx, peakY + H * 0.05 - hgt);
+      ctx.lineTo(sx + shaftW / (pts * 2.2), peakY + H * 0.055);
+      ctx.closePath();
+      silhouette(ctx, W, pal, s.lx, { color: dark, rim: 0.85 });
+    }
+
+    /* stepped approach */
+    var steps = rnd.int(3, 4);
+    for (var k = 0; k < steps; k++) {
+      var f = k / steps;
+      var y = H * (0.84 + f * 0.14);
+      var wS = W * (0.56 + f * 0.62);
+      ctx.beginPath();
+      ctx.rect(cx - wS / 2, y, wS, H * 0.045);
+      silhouette(ctx, W, pal, s.lx, { color: mix(dark, pal.ridge[1], 0.3 - f * 0.2), rim: 0.4 });
     }
   }
 
@@ -620,16 +743,19 @@
     ctx.arc(cx, cy, coreR, 0, Math.PI * 2);
     ctx.fill();
 
-    /* A shockwave ellipse in perspective, sitting on the ground plane. */
-    ctx.save();
-    ctx.translate(cx, H * 0.86);
-    ctx.scale(1, 0.22);
-    ctx.beginPath();
-    ctx.arc(0, 0, W * rnd.range(0.4, 0.58), 0, Math.PI * 2);
-    ctx.strokeStyle = rgb2css(pal.accent, 0.3);
-    ctx.lineWidth = Math.max(1, W * 0.05);
-    ctx.stroke();
-    ctx.restore();
+    /* A shockwave ellipse on the ground plane — only on some of them, and faint, so it is an
+       occasional beat rather than a rut every Spell shares. */
+    if (rnd() < 0.55) {
+      ctx.save();
+      ctx.translate(cx + W * rnd.range(-0.06, 0.06), H * rnd.range(0.8, 0.88));
+      ctx.scale(1, rnd.range(0.14, 0.24));
+      ctx.beginPath();
+      ctx.arc(0, 0, W * rnd.range(0.34, 0.54), 0, Math.PI * 2);
+      ctx.strokeStyle = rgb2css(pal.accent, 0.17);
+      ctx.lineWidth = Math.max(1, W * 0.05);
+      ctx.stroke();
+      ctx.restore();
+    }
     ctx.restore();
 
     /* a dark near-ground so the bloom has something to blow out against */
@@ -1079,13 +1205,13 @@
     ridgeLayer(ctx, W, H, {
       noise: noise, phase: rnd() * 100, freq: rnd.range(1.6, 2.8),
       yBase: hy - H * 0.02, amp: H * rnd.range(0.12, 0.2), peak: peaky,
-      color: mix(pal.ridge[0], pal.sky[2], 0.3), hazeColor: pal.sky[2], haze: 0.34,
+      color: mix(pal.ridge[0], pal.sky[2], 0.26), hazeColor: pal.sky[2], haze: 0.26,
       rim: 0.28, rimColor: pal.halo, lightX: lx
     });
     ridgeLayer(ctx, W, H, {
       noise: noise, phase: rnd() * 100 + 300, freq: rnd.range(2.4, 4),
       yBase: hy + H * 0.06, amp: H * rnd.range(0.1, 0.16), peak: !peaky,
-      color: pal.ridge[1], hazeColor: pal.sky[2], haze: 0.16,
+      color: pal.ridge[1], hazeColor: pal.sky[2], haze: 0.1,
       rim: 0.5, rimColor: pal.accent, lightX: lx
     });
     ridgeLayer(ctx, W, H, {
@@ -1188,6 +1314,6 @@
   };
 
   /* exposed for the scratch harness / tuning only */
-  RB.procArtInternals = { PALETTES: PALETTES, archetypeFor: archetypeFor, paletteFor: paletteFor };
+  RB.procArtInternals = { getPalettes: getPalettes, archetypeFor: archetypeFor, paletteFor: paletteFor };
 
 })(typeof window !== 'undefined' ? window : this);

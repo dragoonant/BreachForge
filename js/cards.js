@@ -46,6 +46,7 @@
         problems.push(c.id + ': unit with no might');
       if (!inPlay.has(c.id)) continue;
       if (!c.abilities) { problems.push(c.id + ': registered but has no ability data'); continue; }
+      if (c.abilities.vanilla) continue;
       if (c.abilities.unimplemented)
         problems.push(c.id + ': unimplemented — ' + c.abilities.unimplemented);
       if (c.abilities.skeleton)

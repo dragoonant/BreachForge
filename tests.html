@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BreachForge tests</title>
+<style>body{font:13px/1.5 ui-monospace,monospace;background:#0b0f18;color:#dce6f7;padding:1.5rem}
+.f{color:#ff9a8a}.p{color:#8ff0c0}</style>
+</head>
+<body>
+<pre id="out">running…</pre>
+<!-- The engine script list must match index.html exactly and in order;
+     tools/check-pages.mjs asserts it. data/printed.js is deliberately absent:
+     with it loaded, every text test would check printed text instead of the describers. -->
+<script src="js/rng.js"></script>
+<script src="data/cards.js"></script>
+<script src="data/decks.js"></script>
+<script src="data/defects.js"></script>
+<script src="data/abilities.js"></script>
+<script src="js/cards.js"></script>
+<script src="js/log.js"></script>
+<script src="js/state.js"></script>
+<script src="js/cost.js"></script>
+<script src="js/abilities.js"></script>
+<script src="js/combat.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/text.js"></script>
+<script src="js/ai.js"></script>
+<script src="tests/browser-run.js"></script>
+</body>
+</html>

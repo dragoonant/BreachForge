@@ -162,3 +162,16 @@
     return pool.slice(0, sel.n || 1);
   };
 })(window.RB = window.RB || {});
+
+// Ability data arrives per set through this one door so the packs never fight over a
+// global, and so validation can name which pack an id came from.
+(function (RB) {
+  'use strict';
+  RB.registerAbilities = function (pack) {
+    RB.abilityData = RB.abilityData || {};
+    for (const k of Object.keys(pack)) {
+      if (RB.abilityData[k]) throw new Error('ability data registered twice for ' + k);
+      RB.abilityData[k] = pack[k];
+    }
+  };
+})(window.RB = window.RB || {});

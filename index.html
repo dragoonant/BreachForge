@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BreachForge</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="title" class="screen">
+  <h1>BREACHFORGE</h1>
+  <div class="sub">A Riftbound practice table</div>
+  <div style="display:flex;gap:.6rem;align-items:center">
+    <label style="font-size:.72rem;color:#9fb0cc;letter-spacing:.1em">SEED</label>
+    <input id="seed" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);
+      color:#eaf0fb;border-radius:.3rem;padding:.35rem .6rem;width:8rem;font:inherit">
+  </div>
+  <div style="display:flex;gap:.7rem">
+    <button id="start" class="btn primary">Choose a deck</button>
+    <button id="howto" class="btn">How to play</button>
+  </div>
+  <div class="disclaimer">An unaffiliated, non-commercial hobby reproduction of the mechanics of
+    Riftbound: The League of Legends TCG. Not endorsed by or affiliated with Riot Games.
+    All artwork here is this project's own.</div>
+</div>
+
+<div id="deckpick" class="screen hidden">
+  <div style="display:flex;align-items:center;gap:1rem">
+    <h2 style="margin:0;font-weight:300;letter-spacing:.08em">Choose your legend</h2>
+    <div style="flex:1"></div>
+    <label style="font-size:.72rem;color:#9fb0cc">Opponent
+      <select id="difficulty" style="background:#111726;color:#eaf0fb;border:1px solid rgba(255,255,255,.14);
+        border-radius:.3rem;padding:.3rem .5rem;font:inherit;margin-left:.3rem">
+        <option value="easy">Casual</option>
+        <option value="normal" selected>Competitive</option>
+        <option value="random">Random (test)</option>
+      </select></label>
+    <button id="back" class="btn">Back</button>
+    <button id="play" class="btn primary">Play</button>
+  </div>
+  <div style="font-size:.72rem;color:#7d8ea8">Ten tournament-winning lists, one per legend.
+    Your rival's deck is drawn from the seed.</div>
+  <div id="deckgrid" class="deckgrid"></div>
+</div>
+
+<div id="game" class="screen hidden">
+  <div id="topbar"></div>
+  <div id="boardwrap">
+    <div id="side-them" class="side them"></div>
+    <div id="bfrow" class="bfrow"></div>
+    <div id="side-me" class="side"></div>
+    <div id="log"></div>
+  </div>
+  <div id="hand"></div>
+  <div id="prompt"></div>
+  <div id="endover" class="overlay hidden">
+    <div class="panel">
+      <h2></h2>
+      <div class="detail" style="color:#9fb0cc"></div>
+      <div style="margin-top:1.2rem"><button class="btn primary again">Play again</button></div>
+    </div>
+  </div>
+</div>
+
+<div id="preview" class="hidden"></div>
+
+<div id="help" class="overlay hidden">
+  <div class="panel" style="text-align:left;max-width:46rem">
+    <h2 style="text-align:center">How to play</h2>
+    <p><b>Win by reaching 8 points.</b> You score by controlling battlefields: one point for each
+    battlefield you still hold at the start of your turn (<i>hold</i>), and one for each you take
+    from the opponent (<i>conquer</i>). The eighth point can only be taken by holding, or by
+    conquering every battlefield in a single turn.</p>
+    <p><b>Two currencies.</b> Exhausting a ready rune gives 1 Energy. Recycling a rune — sending it
+    back to your rune deck — gives 1 Power of that rune's domain. You channel 2 runes every turn.
+    Payment is handled for you.</p>
+    <p><b>Units enter exhausted</b> in your base. Moving a unit exhausts it. Moving into a
+    battlefield you do not control <i>contests</i> it, which opens a showdown, and a showdown with
+    units on both sides becomes a combat: both sides deal damage equal to their total might, and
+    whoever still has units standing takes the battlefield.</p>
+    <p><b>Click</b> a card to select it, then click a highlighted destination. Hover any card to
+    read it in full. Click anywhere to close this.</p>
+  </div>
+</div>
+
+<script src="js/rng.js"></script>
+<script src="data/cards.js"></script>
+<script src="data/decks.js"></script>
+<script src="data/defects.js"></script>
+<script src="data/abilities.js"></script>
+<script src="js/cards.js"></script>
+<script src="js/log.js"></script>
+<script src="js/state.js"></script>
+<script src="js/cost.js"></script>
+<script src="js/abilities.js"></script>
+<script src="js/combat.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/text.js"></script>
+<script src="js/ai.js"></script>
+<script src="data/printed.js"></script>
+<script src="art/manifest.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/procart.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/render.js"></script>
+<script src="js/board.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/screens.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

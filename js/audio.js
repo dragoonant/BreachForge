@@ -486,8 +486,8 @@ window.RB = window.RB || {};
 
     // --- UI ----------------------------------------------------------------
     'ui.click': function (t) {
-      vBlip(t, { dur: 0.045, type: 'square', freq: 900, peak: 0.10, cut: 2600, rel: 0.04 });
-      vNoise(t, { dur: 0.03, filter: 'highpass', from: 4200, peak: 0.10, a: 0.001, rel: 0.028 });
+      vBlip(t, { dur: 0.045, type: 'square', freq: 900, peak: 0.065, cut: 2600, rel: 0.04 });
+      vNoise(t, { dur: 0.03, filter: 'highpass', from: 4200, peak: 0.07, a: 0.001, rel: 0.028 });
     },
     'ui.hover': function (t) {
       vBlip(t, { dur: 0.035, type: 'sine', freq: 1320, peak: 0.045, rel: 0.033 });
@@ -565,6 +565,18 @@ window.RB = window.RB || {};
       vFM(t + 0.012, {
         dur: 0.50 + k * 0.30, freq: root * 2, ratio: 2.0,
         index: 260 + k * 400, indexTo: 10, peak: 0.10 + k * 0.05, rel: 0.48 + k * 0.30
+      });
+    }
+
+    // Layer 2b — from 4 points: a shimmer two octaves up, growing with the
+    // score. Without it the sub layers below drag the whole thing darker as
+    // the race tightens; with it, the top end brightens as fast as the bottom
+    // gets heavy. (Measured: keeps the spectral centroid from collapsing.)
+    if (p >= 4) {
+      vFM(t + 0.02, {
+        dur: 0.45 + k * 0.40, freq: root * 4, ratio: mine ? 1.41 : 1.26,
+        index: 200 + k * 520, indexTo: 8,
+        peak: 0.05 + k * 0.06, rel: 0.43 + k * 0.40
       });
     }
 

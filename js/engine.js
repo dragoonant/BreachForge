@@ -190,9 +190,11 @@
     RB.pay(s, p, plan);
     RB.removeFrom(s.players[p].hand, iid);
     RB.log(s, 'play', { p: p, iid: iid, card: card.id, to: a.to }, soundFor(card));
-    // Playing a card opens a chain; with no responses it resolves immediately. The first
-    // pass keeps the chain model honest without making every unit a two-click affair.
-    s.chain.push({ iid: iid, controller: p, to: a.to, kind: 'card' });
+    // Units and Gear resolve immediately on finalization and never sit on the chain
+    // (rules §356); only spells and non-Add abilities linger there.
+    const item = { iid: iid, controller: p, to: a.to, kind: 'card', targets: a.targets };
+    if (card.type === 'Unit' || card.type === 'Gear') { RB.resolveCard(s, item); return; }
+    s.chain.push(item);
     s.priority = RB.opponentOf(p);
     s.passes = 0;
   }
