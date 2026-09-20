@@ -408,7 +408,12 @@
     // An ability may cost the source's own life ("Kill this, [E]: …"). Killing it is part
     // of paying, so it happens before the effect, not after.
     if (ab.killSelf) RB.kill(s, a.iid);
-    s.chain.push({ iid: a.iid, controller: p, kind: 'ability', ix: a.ix });
+    // The item records what it is and what it chose, so a counter can read "a spell OR
+    // ABILITY that chose exactly one of my units" rather than matching spells only.
+    const item = { iid: a.iid, controller: p, kind: 'ability', ix: a.ix,
+      cardId: RB.cardOf(s, a.iid).id, energy: ab.energy || 0 };
+    if (ab.chooses) item.targets = RB.select(s, ab.chooses, { p: p, source: a.iid });
+    s.chain.push(item);
     s.priority = RB.opponentOf(p);
     s.passes = 0;
   }
@@ -571,8 +576,12 @@
     const where = loc.kind === 'bf' ? loc.bf : undefined;
     RB.runTriggers(s, 'died', { p: o.controller, iid: iid, bf: where });
     RB.runTriggers(s, 'leftBoard', { p: o.controller, iid: iid, bf: where });
-    o.damage = 0; o.buffs = 0; o.granted = []; o.exhausted = false; o.temporary = false;
-    o.stunned = false; o.attachedTo = null;
+    // Every temporary modification stops being tracked when a card changes zones (§104),
+    // and permBuffs is no exception: an object keeps its identity into the trash, and
+    // cards play units back out of it — a unit that died buffed must not return buffed.
+    o.damage = 0; o.buffs = 0; o.permBuffs = 0; o.counters = 0;
+    o.granted = []; o.exhausted = false; o.temporary = false;
+    o.stunned = false; o.cantMove = false; o.attachedTo = null;
     for (const g of o.attached.slice()) { o.attached = []; RB.kill(s, g); }
     if (!o.token) s.players[o.owner].trash.push(iid);
   };

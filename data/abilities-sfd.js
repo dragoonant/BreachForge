@@ -1,17 +1,18 @@
 // Spiritforged (sfd) ability data. Keyed by card id; the shape is docs/grammar.md. The ops
-// and hooks this pack leans on that the core does not ship live in js/ops-sfd.js, which is
-// loaded first. A card whose printed text this grammar cannot say exactly carries
-// `unimplemented`, naming the clause that is missing: it then plays as its printed body
-// and is MARKED as partial on its own face (js/cards.js RB.isPartial). Half-authoring a
-// card instead — dropping the clause and shipping the rest unmarked — is the defect this
-// marker exists to prevent.
+// and conditions this pack leans on that the core does not ship live in js/ops-sfd.js,
+// which is loaded first.
+//
+// A card whose printed text this grammar cannot say exactly carries `unimplemented`, naming
+// the clause that is missing: it then plays as its printed body and is MARKED as partial on
+// its own face (js/cards.js RB.isPartial). Half-authoring a card instead — dropping a
+// clause and shipping the rest unmarked — is the defect this marker exists to prevent.
 //
 // Two conventions used throughout:
-//   * `sfdTriggers` are the set-local events js/ops-sfd.js broadcasts (death, anyDeath,
-//     move, runeRecycle) for printed triggers the core has no hook for.
 //   * "choose a unit" resolves through RB.autoPick (D-2: the player does not pick yet), so a
 //     beneficial clause is pointed at `myUnits` and a harmful one at `enemyUnits`. That is
 //     the auto-resolution rule, not a narrowing of what the card may legally target.
+//   * Every Might change here is printed "this turn", so all of them write the this-turn
+//     buff channel; none of them is permanent.
 (function (RB) {
   'use strict';
 
@@ -26,8 +27,8 @@
 
     // "[Deathknell] — Play two 3 [S] Mech unit tokens to your base."
     'sfd-021': {
-      keywords: ['Deathknell'],
-      sfdTriggers: [{ on: 'death', effects: [{ op: 'sfd.playToken', cardId: 'tok-mech', might: 3, n: 2, to: 'base' }] }],
+      triggers: [{ on: 'deathknell',
+        effects: [{ op: 'sfd.playToken', cardId: 'tok-mech', might: 3, n: 2, to: 'base' }] }],
     },
 
     // "[Quick-Draw] … [Equip] [C]". Quick-Draw's reminder grants Reaction and attaches on
@@ -38,25 +39,29 @@
       activated: [{ power: 1, domains: ['Fury'], effects: [{ op: 'sfd.attach' }] }],
     },
 
+    // "[Reaction] … [Assault 2] … I can be played to a battlefield you're attacking."
+    // Nothing in the core reads the Assault keyword, so the +2 is authored as the static it
+    // is; the keyword stays because it is printed and referenceable.
     'sfd-025': {
-      unimplemented: '"I can be played to a battlefield you\'re attacking" is a play-location permission, and the only lever the grammar has is playTo:\'battlefield\', which offers EVERY battlefield and takes the base away — a blanket where the card is narrow.',
+      keywords: ['Reaction', { name: 'Assault', value: 2 }],
+      playAlso: ['whereIAmAttacking'],
+      statics: [{ might: 2, scope: 'self', when: 'attacking' }],
     },
 
     // ---------------------------------------------------------------- Calm
-    // "[Repeat] [2] … Play a 2 [M] Sand Soldier unit token."
-    // DEVIATION: the engine has no optional-additional-cost step when a card is played, so
-    // Repeat is offered as the same choice for the same cost at resolution instead. The
-    // option, the price and the result are the printed ones; only the moment moves.
+    // "[Repeat] [2] … Play a 2 [M] Sand Soldier unit token." Repeat is an optional
+    // additional cost paid AS the card is played, and its instructions run once more on
+    // resolution — which is exactly what an additional cost carrying `effects` does.
     'sfd-031': {
-      effects: [
-        { op: 'sfd.playToken', cardId: 'tok-sand-soldier', might: 2 },
-        { op: 'sfd.mayPay', energy: 2, effects: [{ op: 'sfd.playToken', cardId: 'tok-sand-soldier', might: 2 }] },
-      ],
+      additionalCosts: [{ id: 'repeat', energy: 2,
+        effects: [{ op: 'sfd.playToken', cardId: 'tok-sand-soldier', might: 2 }] }],
+      effects: [{ op: 'sfd.playToken', cardId: 'tok-sand-soldier', might: 2 }],
     },
 
     // "When you play me, you may kill a gear."
     'sfd-032': {
-      triggers: [{ on: 'played', effects: [{ op: 'sfd.may', effects: [{ op: 'sfd.killGear', side: 'enemy' }] }] }],
+      triggers: [{ on: 'played',
+        effects: [{ op: 'may', effects: [{ op: 'sfd.killGear', side: 'enemy' }] }] }],
     },
 
     // "[Equip] [C]"
@@ -66,8 +71,8 @@
 
     // "[Deathknell] — If I died alone, draw 1."
     'sfd-036': {
-      keywords: ['Deathknell'],
-      sfdTriggers: [{ on: 'death', effects: [{ op: 'sfd.when', cond: 'diedAlone', effects: [{ op: 'draw', n: 1 }] }] }],
+      triggers: [{ on: 'deathknell',
+        effects: [{ op: 'sfd.when', cond: 'diedAlone', effects: [{ op: 'draw', n: 1 }] }] }],
     },
 
     // "[Equip] [C]"
@@ -75,13 +80,16 @@
       activated: [{ power: 1, domains: ['Calm'], effects: [{ op: 'sfd.attach' }] }],
     },
 
+    // "Counter an enemy spell or ability that chooses a friendly unit or gear."
     'sfd-045': {
-      unimplemented: 'Counters an enemy spell or ability conditioned on what it chose: the chain\'s internals are not reachable from an op, and nothing records the objects a pending item picked.',
+      keywords: ['Reaction'],
+      effects: [{ op: 'sfd.counterSpell', enemy: true, chose: 'mine' }],
     },
 
     // "When I move, draw 1."
     'sfd-048': {
-      sfdTriggers: [{ on: 'move', effects: [{ op: 'draw', n: 1 }] }],
+      triggers: [{ on: 'moved', mine: true,
+        effects: [{ op: 'sfd.when', cond: 'isMe', effects: [{ op: 'draw', n: 1 }] }] }],
     },
 
     // "[Equip] [C]"
@@ -92,40 +100,58 @@
     // ---------------------------------------------------------------- Mind
     // "When I conquer, play a Gold gear token exhausted."
     'sfd-069': {
-      triggers: [{
-        on: 'conquer', mine: true, here: true,
-        effects: [{ op: 'sfd.playToken', cardId: 'tok-gold', exhausted: true }],
-      }],
+      triggers: [{ on: 'conquer', mine: true, here: true,
+        effects: [{ op: 'sfd.playToken', cardId: 'tok-gold', exhausted: true }] }],
     },
 
+    // "[Hidden] [Action] Deal 3 to a unit at a battlefield. Play a Gold gear token exhausted."
     'sfd-070': {
-      unimplemented: '[Hidden]: there is no facedown space at a battlefield and no way to play a card from one, so the card\'s first line has no shape in the grammar.',
+      keywords: ['Hidden', 'Action'],
+      effects: [
+        { op: 'sfd.damageThere', n: 3 },
+        { op: 'sfd.playToken', cardId: 'tok-gold', exhausted: true },
+      ],
     },
 
     // ---------------------------------------------------------------- Body
-    // "Give a unit +5 [S] this turn." Buffs already expire at end of turn.
+    // "Give a unit +5 [S] this turn."
     'sfd-097': {
       keywords: ['Action'],
       effects: [{ op: 'sfd.giveMight', n: 5, target: { pick: 'myUnits' } }],
     },
 
-    // "I can't be chosen by enemy spells and abilities."
+    // "I can't be chosen by enemy spells and abilities." Read by RB.canChoose.
     'sfd-105': {
-      statics: [{ unchoosableByEnemies: true }],
+      statics: [{ untargetableByEnemies: true, scope: 'self' }],
     },
 
+    // "[Weaponmaster] … You may pay [C][C] as an additional cost to play me. When you play
+    //  me, if you paid the additional cost, move an enemy gear to your base. You control it
+    //  until I leave the board. If it's an Equipment, attach it to me."
+    // The loan is a delayed ability keyed to this unit leaving the board, so it outlives the
+    // trigger that made it.
     'sfd-109': {
-      unimplemented: '[Weaponmaster], an optional additional cost paid while playing, and taking control of an enemy gear until I leave the board — three concepts the engine does not have.',
+      keywords: ['Weaponmaster'],
+      additionalCosts: [{ id: 'reclaim', power: 2, domains: ['Body'] }],
+      triggers: [{ on: 'played', effects: [
+        { op: 'may', effects: [{ op: 'sfd.weaponmaster' }] },
+        { op: 'sfd.when', cond: 'paidExtra', id: 'reclaim', effects: [{ op: 'sfd.stealGear' }] },
+      ] }],
     },
 
     // ---------------------------------------------------------------- Chaos
+    // "When I defend, you may kill me to move an attacking unit to its base."
     'sfd-128': {
-      unimplemented: 'Triggers when I become a defender; showdowns open inside js/engine.js\'s own closure and run no triggers, so the event never reaches ability data.',
+      triggers: [{ on: 'defend', mine: true, here: true, effects: [{ op: 'may', effects: [
+        { op: 'kill', target: 'self' },
+        { op: 'sfd.recallAttacker' },
+      ] }] }],
     },
 
     // "When I move, play a Gold gear token exhausted."
     'sfd-130': {
-      sfdTriggers: [{ on: 'move', effects: [{ op: 'sfd.playToken', cardId: 'tok-gold', exhausted: true }] }],
+      triggers: [{ on: 'moved', mine: true, effects: [{ op: 'sfd.when', cond: 'isMe',
+        effects: [{ op: 'sfd.playToken', cardId: 'tok-gold', exhausted: true }] }] }],
     },
 
     // "[Equip] [C]"
@@ -139,24 +165,48 @@
       effects: [{ op: 'sfd.bounceGear', side: 'enemy' }],
     },
 
+    // "[Reaction] [Repeat] [2] Counter a spell unless its controller pays [2]."
     'sfd-136': {
-      unimplemented: 'Counters a spell unless its controller pays [2], plus [Repeat]: the chain\'s internals are not reachable from an op, and there is no window in which to offer the ransom.',
+      keywords: ['Reaction'],
+      additionalCosts: [{ id: 'repeat', energy: 2,
+        effects: [{ op: 'sfd.ransomSpell', energy: 2 }] }],
+      effects: [{ op: 'sfd.ransomSpell', energy: 2 }],
     },
 
+    // "When you play me, you may play a spell from your trash with Energy cost no more than
+    //  [3], ignoring its Energy cost. Recycle that spell after you play it."
     'sfd-140': {
-      unimplemented: 'Plays a spell out of your trash ignoring its Energy cost; playing is a core action from hand only and no op can start one from another zone.',
+      triggers: [{ on: 'played', effects: [{ op: 'may', effects: [{
+        op: 'sfd.playFromTrash', type: 'Spell', maxEnergy: 3, ignoreEnergy: true, recycleAfter: true,
+      }] }] }],
     },
 
+    // "[Hidden] [Action] Swap the Might of two units at the same battlefield this turn."
     'sfd-145': {
-      unimplemented: '[Hidden] (no facedown space), and swapping two units\' Might — RB.mightOf derives Might on demand, with no layer that can hold a swapped value for a turn.',
+      keywords: ['Hidden', 'Action'],
+      effects: [{ op: 'sfd.swapMightThere' }],
     },
 
+    // "While I'm in combat, friendly spells cost [1][A] less to a minimum of [1], and enemy
+    //  spells cost [1][A] more." Driven through the core's cost-modifier layer; the static
+    //  is what the layer reads, so the clause lives in the card data.
     'sfd-146': {
-      unimplemented: 'A continuous cost-modification layer over both players\' spells while I am in combat; RB.costOf reads the printed cost and has no modifier layer.',
+      statics: [{ scope: 'self', spellCost: {
+        friendly: { energy: -1, power: -1, minEnergy: 1 },
+        enemy: { energy: 1, power: 1 },
+      } }],
     },
 
+    // "[Equip] — [C], Recycle 2 cards from your trash".
+    // DEVIATION: an activated ability's cost may only be Energy, Power, exhausting or
+    // killing the source, so the recycle is enforced on resolution instead. With fewer than
+    // two cards in the trash the ability is still offered and does nothing — it is never
+    // free to actually equip, but it can waste the [C]. Same shape as unl-158.
     'sfd-150': {
-      unimplemented: 'The Equip cost includes recycling 2 cards from your trash; an activated ability\'s cost in this grammar is Energy, Power and exhausting the source, so it can be neither checked nor paid.',
+      activated: [{ power: 1, domains: ['Chaos'], effects: [{
+        op: 'sfd.when', cond: 'trashAtLeast', n: 2,
+        effects: [{ op: 'sfd.recycleFromTrash', n: 2 }, { op: 'sfd.attach' }],
+      }] }],
     },
 
     // ---------------------------------------------------------------- Order
@@ -165,8 +215,14 @@
       activated: [{ power: 1, domains: ['Order'], effects: [{ op: 'sfd.attach' }] }],
     },
 
+    // "[Hidden] Play a 2 [M] Sand Soldier unit token. Then do this: You may pay [C] to ready it."
     'sfd-154': {
-      unimplemented: '[Hidden]: there is no facedown space at a battlefield and no way to play a card from one, so the card\'s first line has no shape in the grammar.',
+      keywords: ['Hidden'],
+      effects: [
+        { op: 'sfd.playToken', cardId: 'tok-sand-soldier', might: 2 },
+        { op: 'sfd.mayPay', power: 1, domains: ['Order'],
+          effects: [{ op: 'sfd.readyMade', n: 1 }] },
+      ],
     },
 
     // "[Equip] [C]"
@@ -174,28 +230,33 @@
       activated: [{ power: 1, domains: ['Order'], effects: [{ op: 'sfd.attach' }] }],
     },
 
-    // "Kill a friendly unit. If you do, give +[M] equal to its Might to another friendly unit
-    //  this turn. Draw 1."
+    // "Kill a friendly unit. If you do, give +[M] equal to its Might to another friendly
+    //  unit this turn. Draw 1."
     'sfd-163': {
       keywords: ['Reaction'],
       effects: [{ op: 'sfd.killAndTransferMight' }, { op: 'draw', n: 1 }],
     },
 
+    // "[Deathknell] — You may play a unit with cost no more than [3] and no more than [A]
+    //  from your trash, ignoring its cost."
     'sfd-165': {
-      unimplemented: 'Deathknell that plays a unit out of your trash ignoring its cost; playing is a core action from hand only, which is also why the cost filter cannot be honoured.',
+      triggers: [{ on: 'deathknell', effects: [{ op: 'may', effects: [{
+        op: 'sfd.playFromTrash', type: 'Unit', maxEnergy: 3, maxPower: 1, ignoreCost: true,
+      }] }] }],
     },
 
-    // "[Deathknell] — If I was [Mighty], draw 2." Mighty is Might 5 or more.
+    // "[Deathknell] — If I was [Mighty], draw 2." Mighty is Might 5 or more (RB.isMighty).
     'sfd-167': {
-      keywords: ['Deathknell'],
-      sfdTriggers: [{ on: 'death', effects: [{ op: 'sfd.when', cond: 'wasMighty', effects: [{ op: 'draw', n: 2 }] }] }],
+      triggers: [{ on: 'deathknell',
+        effects: [{ op: 'sfd.when', cond: 'wasMighty', effects: [{ op: 'draw', n: 2 }] }] }],
     },
 
     // ------------------------------------------------------- Legends and pairs
     // "When you win a combat, draw 1." combatEnd carries the winner; `mine` cannot be used
     // here because that event has no player field for the core filter to compare.
     'sfd-185': {
-      triggers: [{ on: 'combatEnd', effects: [{ op: 'sfd.when', cond: 'wonCombat', effects: [{ op: 'draw', n: 1 }] }] }],
+      triggers: [{ on: 'combatEnd',
+        effects: [{ op: 'sfd.when', cond: 'wonCombat', effects: [{ op: 'draw', n: 1 }] }] }],
     },
 
     // "[Quick-Draw] … [Equip] [C] … [Temporary]". Temporary here is the conditional printed
@@ -205,13 +266,23 @@
       keywords: ['Reaction', 'Quick-Draw', 'Temporary'],
       triggers: [
         { on: 'played', effects: [{ op: 'sfd.attach' }] },
-        { on: 'beginningPhase', mine: true, effects: [{ op: 'sfd.when', cond: 'unattached', effects: [{ op: 'kill', target: 'self' }] }] },
+        { on: 'beginningPhase', mine: true, effects: [{ op: 'sfd.when', cond: 'unattached',
+          effects: [{ op: 'kill', target: 'self' }] }] },
       ],
       activated: [{ power: 1, domains: ['Fury', 'Chaos'], effects: [{ op: 'sfd.attach' }] }],
     },
 
+    // "When you choose a friendly unit, you may exhaust me and pay [A] to ready it."
+    // "When you conquer, you may pay [1] to ready me."
     'sfd-195': {
-      unimplemented: 'First clause is a Targeting Effect ("when you choose a friendly unit"); nothing announces that a spell or ability chose an object, so the trigger can never fire.',
+      triggers: [
+        { on: 'chosen', mine: true, effects: [{ op: 'sfd.when', cond: 'iChose', effects: [{
+          op: 'sfd.mayPay', exhaustSelf: true, power: 1, anyDomain: true,
+          effects: [{ op: 'ready', target: 'eventUnit' }],
+        }] }] },
+        { on: 'conquer', mine: true, effects: [{ op: 'sfd.mayPay', energy: 1,
+          effects: [{ op: 'ready', target: 'self' }] }] },
+      ],
     },
 
     // "Give a unit +2 [S] this turn and another unit -2 [S] this turn."
@@ -223,8 +294,17 @@
       ],
     },
 
+    // "Your Sand Soldiers have [Weaponmaster]."
+    // "[1], [T]: Play a 2 [S] Sand Soldier unit token to your base. Use only if you've
+    //  played an Equipment this turn."
+    // The grant is read by RB.hasKeyword; the keyword's play effect fires when a Sand
+    // Soldier is played, which for a token is the moment sfd.playToken creates it. The
+    // gate is checked in legalActions, so the ability is never offered without it — it
+    // cannot fizzle for full price.
     'sfd-197': {
-      unimplemented: 'Grants [Weaponmaster] to your Sand Soldiers — a continuous ability-granting layer, which the engine has for battlefield cards only — and the activated ability is gated on having played an Equipment this turn, which nothing tracks.',
+      statics: [{ grant: 'Weaponmaster', scope: 'mine', when: { kind: 'sandSoldier' } }],
+      activated: [{ energy: 1, exhaustSelf: true, when: 'playedEquipmentThisTurn',
+        effects: [{ op: 'sfd.playToken', cardId: 'tok-sand-soldier', might: 2, to: 'base' }] }],
     },
 
     // "Play a 2 [M] Sand Soldier unit token for each Equipment you control. Then do this:
@@ -237,24 +317,28 @@
     },
 
     // "When you recycle a rune, you may exhaust me to play a Gold gear token exhausted."
-    // "When one or more enemy units die, ready me." (readying twice is a no-op, so firing per
-    //  death is indistinguishable from firing once per simultaneous batch)
+    // "When one or more enemy units die, ready me." Readying twice is a no-op, so firing
+    // per death is indistinguishable from firing once per simultaneous batch.
     'sfd-203': {
-      sfdTriggers: [
-        {
-          on: 'runeRecycle', mine: true,
-          effects: [{ op: 'sfd.mayPay', exhaustSelf: true, effects: [{ op: 'sfd.playToken', cardId: 'tok-gold', exhausted: true }] }],
-        },
-        { on: 'anyDeath', enemy: true, unit: true, effects: [{ op: 'ready', target: 'self' }] },
-      ],
+      sfdTriggers: [{ on: 'runeRecycle', mine: true, effects: [{ op: 'sfd.mayPay',
+        exhaustSelf: true,
+        effects: [{ op: 'sfd.playToken', cardId: 'tok-gold', exhausted: true }] }] }],
+      triggers: [{ on: 'died', effects: [{ op: 'sfd.when', cond: 'enemyUnitDied',
+        effects: [{ op: 'ready', target: 'self' }] }] }],
     },
 
+    // "When one of your units becomes [Mighty], you may exhaust me to channel 1 rune exhausted."
     'sfd-205': {
-      unimplemented: 'Triggers when one of your units BECOMES [Mighty]; Might is derived on demand and nothing records its previous value, so the crossing cannot be detected.',
+      triggers: [{ on: 'becameMighty', mine: true, effects: [{ op: 'sfd.mayPay',
+        exhaustSelf: true, effects: [{ op: 'channel', n: 1, exhausted: true }] }] }],
     },
 
+    // "Choose a friendly unit and a spell. Counter that spell and give that unit +[S] equal
+    //  to that spell's Energy cost this turn."
     'sfd-206': {
-      unimplemented: 'Counters a spell and buffs by that spell\'s Energy cost — the chain\'s internals are not reachable from an op.',
+      keywords: ['Reaction'],
+      effects: [{ op: 'sfd.counterSpell',
+        then: [{ op: 'buffByCounteredCost', target: { pick: 'myUnits' } }] }],
     },
 
     // ------------------------------------------------------------ Battlefields
@@ -263,16 +347,10 @@
     // A battlefield's own trigger cannot use the core `here` filter (a battlefield has no
     // location), so the `here` condition on the effect is what scopes it.
     'sfd-207': {
-      triggers: [{
-        on: 'conquer',
-        effects: [{
-          op: 'sfd.when', cond: 'here',
-          effects: [{
-            op: 'sfd.mayPay', energy: 1, bounceHere: true,
-            effects: [{ op: 'sfd.playToken', cardId: 'tok-sand-soldier', might: 2, to: 'here' }],
-          }],
-        }],
-      }],
+      triggers: [{ on: 'conquer', effects: [{ op: 'sfd.when', cond: 'here', effects: [{
+        op: 'sfd.mayPay', energy: 1, bounceHere: true,
+        effects: [{ op: 'sfd.playToken', cardId: 'tok-sand-soldier', might: 2, to: 'here' }],
+      }] }] }],
     },
 
     // "Players can't score here until their third turn."
@@ -282,52 +360,47 @@
 
     // "When you conquer here, you may pay [1] to ready your legend."
     'sfd-210': {
-      triggers: [{
-        on: 'conquer',
-        effects: [{ op: 'sfd.when', cond: 'here', effects: [{ op: 'sfd.mayPay', energy: 1, effects: [{ op: 'sfd.readyLegend' }] }] }],
-      }],
+      triggers: [{ on: 'conquer', effects: [{ op: 'sfd.when', cond: 'here',
+        effects: [{ op: 'sfd.mayPay', energy: 1, effects: [{ op: 'sfd.readyLegend' }] }] }] }],
     },
 
+    // "When you defend here, reveal the top card of your Main Deck. If it's a spell, put it
+    //  in your hand. Otherwise, recycle it."
     'sfd-215': {
-      unimplemented: 'Triggers when you defend here; showdowns open inside js/engine.js\'s own closure and run no triggers, so the event never reaches ability data.',
+      triggers: [{ on: 'defend', effects: [{ op: 'sfd.when', cond: 'here',
+        effects: [{ op: 'sfd.revealTop' }] }] }],
     },
 
     // "When you conquer here, draw 1 for each other battlefield you or allies control."
     // (1v1 has no allies, so "you or allies" is you.)
     'sfd-217': {
-      triggers: [{
-        on: 'conquer',
-        effects: [{ op: 'sfd.when', cond: 'here', effects: [{ op: 'sfd.drawPerOtherBattlefield', n: 1 }] }],
-      }],
+      triggers: [{ on: 'conquer', effects: [{ op: 'sfd.when', cond: 'here',
+        effects: [{ op: 'sfd.drawPerOtherBattlefield', n: 1 }] }] }],
     },
 
     // "When you conquer here with one or more [Mighty] units, you may pay [1] to draw 1."
     'sfd-218': {
-      triggers: [{
-        on: 'conquer',
-        effects: [{
-          op: 'sfd.when', cond: 'here',
-          effects: [{
-            op: 'sfd.when', cond: 'mightyHere',
-            effects: [{ op: 'sfd.mayPay', energy: 1, effects: [{ op: 'draw', n: 1 }] }],
-          }],
-        }],
-      }],
+      triggers: [{ on: 'conquer', effects: [{ op: 'sfd.when', cond: ['here', 'mightyHere'],
+        effects: [{ op: 'sfd.mayPay', energy: 1, effects: [{ op: 'draw', n: 1 }] }] }] }],
     },
 
     // "When you conquer here, you may pay [1] to play a Gold gear token exhausted."
     'sfd-220': {
-      triggers: [{
-        on: 'conquer',
-        effects: [{
-          op: 'sfd.when', cond: 'here',
-          effects: [{ op: 'sfd.mayPay', energy: 1, effects: [{ op: 'sfd.playToken', cardId: 'tok-gold', exhausted: true }] }],
-        }],
-      }],
+      triggers: [{ on: 'conquer', effects: [{ op: 'sfd.when', cond: 'here',
+        effects: [{ op: 'sfd.mayPay', energy: 1,
+          effects: [{ op: 'sfd.playToken', cardId: 'tok-gold', exhausted: true }] }] }] }],
     },
 
+    // "[Deflect] … When you choose or ready me, give me +1 [S] this turn."
+    // Deflect has a reader now (RB.deflectCost / RB.canChoose), so declaring it is enough.
     'sfd-225': {
-      unimplemented: '[Deflect] is a mandatory additional Power cost on enemy spells and abilities that choose me, and there is no cost layer for it; "when you choose or ready me" also needs a Targeting Effect and a became-ready event, neither of which the engine announces.',
+      keywords: [{ name: 'Deflect', value: 1 }],
+      triggers: [
+        { on: 'chosen', effects: [{ op: 'sfd.when', cond: ['isMe', 'iChose'],
+          effects: [{ op: 'sfd.giveMight', n: 1, target: 'self' }] }] },
+        { on: 'becameReady', effects: [{ op: 'sfd.when', cond: 'isMe',
+          effects: [{ op: 'sfd.giveMight', n: 1, target: 'self' }] }] },
+      ],
     },
 
   });

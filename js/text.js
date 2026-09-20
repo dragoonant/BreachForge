@@ -116,8 +116,7 @@
     for (const a of ab.activated || [])
       out.push(cost(a) + ': ' + a.effects.map(line).join(' '));
     for (const st of ab.statics || []) out.push(staticText(st));
-    for (const r of ab.replaces || [])
-      if (r.kind === 'dieInstead') out.push('If a friendly unit would die, kill me instead.');
+    for (const r of ab.replaces || []) out.push(replacementText(r));
     if (ab.effects) out.push(ab.effects.map(line).join(' '));
     return out.filter(Boolean).join('\n');
   };
@@ -151,6 +150,8 @@
     eventIsOpponents: () => "it is an opponent's",
     sourceAtBattlefield: () => "I'm at a battlefield",
     xpAtLeast: a => 'while you have ' + (a.n || 1) + '+ XP',
+    haveXP: a => 'while you have ' + (a.n || 1) + '+ XP',
+    playedEquipmentThisTurn: () => "if you've played an Equipment this turn",
     powerSpentAtLeast: a => 'if you have spent at least ' + (a.n || 1) + ' Power this turn',
     playedThisTurnAtLeast: a => 'if you have played ' + (a.n || 1) + '+ cards this turn',
     all: a => (a.tests || []).map(whenText).join(' and '),
@@ -164,6 +165,18 @@
   // A pack that defines its own predicate supplies its own prose for it, or the auditor
   // reads back a camelCase identifier where a printed clause should be.
   RB.defineWhenText = function (name, fn) { WHEN[name] = typeof fn === 'function' ? fn : () => fn; };
+
+  // A pack may define its own replacement kind, so it supplies its own prose for it too —
+  // otherwise the card most likely to be wrong is the one the auditor renders as nothing.
+  const REPLACE = { dieInstead: () => 'If a friendly unit would die, kill me instead.' };
+  RB.defineReplacementText = function (kind, fn) {
+    REPLACE[kind] = typeof fn === 'function' ? fn : () => fn;
+  };
+  function replacementText(r) {
+    const fn = REPLACE[r.kind];
+    return fn ? fn(r) : 'If a ' + (r.event || 'thing') + ' would happen, ' +
+      r.kind.replace(/^[a-z]+\./, '').replace(/([A-Z])/g, ' $1').toLowerCase().trim() + '.';
+  }
   function whenText(w) {
     const fn = WHEN[whenName(w)];
     return fn ? fn(whenArg(w))

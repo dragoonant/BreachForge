@@ -22,10 +22,14 @@ RB.registerAbilities({
       target: { pick: 'allUnits', prefer: 'mine' } }],
   },
 
-  // [Legion] — I cost [2] less. The discount lives in the cost-modifier layer
-  // (js/ops-ogn.js reads `ognCostLess`), which is the one home for anything that changes
-  // what a card costs; [Legion]'s condition is "another card finalized this turn".
-  'ogn-012': { keywords: ['Legion'], ognCostLess: { energy: 2, when: 'legion' } },
+  // [Legion] — I cost [2] less. The discount goes through the cost-modifier layer, the
+  // one home for anything that changes what a card costs. [Legion]'s condition is "you
+  // have finalized another card this turn"; the card being priced is still in hand, so
+  // one card played this turn is another card.
+  'ogn-012': {
+    keywords: ['Legion'],
+    costModifier: { energy: -2, when: { kind: 'playedThisTurnAtLeast', n: 1 } },
+  },
 
   // [Action] Kill all gear.
   'ogn-022': { keywords: ['Action'], effects: [{ op: 'ogn.killGear', scope: 'all' }] },
@@ -101,9 +105,14 @@ RB.registerAbilities({
       { op: 'ogn.when', test: 'atBattlefield', effects: [{ op: 'ready', what: 'runes', n: 4 }] }] }],
   },
 
-  'ogn-077': { unimplemented: 'A replacement effect: "if a friendly unit would die, kill ' +
-    'this instead". There is no replacement layer — an effect cannot stand in front of a ' +
-    'death and take its place. ([Hidden] itself is now expressible; this clause is not.)' },
+  // [Hidden] · If a friendly unit would die, kill this instead. Heal that unit, exhaust
+  // it, and recall it. A replacement, not a trigger: the death never happens. The shipped
+  // `dieInstead` kind heals and kills the source but does not exhaust or recall, so this
+  // names its own kind (js/ops-ogn.js).
+  'ogn-077': {
+    keywords: ['Hidden'],
+    replaces: [{ event: 'death', kind: 'ogn.saveAndRecall' }],
+  },
 
   // When you play me, give a unit +8 [S] this turn.
   'ogn-082': {

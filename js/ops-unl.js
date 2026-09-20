@@ -642,6 +642,17 @@
     'Play a unit from your trash that costs no more Energy and no more Power than the ' +
     'killed unit, ignoring its cost.');
 
+  // --- revealHand -----------------------------------------------------------
+  // "Choose an opponent. They reveal their hand." A reveal leaves every card in its zone
+  // and grants no lasting visibility on its own, so this is the whole instruction: the
+  // clause that DOES last ("look at their facedown cards this turn") is the core's
+  // revealHidden, and the two are printed as separate sentences for that reason.
+  RB.defineOp('revealHand', (s, e, ctx) => {
+    const foe = RB.opponentOf(ctx.p);
+    RB.log(s, 'reveal', { p: foe, to: ctx.p, n: s.players[foe].hand.length });
+  });
+  RB.defineDescriber('revealHand', () => 'Choose an opponent. They reveal their hand.');
+
   // --- banishFromHand + returnBanished --------------------------------------
   // Ashe: banish a card out of an opponent's revealed hand, and promise it back. The
   // promise outlives her, so which card it was is remembered on her own object — that
@@ -681,5 +692,11 @@
   RB.defineStaticWhen('weakerEnemyThanSource', (state, iid, w, src) =>
     RB.obj(state, iid).controller !== RB.obj(state, src).controller &&
     RB.mightOf(state, iid) < RB.mightOf(state, src));
+  // …and the prose for each, so the auditor names the condition instead of reading back a
+  // camelCase identifier. A condition nobody can read is a clause nobody can check.
+  if (RB.defineWhenText) {
+    RB.defineWhenText('enemyOfSource', () => 'for enemy units');
+    RB.defineWhenText('weakerEnemyThanSource', () => 'for enemy units with less Might than me');
+  }
 
 })(window.RB = window.RB || {});

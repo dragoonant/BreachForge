@@ -44,12 +44,9 @@ and `[Reaction]` Add abilities may be used mid-resolution with no priority at al
 payment path.
 Owner: unassigned.
 
-**D-5 — Hidden cards are implemented; reading an opponent's facedown cards is not.** *(retired
-in part, 2026-09-20.)* The Hide action, the facedown zone, playing from it at Reaction speed from
-the following turn ignoring base cost, and losing the card with the battlefield all work. What
-remains missing is granting a player visibility of an *opponent's* facedown cards, which one card
-asks for; it stays `unimplemented` and says so on its own face.
-Owner: unassigned.
+**D-5 — RETIRED 2026-09-20.** Hidden is implemented end to end: the Hide action, the facedown
+zone, playing from it at Reaction speed from the following turn ignoring base cost, losing the
+card with the battlefield, and revealing an opponent's facedown cards for a turn.
 
 **D-10 — Combat damage is assigned by the engine, not by the assigning player.**
 Rule 460.2 lets the assigning player choose the order, subject to lethal-first, no overkill while
@@ -68,7 +65,13 @@ Cards appear and disappear between renders. The structured log already carries e
 animation layer would need.
 Owner: unassigned.
 
-**D-8 — Ability packs wrap core functions instead of extending a hook table.**
+**D-8 — Mostly retired. Two wrappers remain, both load-bearing.**
+Unleashed wraps nothing; Origins keeps three (`RB.mightOf` for Buff counters and the
+Assault/Shield keywords, `RB.kill` for a self-dispatched "when I leave the board", and
+`RB.legalActions` for one play restriction); Spiritforged keeps two (`RB.recycleRune`, because no
+event exists for a recycled rune, and `RB.score`, because the score lock has no hook table). Each
+reads only its own prefixed data. The two Spiritforged ones name the missing hook exactly, and
+that is the fix. The original entry read:
 `js/ops-ogn.js`, `js/ops-sfd.js` and `js/ops-unl.js` each wrap `RB.kill`, `RB.apply`,
 `RB.score`, `RB.autoPick` and/or `RB.cardText` to add set-local behaviour. Each wrapper reads
 only its own prefixed state fields, so three of them compose rather than double-firing, and the
@@ -79,7 +82,11 @@ tables, never by editing the core"; wrapping the core is the other failure of th
 layer, an end-of-turn flush, a play restriction — and give each one a hook table.
 Owner: unassigned.
 
-**D-9 — Forty-seven cards are partial, and say so.**
+**D-9 — RETIRED 2026-09-20. No card is partial.**
+All 170 registered cards play as printed; 3 have no printed ability at all (the basic runes,
+whose two abilities are the engine's payment rules). The marking machinery stays — the amber `!`,
+the tooltip, the deck-tile count — because the next unauthored card should still say so on its
+own face rather than play wrong quietly. The original entry read:
 A card whose printed clause the grammar cannot yet express plays as its printed body and is
 marked: an amber `!` on its face with the missing clause in the tooltip, the clause spelled out
 at preview size, and a count on its deck's picker tile. The earlier projects in this series hid

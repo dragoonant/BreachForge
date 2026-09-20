@@ -15,10 +15,9 @@
 //    legal answer. A decision whose *both* branches act is `choose` instead: `may` queues
 //    its step and returns, so anything written after it in the same list would resolve
 //    before the player answered.
-// NOT IN THIS PACK: unl-150 (Vex) and unl-172 (LeBlanc). They arrived in data/cards.js
-// after this packet was cut and are authored in data/abilities-core.js, which registers
-// them first — RB.registerAbilities throws on a duplicate id, so a second copy here would
-// crash the load rather than override it.
+// unl-150 (Vex) and unl-172 (LeBlanc) arrived in data/cards.js after this packet was cut.
+// They are claimed here: data/abilities-core.js now loads after the set packs, so its
+// fallback fills gaps rather than winning the id.
 RB.registerAbilities({
 
   // Inferna — [Ambush] [Assault 2]
@@ -78,7 +77,19 @@ RB.registerAbilities({
     }],
   },
 
-  'unl-053': { unimplemented: 'Its Deathknell lets you read an OPPONENT\'S FACEDOWN CARDS for the turn. Hidden exists now, but there is no way to grant one player visibility of another\'s facedown cards.' },
+  // Scuttle Crab — the parenthesis about 0 Might conquering is reminder text, not a
+  // clause. Play effect draws; the Deathknell is three instructions, and `revealHidden` is
+  // the one that used to be out of reach.
+  'unl-053': {
+    triggers: [
+      { on: 'played', effects: [{ op: 'draw', n: 1 }] },
+      { on: 'deathknell', effects: [
+        { op: 'revealHand' },
+        { op: 'revealHidden' },
+        { op: 'xp', n: 1 },
+      ] },
+    ],
+  },
 
   // Vilemaw — [Ambush]; enemy units here below my Might deal no combat damage; draw on a
   // hold. `noCombatDamage` exempts them from their side's damage SUM without making them
@@ -312,6 +323,24 @@ RB.registerAbilities({
     ],
   },
 
+  // Vex — [Deflect]; "When an opponent plays a unit while I'm at a battlefield, Stun it.
+  // They can't move it this turn." Two separate effects, and the card prints both because
+  // Stun is not an exhaustion: it zeroes combat damage and nothing else, so stopping the
+  // move takes cantMove.
+  'unl-150': {
+    keywords: ['Deflect'],
+    triggers: [{
+      on: 'unitPlayed',
+      effects: [{
+        op: 'cond', test: { eventIsOpponents: true, sourceAtBattlefield: true },
+        effects: [
+          { op: 'stun', target: 'eventUnit' },
+          { op: 'cantMove', target: 'eventUnit' },
+        ],
+      }],
+    }],
+  },
+
   // Black Rose Dignitary — [Assault] (X omitted is 1); Deathknell channels a rune exhausted.
   'unl-152': {
     keywords: [{ name: 'Assault', value: 1 }],
@@ -319,17 +348,14 @@ RB.registerAbilities({
   },
 
   // Shepherd's Heirloom — "When you play this, gain 1 XP."; "[Equip] — Spend 1 XP".
-  // DEVIATION, still standing: `additionalCosts` gates a CARD being played, and this price
-  // is on an activated ability, whose cost shape is energy/power/exhaustSelf/killSelf. So
-  // the XP is enforced on resolution: with no XP the ability is still offered, but it does
-  // nothing and costs nothing. It is never free to actually equip.
+  // The `when` gate on an activated ability is checked in legalActions, so with no XP the
+  // Equip is not offered at all — which is what a cost means. The earlier resolution-time
+  // deviation is gone.
   'unl-158': {
     triggers: [{ on: 'played', effects: [{ op: 'xp', n: 1 }] }],
     activated: [{
-      effects: [{
-        op: 'cond', test: { xpAtLeast: 1 },
-        effects: [{ op: 'spendXP', n: 1 }, { op: 'equipSelf' }],
-      }],
+      when: { kind: 'haveXP', n: 1 },
+      effects: [{ op: 'spendXP', n: 1 }, { op: 'equipSelf' }],
     }],
   },
 
@@ -357,6 +383,22 @@ RB.registerAbilities({
           effects: [{ op: 'returnBanished' }],
         }] },
       ],
+    }],
+  },
+
+  // LeBlanc — [Assault]; "Deathknell: Draw 1. If it's YOUR Beginning Phase, draw 2
+  // instead." Both halves of the condition: the Beginning Phase happens on either
+  // player's turn, and she dies in the opponent's start-of-turn sweep as often as in
+  // combat, where the card says she draws one.
+  'unl-172': {
+    keywords: [{ name: 'Assault', value: 1 }],
+    triggers: [{
+      on: 'deathknell',
+      effects: [{
+        op: 'cond', test: { beginningPhase: true, myTurn: true },
+        effects: [{ op: 'draw', n: 2 }],
+        else: [{ op: 'draw', n: 1 }],
+      }],
     }],
   },
 

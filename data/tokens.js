@@ -5,7 +5,8 @@ window.RB = window.RB || {};
 // Ids are prefixed `tok-` so they can never collide with a real card number.
 RB.tokenData = [
   { id: 'tok-sand-soldier', name: 'Sand Soldier', nameId: 'sand-soldier', type: 'Unit',
-    domain: 'Calm', domains: ['Calm'], tags: ['Shurima', 'Token'], energy: 0, power: 0, might: 2,
+    domain: 'Calm', domains: ['Calm'], tags: ['Sand Soldier', 'Shurima', 'Token'],
+    energy: 0, power: 0, might: 2,
     rarity: 'Token', set: 'Token', artist: null },
   { id: 'tok-gold', name: 'Gold', nameId: 'gold', type: 'Gear',
     domain: 'Colorless', domains: [], tags: ['Token'], energy: 0, power: 0, might: null,

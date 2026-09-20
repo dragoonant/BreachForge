@@ -593,22 +593,38 @@
   say('lockOpponentPlays', () => "Opponents can't play cards this turn.");
 
   // --- hook tables ----------------------------------------------------------
-  // "I cost [2] less" and its condition. Cost modification has exactly one home
-  // (RB.totalCost), and this is the Origins entry in it: a card declares `ognCostLess`
-  // and this reads it. The field is namespaced so a second pack's modifier, reading its
-  // own field, cannot apply this one twice.
-  const COST_WHEN = {
-    // [Legion]: satisfied by any other card you have finalized this turn. The card being
-    // priced is still in hand, so anything in the list is another card.
-    legion: (s, p) => (s.players[p].playedThisTurn || []).length > 0,
-  };
+  // Cost modification has one home (RB.totalCost) and one shape: `abilities.costModifier`,
+  // which js/text.js describes. The core describes it but does not yet apply it, so this
+  // is what applies it — DELETE THIS REGISTRATION the day the core applies it itself, or
+  // a card carrying the field is discounted twice.
   RB.defineCostModifier((s, p, iid, cost) => {
-    const ab = RB.cardOf(s, iid).abilities;
-    const r = ab && ab.ognCostLess;
-    if (!r) return;
-    if (r.when && !COST_WHEN[r.when](s, p)) return;
-    cost.energy -= r.energy || 0;
-    cost.power -= r.power || 0;
+    const m = (RB.cardOf(s, iid).abilities || {}).costModifier;
+    if (!m) return;
+    if (m.when && !RB.testCondition(s, m.when, { p: p, source: iid })) return;
+    cost.energy += m.energy || 0;
+    cost.power += m.power || 0;
+  });
+
+  // "If a friendly unit would die, kill this instead. Heal that unit, exhaust it, and
+  // recall it." The shipped `dieInstead` heals and kills the source; this one also
+  // exhausts the saved unit and RECALLS it — a relocation to its base that is not a move
+  // (rule 449), so no move trigger sees it and no movement restriction can stop it.
+  RB.defineReplacement('ogn.saveAndRecall', (s, e) => {
+    const dying = RB.obj(s, e.dying), src = RB.obj(s, e.source);
+    if (e.source === e.dying) return false;
+    if (src.controller !== dying.controller) return false;        // a FRIENDLY unit
+    if (RB.card(dying.cardId).type !== 'Unit') return false;      // a friendly UNIT
+    RB.kill(s, e.source);
+    dying.damage = 0;
+    dying.exhausted = true;
+    const loc = RB.locationOf(s, e.dying);
+    if (loc.kind === 'bf') {
+      RB.removeFrom(s.bf[loc.bf].units, e.dying);
+      delete dying.role;
+      s.players[dying.controller].base.push(e.dying);
+      RB.log(s, 'recall', { iid: e.dying, p: dying.controller, bf: loc.bf }, 'unit.move');
+    }
+    return true;
   });
 
   // ==========================================================================
