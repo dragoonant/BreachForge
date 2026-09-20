@@ -572,6 +572,12 @@
     for (let p = 0; p < 2; p++)
       for (const iid of s.players[p].base.slice())
         if (RB.isLethalDamage(s, iid)) { RB.kill(s, iid); changed = true; }
+    // 4. An open battlefield with nobody on it and no fight pending becomes uncontrolled.
+    if (!s.showdown && !s.chain.length)
+      for (const bf of s.bf)
+        if (!bf.units.length && !bf.showdownStaged && !bf.combatStaged && bf.controller !== null) {
+          bf.controller = null; changed = true;
+        }
     // 5. Remove all Hidden cards from battlefields not controlled by the same player and
     // place them in their owner's trash (cleanup step 5). A hidden card lives only as
     // long as you hold the ground it is buried under.
@@ -582,12 +588,6 @@
           s.players[h.owner].trash.push(h.iid);
           RB.log(s, 'hiddenLost', { p: h.owner, iid: h.iid });
           changed = true;
-        }
-    // 4. An open battlefield with nobody on it and no fight pending becomes uncontrolled.
-    if (!s.showdown && !s.chain.length)
-      for (const bf of s.bf)
-        if (!bf.units.length && !bf.showdownStaged && !bf.combatStaged && bf.controller !== null) {
-          bf.controller = null; changed = true;
         }
     // 6/7. Stage showdowns and combats where Contested was applied.
     for (let i = 0; i < s.bf.length; i++) {

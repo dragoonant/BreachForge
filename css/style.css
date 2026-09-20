@@ -226,3 +226,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   filter:drop-shadow(0 18px 40px rgba(0,0,0,.7))}
 #spotlight.in{opacity:1;transform:translate(-50%,-50%) scale(1)}
 #spotlight .card-preview{width:clamp(13rem,19vw,17rem);min-height:0}
+
+/* A facedown card at a battlefield: public that it exists, private what it is. */
+.hidden-mark{box-shadow:0 0 0 1px rgba(255,202,99,.55),0 2px 8px rgba(0,0,0,.6);cursor:help}

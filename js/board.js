@@ -160,6 +160,18 @@
       for (const iid of RB.unitsAt(state, i, me)) lm.appendChild(unitEl(state, iid, true));
       box.appendChild(lm);
 
+      // A facedown card is visible as a card back to both players — its existence is
+      // public, its identity is not. Only its owner is told what it is.
+      for (const h of bf.hidden) {
+        const back = el('card card-tiny card-back hidden-mark');
+        back.style.cssText = 'position:absolute;bottom:.3rem;left:.35rem;z-index:3';
+        back.title = h.owner === me
+          ? RB.cardOf(state, h.iid).name + ' — hidden here' +
+            (h.turnHidden >= state.turn ? ' (playable from next turn)' : ' (playable now)')
+          : 'A facedown card';
+        box.appendChild(back);
+      }
+
       if (state.showdown && state.showdown.bf === i) {
         const s = el('');
         s.style.cssText = 'position:absolute;top:.25rem;right:.45rem;font-size:.62rem;letter-spacing:.12em;color:#ffca63';

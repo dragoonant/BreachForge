@@ -105,19 +105,22 @@
       return;
     }
     const acts = RB.legalActions(state);
-    const mine = acts.filter(a => a.iid === iid && (a.t === 'play' || a.t === 'move' || a.t === 'activate'));
+    const mine = acts.filter(a => a.iid === iid &&
+      (a.t === 'play' || a.t === 'move' || a.t === 'activate' || a.t === 'hide'));
     if (!mine.length) return;
     elm.style.cursor = 'pointer';
     if (U.sel === iid) elm.style.outline = '2px solid var(--accent)';
     elm.addEventListener('click', ev => {
       ev.stopPropagation();
       RB.audio.play('ui.click');
-      const dests = mine.filter(a => a.t !== 'activate');
+      const dests = mine.filter(a => a.t === 'play' || a.t === 'move');
       const act = mine.find(a => a.t === 'activate');
-      if (!dests.length && act) return RB.commit(act);
+      const hides = mine.filter(a => a.t === 'hide');
+      if (!dests.length && !hides.length && act) return RB.commit(act);
       // One destination is not a choice — spells (no destination at all), units that can
-      // only go to the base, and single-target gear all commit on the first click.
-      if (dests.length === 1) return RB.commit(dests[0]);
+      // only go to the base, and single-target gear all commit on the first click. A card
+      // that could also be hidden always asks, because hiding is a different decision.
+      if (dests.length === 1 && !hides.length) return RB.commit(dests[0]);
       U.sel = (U.sel === iid) ? null : iid;
       RB.paintBoard(state, U.me);
     });
@@ -201,17 +204,26 @@
       return;
     }
     if (U.sel) {
-      const dests = acts.filter(a => a.iid === U.sel);
-      say('<b>' + RB.cardOf(state, U.sel).name + '</b> selected — click a highlighted destination.' +
-        (dests.length ? '' : ' <span style="color:#ff9a8a">No legal destination.</span>'));
+      const dests = acts.filter(a => a.iid === U.sel && (a.t === 'play' || a.t === 'move'));
+      const hides = acts.filter(a => a.iid === U.sel && a.t === 'hide');
+      say('<b>' + RB.cardOf(state, U.sel).name + '</b> selected — ' +
+        (dests.length ? 'click a highlighted destination.'
+                      : '<span style="color:#ff9a8a">no legal destination.</span>'));
+      // Hiding is a discretionary action, not a play, so it gets its own control rather
+      // than sharing the battlefield click with playing the card there.
+      for (const h of hides)
+        btn('Hide at ' + RB.card(state.bf[+h.to.slice(2)].cardId).name,
+          () => RB.commit(h));
       btn('Cancel', () => { U.sel = null; RB.paintBoard(state, me); });
       return;
     }
     const plays = new Set(acts.filter(a => a.t === 'play').map(a => a.iid)).size;
     const moves = new Set(acts.filter(a => a.t === 'move').map(a => a.iid)).size;
+    const canHide = new Set(acts.filter(a => a.t === 'hide').map(a => a.iid)).size;
     const held = state.players[me].hand.length;
     say('Your main phase — <b>' + plays + '</b> of ' + held + ' card' + (held === 1 ? '' : 's') +
       ' playable, <b>' + moves + '</b> unit' + (moves === 1 ? '' : 's') + ' can move.' +
+      (canHide ? ' <span style="color:#ffca63">' + canHide + ' can be hidden.</span>' : '') +
       (plays === 0 && held > 0 ? ' <span style="color:#9fb0cc">Hover a card to see what it needs.</span>' : ''));
     btn('End turn', () => RB.commit({ t: 'endTurn' }), 'primary');
   };
