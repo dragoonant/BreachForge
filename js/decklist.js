@@ -31,7 +31,7 @@
       '<div><div style="font-size:1.3rem">' + legend.name + '</div>' +
       '<div style="color:#9fb0cc;font-size:.78rem">' + deck.domains.join(' · ') + ' — ' +
       deck.main.reduce((n, e) => n + e.qty, 0) + ' main deck, 12 runes, ' +
-      deck.battlefields.reduce((n, e) => n + e.qty, 0) + ' battlefields<br>' +
+      deck.battlefields.reduce((n, e) => n + e.qty, 0) + ' battlefields (one used)<br>' +
       deck.result + ' · ' + deck.event + '</div>' +
       (partial.length ? '<div class="partialbadge" style="margin-top:.3rem">' + partial.length +
         ' card' + (partial.length === 1 ? '' : 's') + ' not yet fully implemented</div>' : '') +
@@ -45,9 +45,17 @@
     for (const type of ['Unit', 'Spell', 'Gear', 'Battlefield']) {
       if (!by[type]) continue;
       const col = RB.el('');
+      // A deck registers three battlefields and plays one, chosen at random at setup
+      // (§486). Listing three with no note reads as three on the table, which is the
+      // question the board itself raises.
+      const note = type === 'Battlefield'
+        ? '<div style="font-size:.6rem;color:#7d8ea8;margin:-.15rem 0 .35rem;line-height:1.3">' +
+          'One of these is drawn at random at setup; your opponent brings the other. ' +
+          'Both start neutral.</div>'
+        : '';
       col.innerHTML = '<div style="font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;' +
         'color:#7d8ea8;margin-bottom:.3rem">' + type + ' · ' +
-        by[type].reduce((n, x) => n + x.qty, 0) + '</div>';
+        by[type].reduce((n, x) => n + x.qty, 0) + '</div>' + note;
       for (const { c, qty } of by[type]) {
         const row = RB.el('');
         row.style.cssText = 'display:flex;gap:.4rem;align-items:baseline;padding:.1rem 0;font-size:.8rem;cursor:help';
