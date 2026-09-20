@@ -10,6 +10,12 @@
 
   RB.paintBoard = function (state, me) {
     const U = RB.ui;
+    // Computed once per repaint, not once per card: legalActions is not cheap and the
+    // board asks about every card on it.
+    U.actable = U.actableSet(state);
+    const q = state.queue[0];
+    document.getElementById('game').classList.toggle('choosing',
+      !!(q && q.kind === 'target' && q.who === me));
     paintScores(state, me);
     paintSide($('#side-them'), state, RB.opponentOf(me), false);
     paintSide($('#side-me'), state, me, true);
@@ -87,7 +93,7 @@
       const cc = RB.renderCard(RB.cardOf(state, P.champion), { size: 'board', iid: P.champion });
       cc.classList.add('in-champion-zone');
       RB.decorate(cc, state, P.champion);
-      RB.ui.bindCard(cc, state, P.champion, mine ? 'champion' : null);
+      RB.ui.bindCard(cc, state, P.champion, mine ? 'champion' : 'enemy');
       lrow.appendChild(cc);
     }
     lz.appendChild(lrow);
@@ -101,7 +107,7 @@
     for (const iid of P.base) {
       const c = RB.renderCard(RB.cardOf(state, iid), { size: 'board', iid: iid });
       RB.decorate(c, state, iid);
-      RB.ui.bindCard(c, state, iid, mine ? 'unit' : null);
+      RB.ui.bindCard(c, state, iid, mine ? 'unit' : 'enemy');
       brow.appendChild(c);
     }
     bz.appendChild(brow);
@@ -222,7 +228,7 @@
     function unitEl(state, iid, mine) {
       const c = RB.renderCard(RB.cardOf(state, iid), { size: 'board', iid: iid });
       RB.decorate(c, state, iid);
-      RB.ui.bindCard(c, state, iid, mine ? 'unit' : null);
+      RB.ui.bindCard(c, state, iid, mine ? 'unit' : 'enemy');
       return c;
     }
   }

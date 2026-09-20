@@ -66,6 +66,29 @@ Per-turn state a condition or a card can read, on the player:
 `playedThisTurn` (the card ids finalized this turn, in order) · `drawsThisTurn` ·
 `powerSpentThisTurn` · `turnFlags.equipment` · `xp`.
 
+## Targeting — the one door
+
+**Every targeting decision goes through `RB.offerChoice(state, pool, n, ctx, tag, label)`.**
+A pack builds its own pool — it knows what its card may legally choose — and then hands the
+*ordered* pool here instead of slicing it itself:
+
+```js
+// was:  return pool.slice(0, spec.n || 1);
+return RB.offerChoice(s, pool, spec.n || 1, ctx, spec.pick, spec.prompt);
+```
+
+Order the pool best-first yourself: that ordering is the card's own policy (a removal spell wants
+the biggest, a sacrifice the smallest) and the core does not override it. `offerChoice` decides
+only **how many** and **whether to ask**, and it is where four things happen that a picker slicing
+its own pool silently skips:
+
+1. **The human seat is asked.** The question is parked on the state as a `target` queue step and
+   the resolution restarts with the answer pre-filled — so the AI answers targeting through the
+   same path, a replayed game resumes mid-prompt, and a test can assert on targeting without a DOM.
+2. **An answer already given is honoured**, which is what makes the restart work.
+3. **Deflect is charged** to the chooser.
+4. **The `chosen` trigger fires**, which several printed cards read.
+
 ## Replacement effects
 
 A replacement stands **in front of** an event and takes its place — the event never happens, so

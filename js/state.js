@@ -42,6 +42,11 @@
       bf: [], objects: {}, nextIid: 1,
       chain: [], priority: 0, focus: null, passes: 0,
       showdown: null, queue: [], log: [], winner: null, via: null, delayed: [],
+      // Which seat a person is playing, if any. The engine asks that seat to choose its
+      // targets and answers the other one itself. null means nobody is watching — tests,
+      // the fuzzer and AI-vs-AI all run that way, and behave exactly as before.
+      humanSeat: (opts.humanSeat === undefined ? null : opts.humanSeat),
+      chosen: {}, pendingItem: null, collecting: null,
       firstPlayer: 0,
     };
 

@@ -15,6 +15,13 @@
 
   // --- resolution -----------------------------------------------------------
   RB.resolveCard = function (s, item) {
+    RB.resolveAsking(s, item, st => RB.resolveCardNow(st, item));
+  };
+  RB.resolveAbility = function (s, item) {
+    RB.resolveAsking(s, item, st => RB.resolveAbilityNow(st, item));
+  };
+
+  RB.resolveCardNow = function (s, item) {
     const iid = item.iid, p = item.controller;
     const card = RB.cardOf(s, iid);
     const ab = card.abilities || {};
@@ -52,7 +59,7 @@
     for (const x of extras) if (x.effects) RB.runEffects(s, x.effects, ctx);
   };
 
-  RB.resolveAbility = function (s, item) {
+  RB.resolveAbilityNow = function (s, item) {
     const ab = RB.cardOf(s, item.iid).abilities.activated[item.ix];
     RB.runEffects(s, ab.effects || [], { p: item.controller, source: item.iid, targets: item.targets || [] });
   };
@@ -135,15 +142,35 @@
   };
 
   RB.runEffects = function (s, effects, ctx) {
+    const outer = ctx.opIx || '';
+    let i = 0;
     for (const e of effects || []) {
       const fn = OPS[e.op];
       if (!fn) throw new Error('no handler for op: ' + e.op);
+      // A choice needs a stable identity across the probe run and the real one, so each
+      // op carries its position in the effect tree. Without it the answer to "which unit"
+      // would attach to the wrong clause when a card asks twice.
+      ctx.opIx = outer + '.' + (i++) + e.op;
       fn(s, e, ctx);
     }
+    ctx.opIx = outer;
   };
 
   RB.answerQueue = function (s, a) {
     const step = s.queue.shift();
+    if (step.kind === 'target') {
+      s.chosen = s.chosen || {};
+      s.chosen[step.key] = (a.selection || []).slice();
+      RB.log(s, 'target', { p: step.who, key: step.key, chose: s.chosen[step.key] });
+      const item = s.pendingItem;
+      if (item) {
+        // Run the whole resolution again from the top with this answer pre-filled. It may
+        // stop again on the next question; the loop ends when nothing is left to ask.
+        if (item.kind === 'ability') RB.resolveAsking(s, item, st => RB.resolveAbilityNow(st, item));
+        else RB.resolveAsking(s, item, st => RB.resolveCardNow(st, item));
+      }
+      return;
+    }
     if (step.kind !== 'may' && step.kind !== 'choose') return;
     const prev = s.via;
     if (step.source) s.via = { iid: step.source };
@@ -480,13 +507,68 @@
     if (sel.maxMight !== undefined) pool = pool.filter(i => RB.mightOf(s, i) <= sel.maxMight);
     if (sel.mighty) pool = pool.filter(i => RB.isMighty(s, i));
     pool = pool.filter(i => RB.canChoose(s, ctx.p, i));
+    const n = sel.n || 1;
+
     if (!pool.length) return [];
     const low = sel.smallest;
     pool = pool.slice().sort((a, b) => low ? RB.mightOf(s, a) - RB.mightOf(s, b)
                                            : RB.mightOf(s, b) - RB.mightOf(s, a));
-    const taken = pool.slice(0, sel.n || 1);
+    return RB.offerChoice(s, pool, n, ctx, String(sel.pick), sel.prompt);
+  };
+
+  // THE ONE DOOR EVERY TARGETING DECISION GOES THROUGH.
+  //
+  // A pack builds its own pool — it knows what its card may legally choose — and then
+  // hands the ordered pool here instead of slicing it itself. Everything that must happen
+  // on a choice then happens in one place: the question is parked on the state for a human
+  // seat, an answer already given is honoured, Deflect is charged, and the "when you choose"
+  // trigger fires. A picker that slices its own pool silently skips all four.
+  //
+  // `pool` must already be ordered best-first, because that ordering is the card's own
+  // policy (a removal spell wants the biggest, a sacrifice the smallest) and the core has
+  // no business overriding it. This only decides HOW MANY and WHETHER TO ASK.
+  RB.offerChoice = function (s, pool, n, ctx, tag, label) {
+    if (!pool.length || !n) return [];
+    // The identity of the question is (source, position in the effect tree, selector), so
+    // the probe run and the real run agree which clause an answer belongs to.
+    const key = (ctx.source || '?') + '|' + (ctx.opIx || '') + '|' + (tag || '');
+    if (s.collecting)
+      s.collecting.push({ key: key, pool: pool.slice(), n: n, p: ctx.p,
+        source: ctx.source, label: label || null });
+    const answer = (s.chosen || {})[key];
+    const taken = answer ? answer.filter(i => pool.includes(i)) : pool.slice(0, n);
     for (const iid of taken) RB.announceChoice(s, ctx.p, iid, ctx.source);
     return taken;
+  };
+
+  // Run a resolution, stopping to ASK whenever a human seat faces a real choice.
+  //
+  // The engine has no continuations, so the resolution is made restartable instead: it is
+  // probed on a throwaway clone to find the first unanswered choice, the question is
+  // parked on the state, and when the answer arrives the whole resolution runs again from
+  // the top with the answer pre-filled. Every side effect happens exactly once, on the
+  // real state, on the final pass. This is the payment solver's rewind, applied to
+  // targeting.
+  RB.resolveAsking = function (s, item, run) {
+    const who = item.controller;
+    if (s.humanSeat === null || s.humanSeat === undefined || who !== s.humanSeat) return run(s);
+    for (let guard = 0; guard < 12; guard++) {
+      const probe = RB.clone(s);
+      probe.collecting = [];
+      probe.chosen = Object.assign({}, s.chosen || {});
+      try { run(probe); }
+      catch (e) { break; }               // a probe that throws is not a reason not to play
+      const open = (probe.collecting || []).find(c =>
+        !(s.chosen || {})[c.key] && c.pool.length > c.n && c.n > 0);
+      if (!open) break;
+      s.pendingItem = item;
+      s.queue.unshift({ kind: 'target', who: who, key: open.key, source: open.source,
+        options: open.pool, n: open.n, label: open.label });
+      return;                            // the resolution resumes when the question is answered
+    }
+    run(s);
+    s.chosen = {};
+    s.pendingItem = null;
   };
 
   // The Deflect toll: what an opposing chooser must pay to choose this unit, in Power of

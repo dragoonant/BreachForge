@@ -6,11 +6,13 @@
   const U = RB.ui = RB.ui || {};
   U.sel = null;          // the selected hand card or unit
   U.toss = [];           // cards set aside during the mulligan
+  U.picks = [];          // running selection while answering a targeting prompt
   U.state = null;
   U.me = 0;
   U.difficulty = 'normal';
 
   RB.startGame = function (state, me, difficulty) {
+    state.humanSeat = me;                 // from here the engine asks this seat to choose
     U.state = state; U.me = me; U.difficulty = difficulty || 'normal'; U.sel = null;
     RB.recordStart(state);
     RB.showScreen('game');
@@ -74,11 +76,49 @@
     }, 1500);
   };
 
+  // Anything the player could act with is marked; WHERE it can go is revealed only once
+  // they pick it up. A persistent destination highlight clutters the board before the
+  // player has committed to anything. Computed once per repaint, because legalActions is
+  // not cheap and the board asks about every card on it.
+  U.actableSet = function (state) {
+    const out = new Set();
+    if (RB.isTerminal(state) || RB.whoActs(state) !== U.me) return out;
+    if (state.queue.length && state.queue[0].kind === 'target') return out;
+    for (const a of RB.legalActions(state)) if (a.iid) out.add(a.iid);
+    return out;
+  };
+
   // --- selection ------------------------------------------------------------
   U.bindCard = function (elm, state, iid, role) {
     elm.addEventListener('mouseenter', () => RB.showPreview(elm, RB.cardOf(state, iid)));
     elm.addEventListener('mouseleave', RB.hidePreview);
+    // Answering a prompt is the one exception to "tapping never changes the game": it is a
+    // deliberate response to a question the game just asked, and clicking the real card is
+    // the documented way to answer targeting. This sits ABOVE the "is it mine" guard,
+    // because the answer to a prompt is very often one of the opponent's cards.
+    const q = state.queue[0];
+    if (q && q.kind === 'target' && q.who === U.me) {
+      if (!q.options.includes(iid)) return;
+      const picked = U.picks.includes(iid);
+      elm.classList.add(picked ? 'role-picked' : 'role-target');
+      elm.style.cursor = 'pointer';
+      elm.addEventListener('click', ev => {
+        ev.stopPropagation();
+        RB.audio.play('ui.click');
+        const i = U.picks.indexOf(iid);
+        if (i >= 0) U.picks.splice(i, 1);
+        else U.picks.push(iid);
+        if (U.picks.length === q.n) {
+          const sel = U.picks.slice(); U.picks = [];
+          return RB.commit({ t: 'choose', selection: sel });
+        }
+        RB.paintBoard(state, U.me);
+      });
+      return;
+    }
+
     if (!role || RB.whoActs(state) !== U.me) return;
+
     // A selected Gear is looking for a host: any unit that is a legal destination for it
     // becomes a click target, and says so with the drop outline.
     if (U.sel && U.sel !== iid) {
@@ -108,8 +148,14 @@
     const mine = acts.filter(a => a.iid === iid &&
       (a.t === 'play' || a.t === 'move' || a.t === 'activate' || a.t === 'hide'));
     if (!mine.length) return;
+    // Four states, four colours, and that is the whole targeting vocabulary.
+    elm.classList.add(U.sel === iid ? 'role-selected' : 'role-actable');
+    if (U.sel !== iid) {
+      // A rebuilt node restarts its animation, so a board redrawn while the AI acts would
+      // produce a stuttering pulse. The phase is taken from the wall clock instead.
+      elm.style.animationDelay = '-' + ((Date.now() % 1700) / 1000).toFixed(3) + 's';
+    }
     elm.style.cursor = 'pointer';
-    if (U.sel === iid) elm.style.outline = '2px solid var(--accent)';
     elm.addEventListener('click', ev => {
       ev.stopPropagation();
       RB.audio.play('ui.click');
@@ -172,6 +218,18 @@
     if (state.queue.length && state.queue[0].kind === 'chooseShowdown')
       return say('Two battlefields are contested — <b>click one</b> to open its showdown.');
 
+    const q0 = state.queue[0];
+    if (q0 && q0.kind === 'target') {
+      const src = q0.source ? RB.cardOf(state, q0.source) : null;
+      const left = q0.n - U.picks.length;
+      say((src ? '<b>' + src.name + '</b> — ' : '') +
+        (q0.label || 'Choose ' + q0.n + (q0.n === 1 ? ' target' : ' targets')) +
+        '. <span style="color:#ff6bcb">Click ' + left + ' more highlighted card' +
+        (left === 1 ? '' : 's') + '.</span>');
+      if (U.picks.length) btn('Clear', () => { U.picks = []; RB.paintBoard(state, me); });
+      return;
+    }
+
     // A card-driven choice names the card and shows its printed text, so a "may" reads as a
     // question about a card rather than a bare yes/no.
     const q = state.queue[0];
@@ -217,12 +275,18 @@
       btn('Cancel', () => { U.sel = null; RB.paintBoard(state, me); });
       return;
     }
-    const plays = new Set(acts.filter(a => a.t === 'play').map(a => a.iid)).size;
+    // The champion is playable from its own zone, so it is counted separately — "5 of 4
+    // cards playable" is what happens when a zone outside the hand is folded into a
+    // hand-relative count.
+    const playIids = new Set(acts.filter(a => a.t === 'play').map(a => a.iid));
+    const champReady = state.players[me].champion && playIids.has(state.players[me].champion);
+    const plays = [...playIids].filter(i => i !== state.players[me].champion).length;
     const moves = new Set(acts.filter(a => a.t === 'move').map(a => a.iid)).size;
     const canHide = new Set(acts.filter(a => a.t === 'hide').map(a => a.iid)).size;
     const held = state.players[me].hand.length;
     say('Your main phase — <b>' + plays + '</b> of ' + held + ' card' + (held === 1 ? '' : 's') +
       ' playable, <b>' + moves + '</b> unit' + (moves === 1 ? '' : 's') + ' can move.' +
+      (champReady ? ' <span style="color:#ffca63">Your champion can be played.</span>' : '') +
       (canHide ? ' <span style="color:#ffca63">' + canHide + ' can be hidden.</span>' : '') +
       (plays === 0 && held > 0 ? ' <span style="color:#9fb0cc">Hover a card to see what it needs.</span>' : ''));
     btn('End turn', () => RB.commit({ t: 'endTurn' }), 'primary');

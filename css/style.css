@@ -264,3 +264,27 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .zone-scrim{position:absolute;inset:0;z-index:1;pointer-events:none;
   background:linear-gradient(180deg, var(--zone-scrim), transparent 40%, transparent 60%, var(--zone-scrim))}
 .zone>.lbl,.zone>.zonerow,.zone>.runes,.zone>#them-hand{position:relative;z-index:2}
+
+/* ------------------------------------------------ role colours
+   Four states, four colours, defined once and applied by the renderer from legalActions
+   and the open prompt. Nothing else marks a card. */
+:root{
+  --role-actable:#f5c34d;
+  --role-selected:#5b9dff;
+  --role-target:#ff6bcb;
+  --role-picked:#45c98b;
+}
+.card.role-actable{border-color:var(--role-actable);
+  animation:role-actable-pulse 1.7s ease-in-out infinite}
+.card.role-selected{border-color:var(--role-selected);
+  box-shadow:0 0 0 3px var(--role-selected),0 0 20px rgba(91,157,255,.6)}
+.card.role-target{border-color:var(--role-target);
+  box-shadow:0 0 0 3px var(--role-target),0 0 18px rgba(255,107,203,.55)}
+.card.role-picked{border-color:var(--role-picked);
+  box-shadow:0 0 0 3px var(--role-picked),0 0 16px rgba(69,201,139,.55)}
+@keyframes role-actable-pulse{
+  0%,100%{box-shadow:0 0 0 2px var(--role-actable),0 0 8px rgba(245,195,77,.30)}
+  50%    {box-shadow:0 0 0 2px var(--role-actable),0 0 20px rgba(245,195,77,.70)}
+}
+/* A prompt is open: everything that is not an answer steps back. */
+#game.choosing .card:not(.role-target):not(.role-picked):not(.card-preview){filter:brightness(.62) saturate(.7)}

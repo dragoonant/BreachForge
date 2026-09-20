@@ -253,6 +253,23 @@
       return step.options.map((o, i) => ({ t: 'choose', ix: i }));
     if (step.kind === 'may')
       return [{ t: 'choose', ix: 0 }, { t: 'choose', ix: 1 }];
+    if (step.kind === 'target') {
+      // Every legal answer is a distinct action, so the AI answers targeting through the
+      // same path the human does and a replayed game resumes mid-prompt.
+      const out = [];
+      const pick = (chosen, from) => {
+        if (chosen.length === step.n) { out.push({ t: 'choose', selection: chosen.slice() }); return; }
+        for (let i = from; i < step.options.length; i++) {
+          chosen.push(step.options[i]);
+          pick(chosen, i + 1);
+          chosen.pop();
+          if (out.length > 60) return;         // deterministic cap on a very wide choice
+        }
+      };
+      pick([], 0);
+      if (!out.length) out.push({ t: 'choose', selection: [] });
+      return out;
+    }
     throw new Error('unknown queue step: ' + step.kind);
   };
 
