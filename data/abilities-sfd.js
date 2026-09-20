@@ -403,10 +403,15 @@
     },
 
     // ============================================================ wave two
+    // "[Action] [Repeat] [1] Give a unit [Assault 2] this turn."
+    // A granted keyword carries its value now, and RB.keywordValue sums every instance, so
+    // a unit printed with Assault 1 and given this one attacks at +3. Repeat is the same
+    // optional additional cost as sfd-031: paying it runs the instructions a second time.
     'sfd-003': {
-      unimplemented: 'Grants [Assault 2] for a turn. A runtime keyword grant carries no ' +
-        'value — the core `grant` op stores a name, and the only reader of Assault counts a ' +
-        'granted one as 1 — so the card would give +1 where it prints +2.',
+      keywords: ['Action'],
+      additionalCosts: [{ id: 'repeat', energy: 1, effects: [
+        { op: 'sfd.grantKeyword', keyword: 'Assault', value: 2, target: { pick: 'myUnits' } }] }],
+      effects: [{ op: 'sfd.grantKeyword', keyword: 'Assault', value: 2, target: { pick: 'myUnits' } }],
     },
 
     // "If you have two or fewer cards in your hand, I enter ready."
@@ -419,11 +424,25 @@
       ],
     },
 
+    // Third clause: "Friendly units played from anywhere other than a player's hand have
+    // [Accelerate]." A static may grant an additional cost now (`grantsExtra`), but it
+    // cannot say this one. Two things are missing, and each alone is the wrong card:
+    //   * The grant is never OFFERED. RB.availableExtras and RB.additionalCost read only the
+    //     `additionalCosts` printed on the card being played, so a granted id is filtered
+    //     out of every combination in legalActions and would throw if one were chosen.
+    //   * `grantsExtra` filters on tag and type and knows nothing of the ZONE a card is
+    //     played from — which is this clause's whole content. The plays it names (trash,
+    //     face down, banished) never reach the additional-cost step at all, while the hand
+    //     plays it excludes are exactly the ones that do: wiring it up as printed would
+    //     grant Accelerate to the inverse of the units that should have it.
     'sfd-029': {
       unimplemented: 'Third clause grants [Accelerate] — an optional ADDITIONAL COST — to ' +
-        'friendly units played from anywhere but a hand. Additional costs are read off the ' +
-        'card being played and cannot be granted, and a play from the trash or from face ' +
-        'down raises `unitPlayed` without saying which zone it came from.',
+        'friendly units played from anywhere but a hand. A static can grant an extra cost ' +
+        '(`grantsExtra`), but RB.availableExtras and RB.additionalCost still read only the ' +
+        'costs printed on the card being played, so a granted one is never offered; and ' +
+        'the grant carries no zone filter, while plays from the trash, from face down and ' +
+        'from banishment never consult additional costs — so it would land on the hand ' +
+        'plays the clause excludes and on nothing else.',
     },
 
     // "[Action] [Repeat] [1][C] Deal 1 to up to three units at the same location."
@@ -503,11 +522,15 @@
       ],
     },
 
+    // "When you play me, discard 1, then draw 2."
+    // "Optional additional costs you pay cost [1] or [A] less."
+    // The discount is a cost modifier, and modifiers now see the chosen additional costs —
+    // which is what lets it reduce the optional extras without reaching the printed cost or
+    // the mandatory extra that gates a card's legality. The layer reads the static, so the
+    // clause lives here in the card data.
     'sfd-149': {
-      unimplemented: 'Second clause discounts the OPTIONAL ADDITIONAL COSTS you pay. A cost ' +
-        'modifier is handed the finished total and not the extras that went into it, so it ' +
-        'cannot tell an additional cost from a base cost, nor an optional one from a ' +
-        'mandatory one it must not discount.',
+      triggers: [{ on: 'played', effects: [{ op: 'discard', n: 1 }, { op: 'draw', n: 2 }] }],
+      statics: [{ scope: 'self', optionalExtraDiscount: { energy: 1, orPower: 1 } }],
     },
 
     // "[Action] When a friendly unit is played this turn, buff it. Draw 1."

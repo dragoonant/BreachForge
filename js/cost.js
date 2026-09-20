@@ -86,9 +86,15 @@
   // I enter ready") and a sacrifice that gates legality ("kill a friendly Mighty unit").
   // A sacrifice authored as an EFFECT instead would make the spell castable with nothing
   // to sacrifice, which is a different card — so its availability is checked here.
+  // An additional cost may be PRINTED on the card or GRANTED to it by a static in play
+  // ("your Shurima units have Accelerate"). Both lookups had to read only the printed
+  // list, which meant a granted cost was computed, then filtered straight back out and
+  // never offered — the card that grants it looked authored and did nothing.
   RB.additionalCost = function (state, iid, id) {
     const ab = RB.cardOf(state, iid).abilities || {};
-    const x = (ab.additionalCosts || []).find(c => c.id === id);
+    const all = (ab.additionalCosts || []).concat(
+      RB.grantedExtras(state, RB.obj(state, iid).controller, iid));
+    const x = all.find(c => c.id === id);
     if (!x) throw new Error(RB.cardOf(state, iid).id + ' has no additional cost ' + id);
     return x;
   };
@@ -96,10 +102,11 @@
   RB.defineExtraCost = function (name, spec) { RB.extraAvailable[name] = spec; };
 
   // Which additional costs can this player actually choose right now? Returns the ids.
-  RB.availableExtras = function (state, p, iid) {
+  RB.availableExtras = function (state, p, iid, fromZone) {
     const ab = RB.cardOf(state, iid).abilities || {};
+    const all = (ab.additionalCosts || []).concat(RB.grantedExtras(state, p, iid, fromZone));
     const out = [];
-    for (const x of ab.additionalCosts || []) {
+    for (const x of all) {
       if (x.pays) {
         const spec = RB.extraAvailable[x.pays];
         if (!spec) throw new Error('no extra-cost kind named ' + x.pays);

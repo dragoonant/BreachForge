@@ -413,6 +413,38 @@ export function run(t) {
     t.eq(s.active, RB.opponentOf(me), 'and then play passes as normal');
   });
 
+  t.test('a static can grant a card an additional cost it does not print, and the zone filter holds', () => {
+    const s = game();
+    const p = s.active;
+    const unit = RB.allCards().find(c => c.type === 'Unit' && (c.tags || []).length &&
+      !(c.abilities && c.abilities.additionalCosts));
+    if (!unit) return;
+    const tag = unit.tags[0];
+    const iid = RB.mint(s, unit.id, p);
+    s.players[p].hand.push(iid);
+    s.players[p].pool.energy = 99; s.players[p].pool.any = 99;
+    const granter = put(s, p, 'base');
+    if (RB.obj(s, granter).cardId === unit.id) return;
+    const gc = RB.card(RB.obj(s, granter).cardId);
+    const saved = gc.abilities;
+    const extra = { id: 'granted-acc', energy: 1, power: 1, entersReady: true };
+
+    const plays = () => RB.legalActions(s).filter(a => a.t === 'play' && a.iid === iid);
+    const before = plays().length;
+
+    gc.abilities = { statics: [{ grantsExtra: extra, tag: tag }] };
+    const after = plays();
+    t.ok(after.length > before, 'the granted cost is actually OFFERED, not computed and dropped');
+    t.ok(after.some(a => a.pay && a.pay.includes('granted-acc')), 'by its id');
+    const paid = RB.apply(s, after.find(a => a.pay && a.pay.includes('granted-acc')));
+    t.ok(!RB.obj(paid, iid).exhausted, 'and paying it does what it says');
+
+    // A grant scoped to one zone must not reach a play from another.
+    gc.abilities = { statics: [{ grantsExtra: extra, tag: tag, fromZone: 'hidden' }] };
+    t.eq(plays().length, before, 'a hand play never sees a grant scoped to facedown plays');
+    gc.abilities = saved;
+  });
+
   // --- targeting -------------------------------------------------------------
   t.test('a human seat is ASKED to target, and the answer is what the effect uses', () => {
     let s = RB.newGame({ seed: 'ask', decks: [decks[0], decks[1]], humanSeat: 0 });

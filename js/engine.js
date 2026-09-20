@@ -55,13 +55,13 @@
 
   // The empty set first: a card with no additional costs yields exactly one combination,
   // and a card with them still offers the plain play unless one is mandatory.
-  function extraCombinations(state, p, iid) {
+  function extraCombinations(state, p, iid, fromZone) {
     const ab = RB.cardOf(state, iid).abilities || {};
     // A static may GRANT an additional cost to a card being played — "your units have
     // Accelerate" is not a keyword the unit carries, it is an option at its play step.
-    const all = (ab.additionalCosts || []).concat(RB.grantedExtras(state, p, iid));
+    const all = (ab.additionalCosts || []).concat(RB.grantedExtras(state, p, iid, fromZone));
     if (!all.length) return [[]];
-    const usable = RB.availableExtras(state, p, iid);
+    const usable = RB.availableExtras(state, p, iid, fromZone);
     const optional = all.filter(x => x.optional !== false && usable.includes(x.id)).map(x => x.id);
     const required = all.filter(x => x.optional === false).map(x => x.id);
     for (const r of required) if (!usable.includes(r)) return [];   // cannot be paid: unplayable
@@ -95,15 +95,21 @@
   };
 
   // Additional costs a static grants to a card being played.
-  RB.grantedExtras = function (state, p, iid) {
+  // `fromZone` is where the card is being played FROM — 'hand', 'champion' or 'hidden'.
+  // Several cards grant an option only to plays out of one zone, and a grant with no zone
+  // filter would hand it to exactly the plays the printed card excludes.
+  RB.grantedExtras = function (state, p, iid, fromZone) {
     const out = [];
     const card = RB.cardOf(state, iid);
     for (const src of RB.allUnits(state).concat(state.players.map(P => P.legend)).filter(Boolean)) {
       if (RB.obj(state, src).controller !== p) continue;
+      if (src === iid) continue;                    // a card does not grant to itself
       for (const st of (RB.card(RB.obj(state, src).cardId).abilities || {}).statics || []) {
         if (!st.grantsExtra) continue;
         if (st.tag && !(card.tags || []).includes(st.tag)) continue;
         if (st.type && card.type !== st.type) continue;
+        if (st.fromZone && fromZone && st.fromZone !== fromZone) continue;
+        if (st.fromZone && !fromZone) continue;
         out.push(st.grantsExtra);
       }
     }
@@ -127,7 +133,7 @@
     // timing. It cannot be returned there, so once played it lives in the usual zones.
     if (P.champion && mode === 'main') {
       const card = RB.cardOf(state, P.champion);
-      for (const pick of extraCombinations(state, p, P.champion)) {
+      for (const pick of extraCombinations(state, p, P.champion, 'champion')) {
         const cost = RB.totalCost(state, P.champion, pick.map(id => RB.additionalCost(state, P.champion, id)));
         if (!RB.canPay(state, p, cost)) continue;
         for (const dest of playDestinations(state, p, card))
@@ -159,7 +165,7 @@
       const dests = playDestinations(state, p, card);
       if (!dests.length) continue;
       let any = false;
-      for (const pick of extraCombinations(state, p, iid)) {
+      for (const pick of extraCombinations(state, p, iid, 'hand')) {
         const cost = RB.totalCost(state, iid, pick.map(id => RB.additionalCost(state, iid, id)));
         if (!RB.canPay(state, p, cost)) continue;
         any = true;

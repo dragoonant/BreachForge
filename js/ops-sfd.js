@@ -486,6 +486,23 @@
     })[sel] || 'unit';
   }
 
+  // "Give a unit [Assault 2] this turn." A granted keyword may carry a VALUE: `o.granted`
+  // holds either a bare name or { name, value }, RB.keywordValue SUMS every instance, and
+  // the Ending Cleanup empties the channel — which is the printed "this turn".
+  //
+  // The core `grant` op stores whatever it is handed, so the mechanic needs no new channel;
+  // what it cannot do is SAY a valued grant — its describer reads `e.keyword` back as text
+  // and prints a value-carrying one as an object. The describer is the auditor, so the
+  // printed phrasing lives here instead, the way sfd.giveMight already does for `buff`.
+  def('grantKeyword', (s, e, ctx) => {
+    for (const iid of pickFor(s, e, ctx)) {
+      RB.obj(s, iid).granted.push(e.value == null ? e.keyword : { name: e.keyword, value: e.value });
+      RB.log(s, 'grant', { iid: iid, keyword: e.keyword, value: e.value == null ? null : e.value });
+    }
+  });
+  say('grantKeyword', e => 'Give ' + selPhrase(e.target, e.other) + ' ' + e.keyword +
+    (e.value == null ? '' : ' ' + e.value) + ' this turn.');
+
   // "+N Might for each enemy unit there" — the choice is over units standing at a
   // battlefield only, and resolves to the one the clause actually rewards.
   def('buffPerEnemyAt', (s, e, ctx) => {
@@ -544,7 +561,10 @@
 
   // "Deal N to a unit at a battlefield" — a narrower pool than `enemyUnits`, which would
   // also offer units sitting in a base. Choosing is announced, so Deflect is paid and a
-  // "when you choose" trigger fires, exactly as RB.autoPick would.
+  // "when you choose" trigger fires, exactly as RB.autoPick would. The damage itself goes
+  // through RB.dealDamage, the one door: a direct write to `obj.damage` would step over
+  // "prevent all spell and ability damage this turn" and "spells deal 1 bonus damage to
+  // units here", and the card reading those plays wrong without ever looking broken.
   def('damageThere', (s, e, ctx) => {
     const pool = [];
     for (let i = 0; i < s.bf.length; i++)
@@ -552,7 +572,7 @@
         if (RB.canChoose(s, ctx.p, u)) pool.push(u);
     pool.sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
     const got = RB.offerChoice(s, pool, 1, ctx, 'damageThere', 'Deal the damage to which unit?');
-    for (const iid of got) RB.obj(s, iid).damage += n_(e);
+    for (const iid of got) RB.dealDamage(s, iid, n_(e), ctx);
   });
   say('damageThere', e => 'Deal ' + n_(e) + ' to a unit at a battlefield.');
 
@@ -703,6 +723,48 @@
     }
   });
 
+  // "Optional additional costs you pay cost [1] or [A] less" (sfd-149 Ezreal, a Chosen
+  // Champion that sits in a public zone all game). The modifier layer is handed the chosen
+  // EXTRAS as well as the finished total, which is what makes this sayable at all: the
+  // discount is held to what the optional additional costs themselves added, so it never
+  // reaches the printed cost, and `optional === false` is skipped because a mandatory cost
+  // is the one that gates legality — discounting it would be a different card.
+  //
+  // D-2 (the player does not choose yet): the card offers [1] OR [A] and nothing can open a
+  // question while a cost is being totalled, so the policy is the Power reduction — Power is
+  // the scarcer currency, and a recycled rune is gone where an exhausted one comes back —
+  // falling back to the Energy one when that is what leaves the play payable. An extra that
+  // adds Power has already cleared `each` in RB.totalCost, so a reduced Power count is never
+  // read as one-of-each-domain.
+  RB.defineCostModifier(function (s, p, iid, cost, extras) {
+    const d = discountOnExtras(s, p);
+    if (!d) return;
+    void iid;
+    for (const x of extras || []) {
+      if (x.optional === false) continue;
+      const byEnergy = Math.min(d.energy || 0, x.energy || 0);
+      const byPower = Math.min(d.orPower || 0, x.power || 0);
+      if (!byEnergy && !byPower) continue;
+      if (byPower && (!byEnergy || stillPayable(s, p, cost, 0, byPower))) cost.power -= byPower;
+      else cost.energy -= byEnergy;
+    }
+  });
+  // Every card this player controls is asked, because the clause is about the player and not
+  // about where the card stands. A Chosen Champion waiting in the Champion Zone is not on
+  // the board and is not asked.
+  function discountOnExtras(s, p) {
+    for (const src of RB.allUnits(s).concat(s.players.map(P => P.legend)).filter(Boolean)) {
+      if (RB.obj(s, src).controller !== p) continue;
+      for (const st of ((RB.cardOf(s, src).abilities || {}).statics) || [])
+        if (st.optionalExtraDiscount) return st.optionalExtraDiscount;
+    }
+    return null;
+  }
+  function stillPayable(s, p, cost, offEnergy, offPower) {
+    return RB.canPay(s, p, { energy: Math.max(0, cost.energy - offEnergy),
+      power: Math.max(0, cost.power - offPower),
+      domains: cost.domains.slice(), each: cost.each });
+  }
 
   // --- wave two ---------------------------------------------------------------
   // The Buff game action: a counter worth +1 Might, at most one per unit, gone when the
@@ -768,7 +830,7 @@
     best = best.slice().sort((a, b) =>
       (RB.mightOf(s, a) - RB.obj(s, a).damage) - (RB.mightOf(s, b) - RB.obj(s, b).damage));
     for (const iid of RB.offerChoice(s, best, e.upTo || 1, ctx, 'damageAtLocation', 'Damage which units?'))
-      RB.obj(s, iid).damage += n_(e);
+      RB.dealDamage(s, iid, n_(e), ctx);
   });
   say('damageAtLocation', e => 'Deal ' + n_(e) + ' to up to ' +
     (COUNTWORD[e.upTo || 1] || e.upTo) + ' units at the same location.');
@@ -823,7 +885,7 @@
     const n = e.fromMight ? RB.mightOf(s, ctx.source) : n_(e);
     if (!n) return;
     for (const iid of RB.offerChoice(s, pool, 1, ctx, 'damageInBase', 'Damage which unit in their base?'))
-      RB.obj(s, iid).damage += n;
+      RB.dealDamage(s, iid, n, ctx);
   });
   say('damageInBase', e => 'Deal damage equal to ' + (e.fromMight ? 'my Might' : n_(e)) +
     ' to an enemy unit in a base.');
@@ -1010,6 +1072,11 @@
         Math.abs(f.power || 0) + ' Power less to a minimum of ' + (f.minEnergy || 0) +
         ' Energy, and enemy spells cost ' + (x.energy || 0) + ' Energy and ' + (x.power || 0) +
         ' Power more.';
+    }
+    if (st.optionalExtraDiscount) {
+      const d = st.optionalExtraDiscount;
+      return 'Optional additional costs you pay cost ' + (d.energy || 0) + ' Energy or ' +
+        (d.orPower || 0) + ' Power less.';
     }
     if (st.when === 'attacking' && st.might != null)
       return 'I have +' + st.might + " Might while I'm an attacker.";

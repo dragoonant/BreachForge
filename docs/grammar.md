@@ -126,9 +126,11 @@ Assault 1 and granted Assault 2 has Assault 3.
 
 ## Statics that reach the play step
 
-`{ grantsExtra: { id, energy, power, entersReady }, tag, type }` gives a card being played an
-additional cost it does not print — "your Shurima units have Accelerate" is an option at their
-play step, not a keyword they carry.
+`{ grantsExtra: { id, energy, power, entersReady }, tag, type, fromZone }` gives a card being
+played an additional cost it does not print — "your Shurima units have Accelerate" is an option at
+their play step, not a keyword they carry. `fromZone` is `'hand'` · `'champion'` · `'hidden'`, for
+a clause that grants the option only to plays out of one zone; without it the grant would reach
+exactly the plays some printed cards exclude.
 
 ## Replacement effects
 
