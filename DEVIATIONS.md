@@ -44,11 +44,18 @@ and `[Reaction]` Add abilities may be used mid-resolution with no priority at al
 payment path.
 Owner: unassigned.
 
-**D-5 — Hidden cards are not implemented.**
-The Hide discretionary action (§811) — paying to place a card facedown at a battlefield you
-control, then playing it from there at Reaction speed — has no engine support. Cards that rely
-on it are marked `unimplemented` in their ability data and validation keeps them out of any
-registered deck.
+**D-5 — Hidden cards are implemented; reading an opponent's facedown cards is not.** *(retired
+in part, 2026-09-20.)* The Hide action, the facedown zone, playing from it at Reaction speed from
+the following turn ignoring base cost, and losing the card with the battlefield all work. What
+remains missing is granting a player visibility of an *opponent's* facedown cards, which one card
+asks for; it stays `unimplemented` and says so on its own face.
+Owner: unassigned.
+
+**D-10 — Combat damage is assigned by the engine, not by the assigning player.**
+Rule 460.2 lets the assigning player choose the order, subject to lethal-first, no overkill while
+a unit remains, and Tank's "assign to me first". The engine obeys all three constraints and then
+takes the cheapest kills first. A player who would rather spread damage differently cannot.
+*Fix:* a queue step for damage assignment when more than one legal assignment exists.
 Owner: unassigned.
 
 **D-6 — A dulled card tilts, it does not turn ninety degrees.**

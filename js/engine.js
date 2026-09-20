@@ -267,8 +267,9 @@
     const P = s.players[p];
     for (const iid of toss) RB.removeFrom(P.hand, iid);
     for (let i = 0; i < toss.length; i++) RB.draw(s, p);
-    for (const iid of toss) P.deck.push(iid);       // recycle to the bottom
-    RB.shuffle(s, P.deck);
+    // Recycle is "put it on the bottom of the corresponding deck" (rule 416) — not a
+    // shuffle. Shuffling here would put a mulliganed card back on top a third of the time.
+    for (const iid of toss) P.deck.push(iid);
     RB.log(s, 'mulligan', { p: p, n: toss.length });
     s.queue.shift();
     if (!s.queue.length) startTurn(s, s.firstPlayer, true);

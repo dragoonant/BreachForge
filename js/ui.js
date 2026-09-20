@@ -252,8 +252,13 @@
         case 'die': t = '<b>' + nm(d.iid) + '</b> was destroyed'; break;
         case 'conquer': t = you(d.p) + ' conquered <b>' + RB.card(state.bf[d.bf].cardId).name + '</b>'; break;
         case 'score': cls = ' score'; t = you(d.p) + ' scored — ' + d.points + ' point' + (d.points === 1 ? '' : 's') +
-          (d.how === 'hold' ? ' (hold)' : d.how === 'conquer' ? ' (conquer)' : ''); break;
+          (d.how === 'hold' ? ' (hold)' : d.how === 'conquer' ? ' (conquer)'
+            : d.how === 'burnOut' ? ' (they burned out)' : ''); break;
         case 'scoreDenied': t = you(d.p) + ' could not take the winning point by conquest — drew instead'; break;
+        case 'burnOut': t = you(d.p) + ' ran out of cards — trash recycled, and a point conceded'; break;
+        case 'hide': t = you(d.p) + ' hid a card face down at <b>' + RB.card(state.bf[d.bf].cardId).name + '</b>'; break;
+        case 'hiddenLost': t = you(d.p) + ' lost a facedown card with the battlefield'; break;
+        case 'deflectPaid': t = you(d.p) + ' paid Deflect to choose <b>' + nm(d.iid) + '</b>'; break;
         case 'gameOver': t = '<b>' + (d.winner === me ? 'You win.' : 'You lose.') + '</b>'; break;
         default: t = null;
       }

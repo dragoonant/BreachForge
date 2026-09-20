@@ -248,6 +248,50 @@ export function run(t) {
     t.ok(RB.canPay(s, p, cost), 'inside one it pays');
   });
 
+  // --- Recycle and Burn Out (rules 416 and 431) ------------------------------
+  t.test('recycle puts a card on the BOTTOM of the deck, it does not shuffle it in', () => {
+    const s = game();
+    const p = s.firstPlayer;
+    // Answer the mulligan for the seat that has not drawn yet.
+    let st = RB.newGame({ seed: 'recycle', decks: [decks[0], decks[1]] });
+    const who = st.queue[0].who;
+    const hand = st.players[who].hand.slice();
+    const tossed = hand.slice(0, 2);
+    const deckBefore = st.players[who].deck.slice();
+    st = RB.apply(st, { t: 'mulligan', toss: tossed });
+    const deck = st.players[who].deck;
+    t.eq(deck.slice(-2), tossed, 'the two set-aside cards are the bottom two');
+    t.eq(deck.slice(0, deckBefore.length - 2), deckBefore.slice(2),
+      'and the rest of the deck kept its order');
+    void p;
+  });
+
+  t.test('drawing from an empty deck burns out: trash recycles, the opponent gains a point', () => {
+    const s = game();
+    const p = s.active, them = RB.opponentOf(p);
+    const trash = s.players[p].deck.splice(0, 5);
+    s.players[p].deck = [];
+    s.players[p].trash = trash;
+    const before = s.players[them].points;
+    const drawn = RB.draw(s, p);
+    t.eq(s.players[them].points, before + 1, 'the opponent gained a point');
+    t.ok(drawn !== null, 'and the draw still happened, from the recycled deck');
+    t.eq(s.players[p].trash.length, 0, 'the trash is empty');
+  });
+
+  t.test('burning out with an empty trash still concedes the point, and can lose the game', () => {
+    let s = game();
+    const p = s.active, them = RB.opponentOf(p);
+    s.players[p].deck = []; s.players[p].trash = [];
+    s.players[them].points = s.victoryScore - 1;
+    // The winning point restriction applies to Conquer and Hold only, so a Burn Out point
+    // may be the eighth.
+    RB.draw(s, p);
+    RB.settle(s);
+    t.eq(s.players[them].points, s.victoryScore, 'the point landed');
+    t.eq(s.winner, them, 'and it won the game');
+  });
+
   t.test('a narrow play permission opens only the battlefields the card names', () => {
     const s = game();
     const p = s.active;

@@ -77,9 +77,29 @@
   };
 
   // --- zones ----------------------------------------------------------------
+  // Burn Out (rule 431). Drawing from an empty deck does NOT simply fail: the player
+  // recycles their trash into their main deck, randomised, then chooses an opponent to
+  // GAIN A POINT, and then completes the draw. With an empty trash it repeats every turn
+  // until the opponent reaches the victory score — decking out is a real loss condition,
+  // and a draw that quietly returned null hid it entirely.
+  RB.burnOut = function (state, p) {
+    RB.log(state, 'burnOut', { p: p });
+    const P = state.players[p];
+    while (P.trash.length) P.deck.push(P.trash.pop());
+    RB.shuffle(state, P.deck);
+    const them = RB.opponentOf(p);
+    state.players[them].points++;
+    // A point from a Burn Out is not a Score, so the winning-point restriction — which
+    // applies only to Conquer and Hold — does not hold it back (§471.2.c).
+    RB.log(state, 'score', { p: them, how: 'burnOut', points: state.players[them].points }, 'point.score');
+  };
+
   RB.draw = function (state, p) {
     const P = state.players[p];
-    if (!P.deck.length) { RB.log(state, 'burnOut', { p: p }); return null; }
+    if (!P.deck.length) {
+      RB.burnOut(state, p);
+      if (!P.deck.length) return null;         // trash was empty too; nothing to draw
+    }
     const iid = P.deck.shift();
     P.hand.push(iid);
     P.drawsThisTurn = (P.drawsThisTurn || 0) + 1;
