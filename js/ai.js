@@ -51,7 +51,7 @@
     const me = RB.whoActs(s);
     const acts = RB.legalActions(s);
     if (acts.length === 1) return acts[0];
-    if (difficulty === 'random') return acts[RB.rngInt(s, acts.length)];
+    if (difficulty === 'random') return acts[RB.peekInt(s, acts.length, 1)];
 
     // A large action space in the main phase is sampled at an even stride, never truncated
     // from the front — the front of the list is all one card type.
@@ -75,7 +75,7 @@
       if (a.t === 'pass' && !s.chain.length && !s.showdown) v -= 4;
       if (v > bestV) { bestV = v; best = a; }
     }
-    if (difficulty === 'easy' && RB.rngNext(s) < 0.35) return pool[RB.rngInt(s, pool.length)];
+    if (difficulty === 'easy' && RB.peekRandom(s, 2) < 0.35) return pool[RB.peekInt(s, pool.length, 3)];
     return best || acts[0];
   };
 })(window.RB = window.RB || {});

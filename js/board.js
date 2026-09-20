@@ -55,7 +55,7 @@
     const lg = el('btn', 'button');
     lg.style.cssText = 'padding:.2rem .6rem;font-size:.7rem';
     lg.textContent = 'Log';
-    lg.onclick = () => $('#log').classList.toggle('hidden');
+    lg.onclick = () => { $('#log').classList.toggle('open'); RB.audio.play('ui.click'); };
     btns.appendChild(lg);
     bar.appendChild(btns);
   }

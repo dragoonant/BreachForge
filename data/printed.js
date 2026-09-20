@@ -163,5 +163,8 @@ RB.printed = {
  "unl-209": "At the start of your Beginning Phase, you may kill a unit you control here to draw 1. (This happens before scoring.)",
  "unl-210": "While a unit here is defending alone, it has -2 [S]. (It's alone if there are no other friendly units here.)",
  "unl-215": "The first time a player plays a non-token unit here each turn, they may move another unit they control here to its base.",
- "unl-234": "[Reaction][>] [T]: [Add] [1]. Spend this Energy only during showdowns."
+ "unl-234": "[Reaction][>] [T]: [Add] [1]. Spend this Energy only during showdowns.",
+ "ogn-007": "",
+ "ogn-089": "",
+ "ogn-214": ""
 };

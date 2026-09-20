@@ -49,7 +49,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     throws(fn, msg) { let t = false; try { fn(); } catch { t = true; } if (!t) throw new Error(msg || 'expected a throw'); },
   };
   const dir = path.join(ROOT, 'tests');
-  const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => f.endsWith('.js')).sort() : [];
+  const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => f.startsWith('test-') && f.endsWith('.js')).sort() : [];
   const filter = opt('filter');
   for (const f of files) {
     if (filter && !f.includes(filter)) continue;

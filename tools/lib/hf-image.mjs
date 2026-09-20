@@ -16,11 +16,13 @@ import { execFile } from 'node:child_process';
 export const DEFAULTS = {
   endpoint: 'https://router.huggingface.co/nscale/v1/images/generations',
   model: 'black-forest-labs/FLUX.1-schnell',
-  width: 512,
-  height: 704,
-  // The model signs its work in the bottom strip some of the time. Cropping ~4% off the bottom
-  // removes it without meaningfully changing the composition.
-  cropFraction: 0.04,
+  width: 768,
+  height: 1024,
+  // The model signs its work in the bottom strip some of the time. 4% was enough at 704px tall;
+  // at 1024px a signature was still surviving ~5.3% up from the bottom edge (see ogn-022 in the
+  // first sample batch), so the crop is 8% — still well clear of the subject in a portrait
+  // composition, and it removes the signature with margin.
+  cropFraction: 0.08,
   webpQuality: 90,
   maxAttempts: 5,
   baseDelayMs: 2000

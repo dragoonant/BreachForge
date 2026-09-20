@@ -9,3 +9,4 @@ hf_token.md
 elevenlabs.token*
 .DS_Store
 *.pdf
+.hf_token

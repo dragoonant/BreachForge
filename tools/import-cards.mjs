@@ -33,13 +33,35 @@ for (const c of pool) printed[id(c)] = (c.abilityEffective || '').trim();
 const decks = sel.map((d, i) => {
   const entries = d.cards.map(x => ({ id: id(byDeckId[x.id]), qty: x.qty }));
   const grab = t => entries.filter(e => byDeckId[e.id.toUpperCase()].cardType === t);
+  // Some posted decklists omit part of the rune deck. A legal Riftbound deck has exactly
+  // 12 runes matching the legend's domains, so the shortfall is filled with basic runes of
+  // the deck's under-represented domains rather than played short. D-3 in DEVIATIONS.md.
+  const BASIC = { Fury: 'ogn-007', Calm: 'ogn-042', Mind: 'ogn-089',
+                  Body: 'ogn-126', Chaos: 'ogn-166', Order: 'ogn-214' };
+  const fillRunes = (runes, domains) => {
+    const have = {};
+    for (const e of runes) have[byDeckId[e.id.toUpperCase()].domain] = (have[byDeckId[e.id.toUpperCase()].domain] || 0) + e.qty;
+    let total = Object.values(have).reduce((a, b) => a + b, 0);
+    const doms = domains.filter(x => BASIC[x]);
+    while (total < 12) {
+      // Top up the domain furthest below an even split, so a list that recorded only one
+      // colour ends up with the split its legend actually requires.
+      doms.sort((a, b) => (have[a] || 0) - (have[b] || 0));
+      const d = doms[0];
+      have[d] = (have[d] || 0) + 1; total++;
+      const e = runes.find(x => x.id === BASIC[d]);
+      if (e) e.qty++; else runes.push({ id: BASIC[d], qty: 1 });
+    }
+    return runes;
+  };
+
   return {
     id: slug(d.legend.split(',')[0]) + '-' + slug(d.domains.split(',')[0]),
     name: d.legend,
     legend: grab('Legend')[0].id,
     domains: d.domains.split(','),
     event: d.event, result: d.result, date: d.date,
-    runes: grab('Rune'),
+    runes: fillRunes(grab('Rune'), d.domains.split(',')),
     battlefields: grab('Battlefield'),
     main: entries.filter(e => !['Legend', 'Rune', 'Battlefield'].includes(byDeckId[e.id.toUpperCase()].cardType)),
   };

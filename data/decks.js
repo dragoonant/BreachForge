@@ -154,6 +154,10 @@ RB.deckData = [
    {
     "id": "ogn-166",
     "qty": 7
+   },
+   {
+    "id": "ogn-089",
+    "qty": 5
    }
   ],
   "battlefields": [
@@ -418,7 +422,16 @@ RB.deckData = [
   "event": "Giant God Cup - BYD Station",
   "result": "1ST",
   "date": "06/26",
-  "runes": [],
+  "runes": [
+   {
+    "id": "ogn-214",
+    "qty": 6
+   },
+   {
+    "id": "ogn-089",
+    "qty": 6
+   }
+  ],
   "battlefields": [
    {
     "id": "unl-209",
@@ -531,6 +544,10 @@ RB.deckData = [
    {
     "id": "ogn-126",
     "qty": 7
+   },
+   {
+    "id": "ogn-214",
+    "qty": 5
    }
   ],
   "battlefields": [
@@ -656,6 +673,10 @@ RB.deckData = [
   "runes": [
    {
     "id": "ogn-166",
+    "qty": 6
+   },
+   {
+    "id": "ogn-007",
     "qty": 6
    }
   ],
@@ -901,6 +922,10 @@ RB.deckData = [
    {
     "id": "ogn-042",
     "qty": 6
+   },
+   {
+    "id": "ogn-214",
+    "qty": 6
    }
   ],
   "battlefields": [
@@ -1145,7 +1170,11 @@ RB.deckData = [
   "runes": [
    {
     "id": "ogn-166",
-    "qty": 5
+    "qty": 6
+   },
+   {
+    "id": "ogn-007",
+    "qty": 6
    }
   ],
   "battlefields": [

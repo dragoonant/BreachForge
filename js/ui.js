@@ -12,6 +12,7 @@
 
   RB.startGame = function (state, me, difficulty) {
     U.state = state; U.me = me; U.difficulty = difficulty || 'normal'; U.sel = null;
+    RB.recordStart(state);
     RB.showScreen('game');
     RB.audio.music('battle');
     RB.step();
@@ -27,6 +28,7 @@
     setTimeout(() => {
       if (U.state !== s) return;
       const a = RB.aiChoose(s, U.difficulty);
+      RB.recordAction(a);
       U.state = RB.apply(s, a);
       soundFor(U.state, s);
       RB.step();
@@ -35,6 +37,7 @@
 
   RB.commit = function (action) {
     const before = U.state;
+    RB.recordAction(action);
     U.state = RB.apply(before, action);
     U.sel = null;
     soundFor(U.state, before);
@@ -57,6 +60,17 @@
     elm.addEventListener('mouseenter', () => RB.showPreview(elm, RB.cardOf(state, iid)));
     elm.addEventListener('mouseleave', RB.hidePreview);
     if (!role || RB.whoActs(state) !== U.me) return;
+    // A selected Gear is looking for a host: any unit that is a legal destination for it
+    // becomes a click target, and says so with the drop outline.
+    if (U.sel && U.sel !== iid) {
+      const drop = RB.legalActions(state).find(a => a.iid === U.sel && a.to === 'unit:' + iid);
+      if (drop) {
+        elm.classList.add('dropok');
+        elm.style.cursor = 'pointer';
+        elm.addEventListener('click', ev => { ev.stopPropagation(); RB.commit(drop); });
+        return;
+      }
+    }
     if (mulliganStep(state)) {
       if (role !== 'hand') return;
       elm.style.cursor = 'pointer';
@@ -82,7 +96,9 @@
       const dests = mine.filter(a => a.t !== 'activate');
       const act = mine.find(a => a.t === 'activate');
       if (!dests.length && act) return RB.commit(act);
-      if (dests.length === 1 && dests[0].to === 'base' && dests[0].t === 'play') return RB.commit(dests[0]);
+      // One destination is not a choice — spells (no destination at all), units that can
+      // only go to the base, and single-target gear all commit on the first click.
+      if (dests.length === 1) return RB.commit(dests[0]);
       U.sel = (U.sel === iid) ? null : iid;
       RB.paintBoard(state, U.me);
     });
@@ -205,6 +221,8 @@
       }
       if (t) lines.push('<div class="e' + (d.p === me ? ' mine' : '') + cls + (e.via ? ' via' : '') + '">' + t + '</div>');
     }
+    // Collapsed, only the tail is visible; the CSS mask fades the cut so it reads as a
+    // battle line rather than a clipped panel.
     box.innerHTML = lines.join('');
     box.scrollTop = box.scrollHeight;
   };

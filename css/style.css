@@ -145,9 +145,16 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   background:rgba(8,12,20,.92);border:1px solid var(--edge);backdrop-filter:blur(6px);
   font-size:.8rem;max-width:56rem;pointer-events:auto}
 #preview{position:fixed;z-index:100;pointer-events:none;display:flex;gap:.7rem;align-items:flex-start}
-#log{position:absolute;right:.7rem;top:.5rem;width:16rem;max-height:46vh;overflow:auto;z-index:30;
-  font-size:.7rem;line-height:1.4;background:rgba(6,9,16,.82);border:1px solid var(--edge);
-  border-radius:.45rem;padding:.4rem .55rem;backdrop-filter:blur(4px)}
+/* Collapsed, the log is a battle line: the last few entries, short enough that it never
+   covers a battlefield. The Log button expands it. An overlay may cover cards; it may not
+   cover the cards you are being asked to click. */
+#log{position:absolute;right:.7rem;top:.5rem;width:15rem;max-height:6.4rem;overflow:hidden;z-index:30;
+  font-size:.7rem;line-height:1.4;background:rgba(6,9,16,.55);border:1px solid rgba(255,255,255,.06);
+  border-radius:.45rem;padding:.35rem .55rem;backdrop-filter:blur(3px);
+  -webkit-mask-image:linear-gradient(to bottom,transparent,#000 28%);
+  mask-image:linear-gradient(to bottom,transparent,#000 28%)}
+#log.open{max-height:62vh;overflow:auto;background:rgba(6,9,16,.93);
+  border-color:var(--edge);-webkit-mask-image:none;mask-image:none}
 #log .e{color:#a9bad4;padding:.06rem 0}
 #log .e.mine{color:#cfe6ff}
 #log .e.via{color:#7d8ea8;padding-left:.7rem}

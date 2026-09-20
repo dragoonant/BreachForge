@@ -45,6 +45,9 @@
       if (c.type === 'Unit' && (c.might === null || c.might === undefined))
         problems.push(c.id + ': unit with no might');
       if (!inPlay.has(c.id)) continue;
+      // A basic rune's two abilities are the engine's payment rules (§165.3), not card
+      // data — nothing to author, and an entry for one would be a second home for them.
+      if (c.type === 'Rune') continue;
       if (!c.abilities) { problems.push(c.id + ': registered but has no ability data'); continue; }
       if (c.abilities.vanilla) continue;
       if (c.abilities.unimplemented)
