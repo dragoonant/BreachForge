@@ -96,7 +96,7 @@
     const bz = el('zone base');
     bz.dataset.drop = mine ? 'base' : '';
     bz.innerHTML = '<div class="lbl">Base · ' + P.base.length + '</div>';
-    bz.style.overflow = 'visible';
+    paintZone(bz, mine ? 'base-mine' : 'base-theirs');
     const brow = el('zonerow');
     for (const iid of P.base) {
       const c = RB.renderCard(RB.cardOf(state, iid), { size: 'board', iid: iid });
@@ -110,6 +110,7 @@
     const rz = el('zone');
     rz.innerHTML = '<div class="lbl" title="Runes on board · Main deck · Trash">' +
       P.runes.length + 'R · ' + P.deck.length + 'D · ' + P.trash.length + 'T</div>';
+    paintZone(rz, mine ? 'runes-mine' : 'runes-theirs');
     if (!mine) {
       const th = el('', 'div'); th.id = 'them-hand'; th.style.paddingTop = '.85rem';
       for (let i = 0; i < P.hand.length; i++) {
@@ -141,6 +142,18 @@
     rr.appendChild(pool);
     rz.appendChild(rr);
     root.appendChild(rz);
+  }
+
+  // Paint a board area with its own image, behind a scrim. Same two knobs as the
+  // battlefields and set lower still: these sit under cards AND under text, and a board
+  // that competes with its own cards is a board that has to be turned off. A missing
+  // image simply does not paint and the zone reads exactly as it did before.
+  function paintZone(zone, name) {
+    if (!(RB.boardArt || {})[name]) return;
+    const art = el('zone-art');
+    art.style.backgroundImage = 'url("art/board/' + name + '.webp")';
+    zone.appendChild(art);
+    zone.appendChild(el('zone-scrim'));
   }
 
   function paintBattlefields(state, me) {
