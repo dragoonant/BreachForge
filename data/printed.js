@@ -166,5 +166,9 @@ RB.printed = {
  "unl-234": "[Reaction][>] [T]: [Add] [1]. Spend this Energy only during showdowns.",
  "ogn-007": "",
  "ogn-089": "",
- "ogn-214": ""
+ "ogn-214": "",
+ "unl-150": "[Deflect] (Opponents must pay [A] to choose me with a spell or ability.)\nWhen an opponent plays a unit while I'm at a battlefield, [Stun] it. They can't move it this turn. (It doesn't deal combat damage this turn.)",
+ "unl-172": "[Assault] (+1 [S] while I'm an attacker.)\n[Deathknell][>] Draw 1. If it's your Beginning Phase, draw 2 instead. (When I die, get the effect.)",
+ "sfd-143": "[Accelerate] (You may pay [1][C] as an additional cost to have me enter ready.)\nIf you've spent at least [A][A] this turn, I have +2 [S] and [Ganking]. (I can move from battlefield to battlefield.)",
+ "sfd-177": "[Accelerate] (You may pay [1][C] as an additional cost to have me enter ready.)\nWhen I attack, you may move any number of your token units to this battlefield."
 };

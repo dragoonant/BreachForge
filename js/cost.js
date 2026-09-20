@@ -187,6 +187,10 @@
 
   RB.pay = function (state, p, plan) {
     const P = state.players[p];
+    // Several cards read how much Power you have spent this turn, so the meter lives here,
+    // where every payment passes, rather than at each call site.
+    P.powerSpentThisTurn = (P.powerSpentThisTurn || 0) +
+      plan.fromPool.power.length + plan.recycle.length;
     P.pool.energy -= plan.fromPool.energy;
     P.pool.showdownOnly -= (plan.fromPool.showdownOnly || 0);
     for (const d of plan.fromPool.power) { if (d === 'any') P.pool.any--; else P.pool.power[d]--; }

@@ -81,6 +81,20 @@
     const out = [];
     const P = state.players[p];
     const seen = new Set();
+    // The Chosen Champion is played from the Champion Zone, at ordinary cost and ordinary
+    // timing. It cannot be returned there, so once played it lives in the usual zones.
+    if (P.champion && mode === 'main') {
+      const card = RB.cardOf(state, P.champion);
+      for (const pick of extraCombinations(state, p, P.champion)) {
+        const cost = RB.totalCost(state, P.champion, pick.map(id => RB.additionalCost(state, P.champion, id)));
+        if (!RB.canPay(state, p, cost)) continue;
+        for (const dest of playDestinations(state, p, card))
+          out.push(pick.length
+            ? { t: 'play', iid: P.champion, to: dest, from: 'champion', pay: pick }
+            : { t: 'play', iid: P.champion, to: dest, from: 'champion' });
+      }
+    }
+
     // A facedown card gains [Reaction] and may be played ignoring its base cost, from the
     // turn after it was hidden (§811). It is offered in every mode a Reaction is.
     for (let i = 0; i < state.bf.length; i++) {
@@ -164,12 +178,12 @@
   function moveActions(state, p) {
     const out = [];
     for (const iid of state.players[p].base) {
-      if (RB.obj(state, iid).exhausted) continue;
+      if (RB.obj(state, iid).exhausted || RB.obj(state, iid).cantMove) continue;
       for (let i = 0; i < state.bf.length; i++) out.push({ t: 'move', iid: iid, to: 'bf' + i });
     }
     for (let i = 0; i < state.bf.length; i++) {
       for (const iid of RB.unitsAt(state, i, p)) {
-        if (RB.obj(state, iid).exhausted) continue;
+        if (RB.obj(state, iid).exhausted || RB.obj(state, iid).cantMove) continue;
         out.push({ t: 'move', iid: iid, to: 'base' });
         if (RB.hasKeyword(state, iid, 'Ganking') || RB.bfGrantsGanking(state, i))
           for (let j = 0; j < state.bf.length; j++) if (j !== i) out.push({ t: 'move', iid: iid, to: 'bf' + j });
@@ -298,7 +312,7 @@
     if (!plan) throw new Error('cannot pay for ' + card.id);
     RB.pay(s, p, plan);
     for (const x of extras) RB.payExtra(s, p, iid, x);
-    RB.removeFrom(s.players[p].hand, iid);
+    if (a.from === 'champion') P.champion = null; else RB.removeFrom(P.hand, iid);
     // Count it before anything resolves: a card that asks "is this my second card this
     // turn" is asking about itself, and a counter bumped afterwards answers one too low.
     P.playedThisTurn.push(card.id);
@@ -434,6 +448,7 @@
       o.buffs = 0;                 // 3d. "this turn" effects expire
       o.granted = [];
       o.stunned = false;           //     …which is where Stun clears
+      o.cantMove = false;
       o.movedThisTurn = 0;
     }
     for (let q = 0; q < 2; q++) {  // 3e. Rune pools empty; unspent resources are lost
@@ -451,6 +466,7 @@
     s.players[p].playedThisTurn = [];
     s.players[p].drawsThisTurn = 0;
     s.players[p].turnFlags = {};
+    s.players[p].powerSpentThisTurn = 0;
     RB.log(s, 'turnStart', { p: p, turn: s.turn }, 'turn.start');
 
     // Awaken Phase — ready everything you control. Rule 316.2.

@@ -203,6 +203,61 @@
   });
   RB.defineOp('nothing', () => {});
 
+  // A guarded clause. The predicate table is a hook, so a pack adds a test rather than
+  // wrapping anything; an unknown test throws, which is how a missing condition becomes
+  // a loud authoring error instead of a clause that always fires.
+  RB.conditions = Object.create(null);
+  RB.defineCondition = function (name, fn) { RB.conditions[name] = fn; };
+  RB.testCondition = function (s, test, ctx) {
+    const name = typeof test === 'string' ? test : test.kind;
+    const fn = RB.conditions[name];
+    if (!fn) throw new Error('no condition named ' + name);
+    return !!fn(s, ctx, typeof test === 'string' ? {} : test);
+  };
+  RB.defineOp('when', (s, e, ctx) => {
+    if (RB.testCondition(s, e.test, ctx)) RB.runEffects(s, e.then || [], ctx);
+    else RB.runEffects(s, e.otherwise || [], ctx);
+  });
+
+  RB.defineCondition('beginningPhase', s => s.phase === 'beginning');
+  RB.defineCondition('myTurn', (s, ctx) => s.active === ctx.p);
+  RB.defineCondition('inShowdown', s => !!s.showdown);
+  RB.defineCondition('eventIsUnit', (s, ctx) =>
+    !!(ctx.event && ctx.event.type === 'Unit'));
+  RB.defineCondition('eventIsOpponents', (s, ctx) =>
+    !!(ctx.event && ctx.event.p !== ctx.p));
+  RB.defineCondition('sourceAtBattlefield', (s, ctx) =>
+    RB.locationOf(s, ctx.source).kind === 'bf');
+  RB.defineCondition('powerSpentAtLeast', (s, ctx, a) =>
+    (s.players[ctx.p].powerSpentThisTurn || 0) >= (a.n || 1));
+  RB.defineCondition('playedThisTurnAtLeast', (s, ctx, a) =>
+    s.players[ctx.p].playedThisTurn.length >= (a.n || 1));
+  RB.defineCondition('all', (s, ctx, a) => (a.tests || []).every(x => RB.testCondition(s, x, ctx)));
+
+  // "They can't move it this turn." A restriction on the unit, cleared with every other
+  // this-turn effect in the Ending Cleanup.
+  RB.defineOp('cantMove', (s, e, ctx) => {
+    for (const iid of asList(s, e.target, ctx)) RB.obj(s, iid).cantMove = true;
+  });
+
+  // "Move any number of your token units to this battlefield." Moving this way is an
+  // effect, not a standard move, so it does not exhaust them.
+  RB.defineOp('moveTokensHere', (s, e, ctx) => {
+    const bf = ctx.event && ctx.event.bf !== undefined ? ctx.event.bf : null;
+    if (bf === null) return;
+    for (const iid of RB.allUnits(s).slice()) {
+      const o = RB.obj(s, iid);
+      if (o.controller !== ctx.p || !o.token) continue;
+      const loc = RB.locationOf(s, iid);
+      if (loc.kind === 'bf' && loc.bf === bf) continue;
+      if (loc.kind === 'base') RB.removeFrom(s.players[ctx.p].base, iid);
+      else if (loc.kind === 'bf') RB.removeFrom(s.bf[loc.bf].units, iid);
+      s.bf[bf].units.push(iid);
+      RB.applyContested(s, bf, ctx.p);
+      RB.log(s, 'move', { p: ctx.p, iid: iid, to: 'bf' + bf }, 'unit.move');
+    }
+  });
+
   // Play a card out of a zone that is not your hand. Playing is otherwise a core action
   // from hand only, which is why "play a unit from your trash" had nowhere to live.
   RB.defineOp('playFromZone', (s, e, ctx) => {
@@ -445,5 +500,15 @@
       if (RB.abilityData[k]) throw new Error('ability data registered twice for ' + k);
       RB.abilityData[k] = pack[k];
     }
+  };
+  // Gap filler, loaded last. The set packs are authoritative for their own ids; this only
+  // claims an id no pack did, so a card the engine had to author for itself is replaced
+  // the moment its set pack authors it properly — without either side having to know.
+  RB.registerAbilitiesFallback = function (pack) {
+    RB.abilityData = RB.abilityData || {};
+    const claimed = [];
+    for (const k of Object.keys(pack))
+      if (!RB.abilityData[k]) { RB.abilityData[k] = pack[k]; claimed.push(k); }
+    return claimed;
   };
 })(window.RB = window.RB || {});

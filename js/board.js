@@ -75,12 +75,21 @@
     const P = state.players[p];
 
     const lz = el('zone legendbox');
-    lz.innerHTML = '<div class="lbl">Legend</div>';
+    lz.innerHTML = '<div class="lbl">Legend' + (P.champion ? ' · Champion' : '') + '</div>';
     const lrow = el('zonerow');
     const lc = RB.renderCard(RB.cardOf(state, P.legend), { size: 'board', iid: P.legend });
     RB.decorate(lc, state, P.legend);
     RB.ui.bindCard(lc, state, P.legend, mine ? 'legend' : null);
     lrow.appendChild(lc);
+    // The Champion Zone is PUBLIC — both players can see the champion waiting there, and
+    // it is playable from there all game, so it sits beside the legend rather than hiding.
+    if (P.champion) {
+      const cc = RB.renderCard(RB.cardOf(state, P.champion), { size: 'board', iid: P.champion });
+      cc.classList.add('in-champion-zone');
+      RB.decorate(cc, state, P.champion);
+      RB.ui.bindCard(cc, state, P.champion, mine ? 'champion' : null);
+      lrow.appendChild(cc);
+    }
     lz.appendChild(lrow);
     root.appendChild(lz);
 

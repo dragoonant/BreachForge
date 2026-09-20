@@ -131,10 +131,12 @@ export function run(t) {
     const saved = card.abilities;
     card.abilities = { statics: [{ might: { from: 'points' }, scope: 'self', includeSelf: true }] };
     s.players[p].points = 3;
-    t.eq(RB.mightOf(s, iid), base + 3, 'Might reads the player\'s points');
+    const at3 = RB.mightOf(s, iid);
     s.players[p].points = 5;
-    t.eq(RB.mightOf(s, iid), base + 5, 'and tracks them as they change');
+    t.eq(RB.mightOf(s, iid) - at3, 2, 'Might tracks the player\'s points as they change');
     card.abilities = saved;
+    t.eq(at3 - RB.mightOf(s, iid), 3 - 0, 'and the whole contribution is the points, nothing more');
+    void base;
   });
 
   t.test('a static may carry a condition, and stops applying when it stops holding', () => {
@@ -143,14 +145,41 @@ export function run(t) {
     const iid = put(s, p, 0);
     const card = RB.card(RB.obj(s, iid).cardId);
     const saved = card.abilities;
-    const base = (card.might || 0);
-    card.abilities = { statics: [{ might: 2, scope: 'self', includeSelf: true, when: 'defendingAlone' }] };
-    t.eq(RB.mightOf(s, iid), base, 'not defending: no bonus');
+    // The decks carry statics of their own — one legend in this pool grants +2 Might to a
+    // unit defending alone — so the test measures the DELTA its own static causes rather
+    // than an absolute Might, and stays true whatever the deck is doing.
+    const withoutIt = () => { card.abilities = saved; return RB.mightOf(s, iid); };
+    const withIt = () => {
+      card.abilities = { statics: [{ might: 2, scope: 'self', includeSelf: true, when: 'defendingAlone' }] };
+      return RB.mightOf(s, iid);
+    };
+    t.eq(withIt() - withoutIt(), 0, 'not defending: the conditional static contributes nothing');
     RB.obj(s, iid).role = 'defender';
-    t.eq(RB.mightOf(s, iid), base + 2, 'defending alone: the bonus applies');
+    t.eq(withIt() - withoutIt(), 2, 'defending alone: it contributes its 2');
     const friend = put(s, p, 0);
     RB.obj(s, friend).role = 'defender';
-    t.eq(RB.mightOf(s, iid), base, 'no longer alone: the bonus stops');
+    t.eq(withIt() - withoutIt(), 0, 'no longer alone: it stops');
+    card.abilities = saved;
+  });
+
+  t.test("a scope:'self' static applies to its own source and to nothing else", () => {
+    const s = game();
+    const p = s.active;
+    const a = put(s, p, 0);
+    const b = put(s, p, 0);                 // a second copy of the same card
+    const card = RB.card(RB.obj(s, a).cardId);
+    const saved = card.abilities;
+    const base = card.might || 0;
+    const other = RB.allCards().find(c => c.type === 'Unit' && c.id !== card.id);
+    const c3 = RB.mint(s, other.id, p);
+    s.bf[0].units.push(c3);
+    const before = [RB.mightOf(s, a), RB.mightOf(s, b), RB.mightOf(s, c3)];
+    card.abilities = { statics: [{ might: 3, scope: 'self', includeSelf: true }] };
+    const after = [RB.mightOf(s, a), RB.mightOf(s, b), RB.mightOf(s, c3)];
+    t.eq(after[0] - before[0], 3, 'the source gets it exactly once, not once per copy on the board');
+    t.eq(after[1] - before[1], 3, 'the second copy gets it from its own static, also once');
+    t.eq(after[2] - before[2], 0, 'a different card standing beside them gets nothing');
+    void base;
     card.abilities = saved;
   });
 
@@ -266,6 +295,35 @@ export function run(t) {
     t.ok(!RB.canPay(s, p, cost), 'outside a showdown it buys nothing');
     s.showdown = { bf: 0, attacker: p, defender: RB.opponentOf(p), combat: false };
     t.ok(RB.canPay(s, p, cost), 'inside one it pays');
+  });
+
+  // --- the Champion Zone (rule 1.1) ------------------------------------------
+  t.test('the Chosen Champion starts in the public Champion Zone, not in the main deck', () => {
+    const s = game();
+    for (let p = 0; p < 2; p++) {
+      const d = RB.deck(s.players[p].deckId);
+      t.ok(d.champion, d.id + ' has a Chosen Champion');
+      t.ok(s.players[p].champion, 'player ' + p + ' starts with it in the Champion Zone');
+      t.eq(RB.obj(s, s.players[p].champion).cardId, d.champion, 'and it is the right card');
+      const inDeck = s.players[p].deck.filter(i => RB.obj(s, i).cardId === d.champion).length;
+      const inHand = s.players[p].hand.filter(i => RB.obj(s, i).cardId === d.champion).length;
+      const listed = d.main.find(e => e.id === d.champion);
+      t.eq(inDeck + inHand, (listed ? listed.qty : 1) - 1,
+        'exactly one copy was taken out of the main deck, and no more');
+    }
+  });
+
+  t.test('the champion is playable from the Champion Zone, and leaves it when played', () => {
+    const s = game();
+    const p = s.active;
+    s.players[p].pool.energy = 99; s.players[p].pool.any = 99;
+    const champ = s.players[p].champion;
+    const play = RB.legalActions(s).find(a => a.t === 'play' && a.iid === champ);
+    t.ok(play, 'it is offered');
+    t.eq(play.from, 'champion', 'and from the champion zone');
+    const after = RB.apply(s, play);
+    t.eq(after.players[p].champion, null, 'the zone is empty afterwards');
+    t.ok(RB.locationOf(after, champ).kind !== 'championZone', 'and the card is in play');
   });
 
   // --- the Ending Phase (rule 317) -------------------------------------------

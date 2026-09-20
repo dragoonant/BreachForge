@@ -55,6 +55,24 @@ the blanket `playTo: 'battlefield'`:
 `whereIHaveUnits` (what `[Ambush]` grants) · `whereEnemyUnits` · `whereIAmAttacking` ·
 `whereIControl` · `anyBattlefield`.
 
+## Conditions on effects
+
+`{ op: 'when', test: <condition>, then: [...], otherwise: [...] }`. Conditions:
+`beginningPhase` · `myTurn` · `inShowdown` · `eventIsUnit` · `eventIsOpponents` ·
+`sourceAtBattlefield` · `{ powerSpentAtLeast: 2 }` · `{ playedThisTurnAtLeast: 2 }` ·
+`{ kind: 'all', tests: [...] }`. Add your own with `RB.defineCondition`.
+
+Per-turn state a condition or a card can read, on the player:
+`playedThisTurn` (the card ids finalized this turn, in order) · `drawsThisTurn` ·
+`powerSpentThisTurn` · `turnFlags.equipment` · `xp`.
+
+## The Champion Zone
+
+Every deck names a **Chosen Champion** — a champion unit whose tag matches the legend's. It is
+taken out of the main deck at setup, starts in the **public** Champion Zone, and is playable from
+there all game at ordinary cost and timing. `deck.champion` is its card id;
+`player.champion` is the instance while it waits.
+
 ## Hidden
 
 `[Hidden]` in `keywords` is enough — the engine owns the whole keyword. It offers the **hide**

@@ -40,6 +40,16 @@ const decks = sel.map((d, i) => {
     merged.set(key, (merged.get(key) || 0) + x.qty);
   }
   const entries = [...merged].map(([k, qty]) => ({ id: k, qty: qty }));
+  {
+    const legendCard = byDeckId[[...merged.keys()].find(k => byDeckId[k.toUpperCase()].cardType === 'Legend').toUpperCase()];
+    const tag = (legendCard.tags || [])[0];
+    const hasChampion = entries.some(e => {
+      const c = byDeckId[e.id.toUpperCase()];
+      return c && c.cardType === 'Unit' && (c.tags || []).includes(tag);
+    });
+    const fb = { LeBlanc: 'unl-172', Vex: 'unl-150', Azir: 'sfd-177', Sivir: 'sfd-143' }[tag];
+    if (!hasChampion && fb) entries.push({ id: fb, qty: 1 });
+  }
   const grab = t => entries.filter(e => byDeckId[e.id.toUpperCase()].cardType === t);
   // Some posted decklists omit part of the rune deck. A legal Riftbound deck has exactly
   // 12 runes matching the legend's domains, so the shortfall is filled with basic runes of
@@ -63,6 +73,22 @@ const decks = sel.map((d, i) => {
     return runes;
   };
 
+  // The Chosen Champion is a champion unit whose champion tag matches the legend's, taken
+  // out of the main deck at setup and started in the public Champion Zone (§1.1). Four of
+  // the posted lists omit it — the site's payload does not record it — and a deck without
+  // one is illegal, so the shortfall is filled with a champion of the legend's own name in
+  // the deck's domains. D-11 in DEVIATIONS.md.
+  const CHAMPION_FALLBACK = { LeBlanc: 'unl-172', Vex: 'unl-150', Azir: 'sfd-177', Sivir: 'sfd-143' };
+  const chosenChampion = (entries, legendCard) => {
+    const tag = (legendCard.tags || [])[0];
+    const found = entries.find(e => {
+      const c = byDeckId[e.id.toUpperCase()];
+      return c && c.cardType === 'Unit' && (c.tags || []).includes(tag);
+    });
+    if (found) return found.id;
+    return CHAMPION_FALLBACK[tag] || null;
+  };
+
   return {
     id: slug(d.legend.split(',')[0]) + '-' + slug(d.domains.split(',')[0]),
     name: d.legend,
@@ -72,6 +98,7 @@ const decks = sel.map((d, i) => {
     runes: fillRunes(grab('Rune'), d.domains.split(',')),
     battlefields: grab('Battlefield'),
     main: entries.filter(e => !['Legend', 'Rune', 'Battlefield'].includes(byDeckId[e.id.toUpperCase()].cardType)),
+    champion: chosenChampion(entries, byDeckId[grab('Legend')[0].id.toUpperCase()]),
   };
 });
 

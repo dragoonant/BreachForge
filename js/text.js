@@ -62,6 +62,13 @@
     (e.then ? ' ' + e.then.map(line).join(' ') : ''));                                                      // ops.counterIf
   RB.defineDescriber('buffByCounteredCost', e => sel(e.target, true) +
     " gets +Might equal to that card's Energy cost.");                                                      // ops.buffByCounteredCost
+  RB.defineDescriber('when', e => 'If ' + String(typeof e.test === 'string' ? e.test : e.test.kind)
+    .replace(/([A-Z])/g, ' $1').toLowerCase().trim() + ', ' +
+    lower((e.then || []).map(line).join(' ')) +
+    (e.otherwise && e.otherwise.length ? ' Otherwise, ' + lower(e.otherwise.map(line).join(' ')) : ''));  // ops.when
+  RB.defineDescriber('cantMove', e => sel(e.target, true) + " can't move this turn.");                     // ops.cantMove
+  RB.defineDescriber('moveTokensHere', () =>
+    'Move any number of your token units to this battlefield.');                                            // ops.moveTokensHere
   RB.defineDescriber('delayed', e => 'Later, ' + trigger(e.on) + ', ' +
     lower(e.effects.map(line).join(' ')));                                                                  // ops.delayed
   function trigger(on) { return (TRIGGER_WORDS[on] || on).replace(/^When /, 'when ').replace(/^At /, 'at '); }

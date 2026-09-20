@@ -51,9 +51,14 @@
       P.legend = mint(state, d.legend, p);
       for (const e of d.main) for (let i = 0; i < e.qty; i++) P.deck.push(mint(state, e.id, p));
       for (const e of d.runes) for (let i = 0; i < e.qty; i++) P.runeDeck.push(mint(state, e.id, p));
-      // The Chosen Champion sits in the Champion Zone, playable from there.
-      const champ = d.main.map(e => RB.card(e.id)).find(c => (c.tags || []).includes('Champion'));
-      P.championCardId = champ ? champ.id : null;
+      // The Chosen Champion is taken OUT of the main deck at setup and starts in the
+      // public Champion Zone, playable from there (§1.1). Leaving it in the deck makes the
+      // deck's single most important card something you have to draw.
+      P.champion = null;
+      if (d.champion) {
+        const i = P.deck.findIndex(iid => state.objects[iid].cardId === d.champion);
+        if (i >= 0) P.champion = P.deck.splice(i, 1)[0];
+      }
       RB.shuffle(state, P.deck);
       RB.shuffle(state, P.runeDeck);
       // 1v1 Duel, rule 481: each player randomly selects 1 of their 3 battlefields;
@@ -124,6 +129,7 @@
       if (P.trash.includes(iid)) return { kind: 'trash', p: p };
       if (P.runes.includes(iid)) return { kind: 'runes', p: p };
       if (P.legend === iid) return { kind: 'legend', p: p };
+      if (P.champion === iid) return { kind: 'championZone', p: p };
     }
     for (let i = 0; i < state.bf.length; i++) {
       if (state.bf[i].units.includes(iid)) return { kind: 'bf', bf: i };
@@ -184,18 +190,21 @@
         if (!ab || !ab.statics) return;
         for (const st of ab.statics) {
           if (sourceIid === iid && !st.includeSelf && st.scope !== 'self') continue;
-          if (!inScope(st, sourceBf, sourceP)) continue;
+          if (!inScope(st, sourceBf, sourceP, sourceIid)) continue;
           if (st.tag && !(RB.card(target.cardId).tags || []).includes(st.tag)) continue;
           if (st.when && !whenHolds(state, iid, st.when, sourceIid)) continue;
           out.push(st);
         }
       };
-      const inScope = (st, sourceBf, sourceP) => {
+      const inScope = (st, sourceBf, sourceP, sourceIid) => {
         const sc = st.scope || 'here';
+        // `self` means the source and nothing else. Returning true for every card made a
+        // second copy of the same card apply its modifier to the first — two 'self'
+        // statics on the board stacked on one unit.
+        if (sc === 'self') return sourceIid === iid;
         if (sc === 'here') return loc.kind === 'bf' && loc.bf === sourceBf;
         if (sc === 'mine') return target.controller === sourceP;
         if (sc === 'hereMine') return loc.kind === 'bf' && loc.bf === sourceBf && target.controller === sourceP;
-        if (sc === 'self') return true;
         if (sc === 'all') return true;
         return false;
       };
@@ -257,6 +266,14 @@
   RB.defineStaticWhen('xpAtLeast', (state, iid, w) =>
     (state.players[RB.obj(state, iid).controller].xp || 0) >= (w.n || 0));
   RB.defineStaticWhen('sourceMighty', (state, iid, w, src) => RB.isMighty(state, src));
+  // Conditions a card reads about its controller's turn so far. These are also available
+  // as effect conditions (RB.defineCondition); the two tables answer the same questions
+  // for different callers, so a name that exists in one should exist in the other.
+  RB.defineStaticWhen('powerSpentAtLeast', (state, iid, w) =>
+    (state.players[RB.obj(state, iid).controller].powerSpentThisTurn || 0) >= (w.n || 1));
+  RB.defineStaticWhen('playedThisTurnAtLeast', (state, iid, w) =>
+    state.players[RB.obj(state, iid).controller].playedThisTurn.length >= (w.n || 1));
+  RB.defineStaticWhen('attackingOrDefending', (state, iid) => !!RB.obj(state, iid).role);
 
   RB.defineStaticAmount('points', (state, iid) => state.players[RB.obj(state, iid).controller].points);
   RB.defineStaticAmount('xp', (state, iid) => state.players[RB.obj(state, iid).controller].xp || 0);

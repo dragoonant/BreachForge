@@ -113,7 +113,8 @@ RB.deckData = [
     "id": "ogn-082",
     "qty": 1
    }
-  ]
+  ],
+  "champion": "unl-113"
  },
  {
   "id": "diana-chaos",
@@ -247,7 +248,8 @@ RB.deckData = [
     "id": "unl-198",
     "qty": 3
    }
-  ]
+  ],
+  "champion": "unl-079"
  },
  {
   "id": "irelia-calm",
@@ -369,7 +371,8 @@ RB.deckData = [
     "id": "sfd-145",
     "qty": 1
    }
-  ]
+  ],
+  "champion": "sfd-225"
  },
  {
   "id": "leblanc-order",
@@ -474,8 +477,13 @@ RB.deckData = [
    {
     "id": "ogn-105",
     "qty": 1
+   },
+   {
+    "id": "unl-172",
+    "qty": 1
    }
-  ]
+  ],
+  "champion": "unl-172"
  },
  {
   "id": "fiora-order",
@@ -601,7 +609,8 @@ RB.deckData = [
     "id": "sfd-109",
     "qty": 2
    }
-  ]
+  ],
+  "champion": "ogn-232"
  },
  {
   "id": "draven-chaos",
@@ -719,7 +728,8 @@ RB.deckData = [
     "id": "sfd-021",
     "qty": 2
    }
-  ]
+  ],
+  "champion": "ogn-028"
  },
  {
   "id": "vex-calm",
@@ -828,8 +838,13 @@ RB.deckData = [
    {
     "id": "sfd-032",
     "qty": 2
+   },
+   {
+    "id": "unl-150",
+    "qty": 1
    }
-  ]
+  ],
+  "champion": "unl-150"
  },
  {
   "id": "azir-calm",
@@ -942,8 +957,13 @@ RB.deckData = [
    {
     "id": "unl-169",
     "qty": 2
+   },
+   {
+    "id": "sfd-177",
+    "qty": 1
    }
-  ]
+  ],
+  "champion": "sfd-177"
  },
  {
   "id": "sivir-chaos",
@@ -1061,8 +1081,13 @@ RB.deckData = [
    {
     "id": "ogs-010",
     "qty": 1
+   },
+   {
+    "id": "sfd-143",
+    "qty": 1
    }
-  ]
+  ],
+  "champion": "sfd-143"
  },
  {
   "id": "annie-chaos",
@@ -1180,6 +1205,7 @@ RB.deckData = [
     "id": "ogn-022",
     "qty": 1
    }
-  ]
+  ],
+  "champion": "ogs-010"
  }
 ];

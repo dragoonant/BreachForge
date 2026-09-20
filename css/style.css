@@ -129,7 +129,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   text-transform:uppercase;color:#63748f;pointer-events:none;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .zonerow{display:flex;gap:.34rem;align-items:center;flex-wrap:wrap;padding-top:.95rem;min-height:0}
-.legendbox{display:flex;flex-direction:column;align-items:center;gap:.22rem;width:7.2rem}
+.legendbox{display:flex;flex-direction:column;align-items:center;gap:.22rem;width:auto}
+.legendbox .zonerow{flex-wrap:nowrap}
 .runes{display:flex;flex-wrap:wrap;gap:.15rem;width:7.6rem;padding-top:1.05rem;align-content:flex-start}
 .rune{width:1.05rem;height:1.5rem;border-radius:.2rem;border:1px solid rgba(255,255,255,.28);
   background:currentColor;opacity:.92;transition:transform .12s,opacity .12s}
@@ -229,3 +230,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 /* A facedown card at a battlefield: public that it exists, private what it is. */
 .hidden-mark{box-shadow:0 0 0 1px rgba(255,202,99,.55),0 2px 8px rgba(0,0,0,.6);cursor:help}
+
+/* The Champion Zone is public: the card waits in the open, marked as not yet in play. */
+.in-champion-zone{outline:1px dashed rgba(255,202,99,.55);outline-offset:1px}

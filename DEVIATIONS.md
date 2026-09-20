@@ -89,3 +89,15 @@ and still hides decks containing a card that plays *wrong* rather than incomplet
 spell-played event; a defend event; optional additional costs at play time (Accelerate); and
 conditions on continuous modifiers.
 Owner: unassigned.
+
+**D-11 — Four Chosen Champions are reconstructed.**
+A legal deck names a Chosen Champion: a champion unit whose champion tag matches the legend's,
+taken out of the main deck at setup and started in the public Champion Zone. The posted lists for
+LeBlanc, Vex, Azir and Sivir do not record one — the deck source's payload omits it — and a deck
+without a champion is both illegal and materially weaker. `tools/import-cards.mjs` fills the gap
+with a champion of the legend's own name in the deck's domains (`unl-172`, `unl-150`, `sfd-177`,
+`sfd-143`), and `data/abilities-core.js` authors those four. Unlike the rune reconstruction
+(D-3), where the legend's domains determine the answer, **which** champion a player ran is a real
+deckbuilding decision and this is a guess at it.
+*Fix:* a decklist source that records the Champion Zone.
+Owner: unassigned.
