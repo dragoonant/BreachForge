@@ -13,7 +13,8 @@ const opt = n => { const i = argv.indexOf('--' + n); return i < 0 ? null : argv[
 
 export function engineFiles() {
   const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-  const all = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
+  // `?v=<hash>` is the cache-busting stamp; the loader wants the path on disk.
+  const all = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1].split('?')[0]);
   const uiOnly = new Set(JSON.parse(fs.readFileSync(path.join(ROOT, 'tools/ui-only.json'), 'utf8')));
   return { all, engine: all.filter(f => !uiOnly.has(f)), uiOnly: [...uiOnly] };
 }

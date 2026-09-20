@@ -10,6 +10,10 @@ jobs:
       # The deploy gate first: index.html and tests.html must load the same engine files
       # in the same order, and no UI module may carry a defensive `if (!RB.x)` fallback.
       - run: node tools/check-pages.mjs
+      # Every declared asset must carry the hash of its own contents. Without this, a
+      # deploy can leave a returning player holding new HTML and a ten-minute-old
+      # stylesheet — which is how a verified fix rendered broken in a real browser.
+      - run: node tools/stamp-assets.mjs --check
       # The black box must be able to prove itself before anything trusts a trace.
       - run: node tools/replay-report.mjs --selftest
       - run: node tools/test.mjs --full

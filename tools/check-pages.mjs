@@ -6,8 +6,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// The cache-busting stamp (tools/stamp-assets.mjs) is stripped here: index.html carries
+// `?v=<hash>` on every asset and tests.html does not, and hard rule 3 is about WHICH
+// engine files load and in WHAT ORDER — not about the query string that defeats a CDN.
 const scripts = f => [...fs.readFileSync(path.join(ROOT, f), 'utf8')
-  .matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
+  .matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1].split('?')[0]);
 const uiOnly = new Set(JSON.parse(fs.readFileSync(path.join(ROOT, 'tools/ui-only.json'), 'utf8')));
 const problems = [];
 const a = scripts('index.html').filter(s => !uiOnly.has(s));
