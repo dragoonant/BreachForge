@@ -240,9 +240,25 @@
     P.pool.power[e.domain] = (P.pool.power[e.domain] || 0) + (e.n || 1);
   });
   RB.defineOp('gainPoint', (s, e, ctx) => { s.players[ctx.p].points += e.n || 1; RB.log(s, 'score', { p: ctx.p, how: 'effect', points: s.players[ctx.p].points }, 'point.score'); });
+  // Which card you discard is a real decision, and a card the player did not choose to
+  // lose is a different card from the printed one. The chooser is the discarding player
+  // (§422.1.a) — not whoever played the effect.
   RB.defineOp('discard', (s, e, ctx) => {
-    const P = s.players[e.opponent ? RB.opponentOf(ctx.p) : ctx.p];
-    for (let i = 0; i < (e.n || 1) && P.hand.length; i++) P.trash.push(P.hand.pop());
+    const who = e.opponent ? RB.opponentOf(ctx.p) : ctx.p;
+    const P = s.players[who];
+    const n = Math.min(e.n || 1, P.hand.length);
+    if (!n) return;
+    // Ordered cheapest-first so the engine's own answer is a sensible one; the player's
+    // answer replaces it entirely when they are the one discarding.
+    const pool = P.hand.slice().sort((a, b) =>
+      (RB.cardOf(s, a).energy || 0) - (RB.cardOf(s, b).energy || 0));
+    const taken = RB.offerChoice(s, pool, n, { p: who, source: ctx.source, opIx: ctx.opIx },
+      'discard', 'Choose ' + n + ' card' + (n === 1 ? '' : 's') + ' to discard', { quiet: true });
+    for (const iid of taken) {
+      RB.removeFrom(P.hand, iid);
+      P.trash.push(iid);
+      RB.log(s, 'discard', { p: who, iid: iid }, 'card.discard');
+    }
   });
   RB.defineOp('recycleRune', (s, e, ctx) => {
     const rs = s.players[ctx.p].runes.slice(0, e.n || 1);
@@ -625,7 +641,10 @@
   // `pool` must already be ordered best-first, because that ordering is the card's own
   // policy (a removal spell wants the biggest, a sacrifice the smallest) and the core has
   // no business overriding it. This only decides HOW MANY and WHETHER TO ASK.
-  RB.offerChoice = function (s, pool, n, ctx, tag, label) {
+  // `opts.quiet` is for a choice that is not a targeting decision — which card to discard,
+  // which card to keep. Deflect and the `chosen` trigger are about choosing an object on
+  // the board, and firing them for a card in hand would be a rule invented here.
+  RB.offerChoice = function (s, pool, n, ctx, tag, label, opts) {
     if (!pool.length || !n) return [];
     // The identity of the question is (source, position in the effect tree, selector), so
     // the probe run and the real run agree which clause an answer belongs to.
@@ -635,7 +654,8 @@
         source: ctx.source, label: label || null });
     const answer = (s.chosen || {})[key];
     const taken = answer ? answer.filter(i => pool.includes(i)) : pool.slice(0, n);
-    for (const iid of taken) RB.announceChoice(s, ctx.p, iid, ctx.source);
+    if (!(opts && opts.quiet))
+      for (const iid of taken) RB.announceChoice(s, ctx.p, iid, ctx.source);
     return taken;
   };
 
@@ -648,19 +668,21 @@
   // real state, on the final pass. This is the payment solver's rewind, applied to
   // targeting.
   RB.resolveAsking = function (s, item, run) {
-    const who = item.controller;
-    if (s.humanSeat === null || s.humanSeat === undefined || who !== s.humanSeat) return run(s);
+    if (s.humanSeat === null || s.humanSeat === undefined) return run(s);
     for (let guard = 0; guard < 12; guard++) {
       const probe = RB.clone(s);
       probe.collecting = [];
       probe.chosen = Object.assign({}, s.chosen || {});
       try { run(probe); }
       catch (e) { break; }               // a probe that throws is not a reason not to play
+      // The question goes to whoever is CHOOSING, which is not always the player who
+      // played the card: a discard forced on you by the opponent's spell is still your
+      // choice (§422.1.a), and asking the caster would be the wrong player entirely.
       const open = (probe.collecting || []).find(c =>
-        !(s.chosen || {})[c.key] && c.pool.length > c.n && c.n > 0);
+        c.p === s.humanSeat && !(s.chosen || {})[c.key] && c.pool.length > c.n && c.n > 0);
       if (!open) break;
       s.pendingItem = item;
-      s.queue.unshift({ kind: 'target', who: who, key: open.key, source: open.source,
+      s.queue.unshift({ kind: 'target', who: open.p, key: open.key, source: open.source,
         options: open.pool, n: open.n, label: open.label });
       return;                            // the resolution resumes when the question is answered
     }

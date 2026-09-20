@@ -221,8 +221,9 @@
     const q0 = state.queue[0];
     if (q0 && q0.kind === 'target') {
       const src = q0.source ? RB.cardOf(state, q0.source) : null;
+      const theirs = src && RB.obj(state, q0.source).controller !== me;
       const left = q0.n - U.picks.length;
-      say((src ? '<b>' + src.name + '</b> — ' : '') +
+      say((src ? (theirs ? 'Their <b>' : '<b>') + src.name + '</b> — ' : '') +
         (q0.label || 'Choose ' + q0.n + (q0.n === 1 ? ' target' : ' targets')) +
         '. <span style="color:#ff6bcb">Click ' + left + ' more highlighted card' +
         (left === 1 ? '' : 's') + '.</span>');

@@ -485,6 +485,31 @@ export function run(t) {
     } finally { RB.card(spell.id).abilities = saved; }
   });
 
+  t.test('a discard the OPPONENT forces on you is still your choice', () => {
+    let s = RB.newGame({ seed: 'disc', decks: [decks[0], decks[1]], humanSeat: 0 });
+    while (s.queue.length && s.queue[0].kind === 'mulligan') s = RB.apply(s, { t: 'mulligan', toss: [] });
+    s.active = 1; s.priority = 1; s.phase = 'main';
+    const spell = RB.allCards().find(c => c.type === 'Spell');
+    const saved = RB.card(spell.id).abilities;
+    RB.card(spell.id).abilities = { effects: [{ op: 'discard', n: 1, opponent: true }] };
+    const iid = RB.mint(s, spell.id, 1);
+    s.players[1].hand.push(iid);
+    s.players[1].pool.energy = 99; s.players[1].pool.any = 99;
+    try {
+      const play = RB.legalActions(s).find(a => a.t === 'play' && a.iid === iid);
+      if (!play) return;
+      let st = RB.apply(s, play);
+      for (let g = 0; g < 6 && st.chain.length && !st.queue.length; g++) st = RB.apply(st, { t: 'pass' });
+      t.ok(st.queue[0] && st.queue[0].kind === 'target', 'the engine stopped to ask');
+      t.eq(st.queue[0].who, 0, 'and it asked the player discarding, not the caster');
+      const before = st.players[0].hand.length;
+      const want = st.queue[0].options[1];
+      const after = RB.apply(st, { t: 'choose', selection: [want] });
+      t.eq(after.players[0].hand.length, before - 1, 'one card left the hand');
+      t.ok(after.players[0].trash.includes(want), 'and it was the one chosen, not the cheapest');
+    } finally { RB.card(spell.id).abilities = saved; }
+  });
+
   t.test('with no human seat, the engine answers targeting itself and never stops', () => {
     let s = RB.newGame({ seed: 'noask', decks: [decks[0], decks[1]] });
     while (s.queue.length && s.queue[0].kind === 'mulligan') s = RB.apply(s, { t: 'mulligan', toss: [] });
