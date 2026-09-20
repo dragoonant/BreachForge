@@ -321,12 +321,12 @@
   // ceases to exist (§185.3), so it is dropped rather than handed over.
   function toHand(s, iid) {
     const o = RB.obj(s, iid);
-    const loc = RB.locationOf(s, iid);
-    if (loc.kind === 'base') RB.removeFrom(s.players[loc.p].base, iid);
-    else if (loc.kind === 'bf') RB.removeFrom(s.bf[loc.bf].units, iid);
-    else if (loc.kind === 'bfGear') RB.removeFrom(s.bf[loc.bf].gear, iid);
-    else return;
-    o.damage = 0; o.buffs = 0; o.granted = []; o.exhausted = false;
+    // RB.leaveBoard is the one door: it lifts the card out of its zone, clears every
+    // temporary modification (§104) the way RB.kill does, and raises `leftBoard` — which
+    // is what a delayed ability keyed to "until I leave the board" is waiting for. Doing
+    // the lift by hand here left such a promise open when a card was bounced instead of
+    // killed.
+    if (!RB.leaveBoard(s, iid)) return;
     if (!o.token) s.players[o.owner].hand.push(iid);
     RB.log(s, 'bounce', { iid: iid, p: o.controller }, 'unit.move');
   }
@@ -767,11 +767,15 @@
   }
 
   // --- wave two ---------------------------------------------------------------
-  // The Buff game action: a counter worth +1 Might, at most one per unit, gone when the
-  // unit leaves play. It is kept in `o.counters` — the representation the core's
-  // `spendBuff` additional cost spends and ops-ogn's Might layer pays out, so a buff
-  // placed here can pay for a card that asks for one. Buffing an already-buffed unit does
-  // nothing and is not a choice, so a buffed unit is not a candidate.
+  // The Buff game action, placed through the core's one channel: `o.counters` is both the
+  // +1 Might and the resource a `spendBuff` cost spends, so a buff placed here pays for a
+  // card that asks for one and is the same buff every other pack can read.
+  //
+  // What the core's `placeBuff` op cannot say is the CHOICE this card makes: buffing an
+  // already-buffed unit does nothing, so a buffed unit is not a candidate at all, and the
+  // pool is ordered biggest-first before it reaches the one door. Hence this op, which
+  // places exactly what placeBuff places — never a Might modifier, which would be a buff
+  // that grants Might nobody can spend.
   def('buff', (s, e, ctx) => {
     if (e.target === 'self') {
       const o = s.objects[ctx.source];
@@ -1043,28 +1047,6 @@
       const ab = RB.card(id).abilities;
       const extra = [];
       if (ab) {
-        // A trigger that is pure BOOKKEEPING prints nothing: sfd-116 records whether a
-        // battlefield was open as the showdown begins, so the conquer clause can ask
-        // afterwards, and sfd-248 counts the choices its gate reads. The core renders each
-        // as "When a showdown begins here, " with nothing after it — a dangling clause, and
-        // tools/audit-card-text.mjs is right to report one. The DATA says which triggers are
-        // silent, and exactly that many empty lines are dropped: a dangling line from any
-        // other trigger is a printed clause that went missing and must stay visible.
-        // A GATE is a printed sentence, not reminder text. The core renders one inside
-        // parentheses — "Exhaust me (use only if …): Draw 1." — and the auditor strips
-        // parentheses from both sides before comparing vocabulary, because that is where
-        // reminder text lives. A card whose gate is most of its text (sfd-248) therefore
-        // reads as 88% of its printed words missing. Said as the card says it, after the
-        // effect, it is both closer to print and visible to the check. Scoped to this
-        // pack's ids: another pack's rendering is not this file's to change.
-        if (String(id).startsWith('sfd-'))
-          base = base.split('\n').map(l =>
-            l.replace(/^(.*?) \(use only ([^)]+)\)(:\s.*)$/, '$1$3 Use only $2.')).join('\n');
-        let silent = (ab.triggers || []).filter(t => t.silent).length;
-        if (silent) base = base.split('\n').filter(l => {
-          if (silent && /,\s*$/.test(l)) { silent--; return false; }
-          return true;
-        }).join('\n');
         for (const st of ab.statics || []) {
           const mine = staticProse(st);
           if (!mine) continue;

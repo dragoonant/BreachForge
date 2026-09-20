@@ -147,6 +147,27 @@
     return { kind: 'nowhere' };
   };
 
+  // THE ONE DOOR FOR A CARD LEAVING THE BOARD. Lifting it out of its zone and clearing
+  // its modifications (§104) is the easy half; the half that gets forgotten is the event,
+  // and a delayed ability keyed to "when I leave the board" then stays open forever if
+  // the card was bounced rather than killed. RB.kill goes through here; so must a bounce,
+  // a banish, and anything else that takes a card off the table.
+  RB.leaveBoard = function (state, iid) {
+    const o = RB.obj(state, iid);
+    const loc = RB.locationOf(state, iid);
+    if (loc.kind === 'base') RB.removeFrom(state.players[loc.p].base, iid);
+    else if (loc.kind === 'bf') RB.removeFrom(state.bf[loc.bf].units, iid);
+    else if (loc.kind === 'bfGear') RB.removeFrom(state.bf[loc.bf].gear, iid);
+    else return false;
+    o.damage = 0; o.buffs = 0; o.permBuffs = 0; o.counters = 0;
+    o.granted = []; o.exhausted = false; o.stunned = false; o.cantMove = false;
+    o.temporary = false; o.attachedTo = null; o.replaces = null;
+    delete o.role;
+    RB.runTriggers(state, 'leftBoard', { p: o.controller, iid: iid,
+      bf: loc.kind === 'bf' ? loc.bf : undefined });
+    return true;
+  };
+
   RB.removeFrom = function (arr, iid) {
     const i = arr.indexOf(iid);
     if (i >= 0) arr.splice(i, 1);

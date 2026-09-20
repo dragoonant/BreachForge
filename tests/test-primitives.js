@@ -271,6 +271,27 @@ export function run(t) {
     } finally { RB.runTriggers = spy; }
   });
 
+  t.test('a card BOUNCED off the board raises leftBoard, not only one that dies', () => {
+    // A delayed ability keyed to "until I leave the board" stayed open forever when the
+    // card was returned to hand instead of killed, because the bounce lifted the card out
+    // of its zone by hand and never raised the event.
+    const s = game();
+    const p = s.active;
+    const iid = put(s, p, 0);
+    RB.obj(s, iid).counters = 1;
+    RB.obj(s, iid).damage = 2;
+    let fired = 0;
+    const spy = RB.runTriggers;
+    RB.runTriggers = function (st, ev, data) { if (ev === 'leftBoard') fired++; return spy(st, ev, data); };
+    try { t.ok(RB.leaveBoard(s, iid), 'the card left the board'); }
+    finally { RB.runTriggers = spy; }
+    t.eq(fired, 1, 'and said so, once');
+    const o = RB.obj(s, iid);
+    t.eq([o.counters, o.damage, o.buffs, o.permBuffs], [0, 0, 0, 0],
+      'every temporary modification stopped being tracked');
+    t.ok(!s.bf[0].units.includes(iid), 'and it is off the battlefield');
+  });
+
   t.test('a delayed ability fires after its source has left the board', () => {
     let s = game();
     const p = s.active;

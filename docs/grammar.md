@@ -168,6 +168,14 @@ is the same thing for an activated ability's cost, and pairs with
 `RB.defineAbilityCostModifier`. A cost the auditor renders as its raw key is a clause nobody can
 check.
 
+## Leaving the board
+
+**`RB.leaveBoard(state, iid)`** is the one door for a card coming off the table — bounce, banish,
+anything that is not a kill (`RB.kill` goes through the same reset). It lifts the card out of its
+zone, clears every temporary modification (§104), and **raises `leftBoard`**. That event is the
+half that gets forgotten: a delayed ability keyed to "until I leave the board" stays open forever
+if the card was bounced rather than killed.
+
 ## Buffs
 
 A **Buff** is one thing: a counter on a unit that grants **+1 Might** *and* is the resource a
