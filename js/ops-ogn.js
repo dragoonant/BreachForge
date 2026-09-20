@@ -142,7 +142,10 @@
       if (s.log[i].kind === 'showdownOpen') return rec.at > i;
     return false;
   }
-  function clearLayers(o) { o.counters = 0; o.ognMods = []; o.ognKw = []; }
+  // On the kill path the core now clears `permBuffs` and `counters` itself (§104); these
+  // are the records only this pack knows about. `bounce` does not route through RB.kill,
+  // so it clears the core's fields as well as calling this.
+  function clearLayers(o) { o.ognMods = []; o.ognKw = []; }
   function aloneThere(s, iid) {
     const o = RB.obj(s, iid), loc = RB.locationOf(s, iid);
     if (loc.kind === 'bf') return RB.unitsAt(s, loc.bf, o.controller).length === 1;
@@ -306,8 +309,8 @@
         s.players[go.owner].base.push(g);
       }
       o.attached = [];
-      o.damage = 0; o.buffs = 0; o.permBuffs = 0; o.granted = []; o.exhausted = false;
-      o.stunned = false; o.temporary = false; o.movedThisTurn = 0;
+      o.damage = 0; o.buffs = 0; o.permBuffs = 0; o.counters = 0; o.granted = [];
+      o.exhausted = false; o.stunned = false; o.temporary = false; o.movedThisTurn = 0;
       delete o.role;
       clearLayers(o);
       if (!o.token) s.players[o.owner].hand.push(iid);        // a token ceases to exist
@@ -609,6 +612,9 @@
   // recall it." The shipped `dieInstead` heals and kills the source; this one also
   // exhausts the saved unit and RECALLS it — a relocation to its base that is not a move
   // (rule 449), so no move trigger sees it and no movement restriction can stop it.
+  RB.defineReplacementText('ogn.saveAndRecall', () =>
+    'If a friendly unit would die, kill me instead. Heal that unit, exhaust it, and ' +
+    'recall it.');
   RB.defineReplacement('ogn.saveAndRecall', (s, e) => {
     const dying = RB.obj(s, e.dying), src = RB.obj(s, e.source);
     if (e.source === e.dying) return false;

@@ -1,45 +1,54 @@
 # BreachForge — plan and status
 
-## Status — 2026-09-20, end of the overnight build
+## Status — 2026-09-20, second session
 
-**What plays:** a complete 1v1 game, start to finish, against an AI, with generated art on every
-card and sound on every event. Title → deck picker (ten tournament-winning lists, one per legend,
-each with a readable decklist) → mulligan → turns → victory or defeat. Two battlefields, the
-two-currency economy, standard moves, contested battlefields, showdowns, combat with lethal-first
-damage assignment and the attacker recall, conquer and hold scoring, and the winning-point
-restriction. Verified by driving a full game to a win through the real click handlers in a
-browser, not only in the suite.
+**Every card in the game now plays as it reads.** A complete 1v1 game start to finish against an
+AI, with generated art on every card and on every area of the board, and sound on every event.
 
 | | |
 |---|---|
-| Cards registered | 166 across 10 decks — **116 play fully as printed**, 3 have no printed ability, **47 are marked partial** |
-| Effect grammar | 86 ops, 86 describers (1:1 — every op can be audited against printed text) |
-| Tests | 30, green, ~9s including 200 fuzzed games and 40 AI games |
-| Art | 166 generated renders, 15 MB, plus a procedural painter for anything missing |
-| Audio | 27 sound tags (15 ElevenLabs one-shots, 12 synthesized) + 4 CC0 music tracks, 5.4 MB |
-| AI | one-ply evaluator, beats random play 21/24 |
+| Cards | 170 registered — **167 authored**, 3 with no printed ability (the basic runes, whose two abilities are the engine's payment rules), **0 partial** |
+| Decks | 10 of 10 offered, each with its Chosen Champion in a public Champion Zone |
+| Effect grammar | 116 ops, 116 describers, and **no authored card the auditor renders nothing for** |
+| Tests | 59, green in ~9s including 200 fuzzed games and 40 AI games |
+| Art | 170 card renders + 4 painted board areas; battlefields paint from their own cards |
+| Audio | 27 tags (15 ElevenLabs one-shots, 12 synthesized) + 4 CC0 tracks |
+| AI | one-ply evaluator, beats random 21/24; its action mix includes hiding cards and answering ~150 card-driven choices per 24 games |
 
-**What the previous version of this section got wrong:** it said the ability packs were "being
-authored" and listed targeting as the largest gap. The packs landed; targeting is still the
-largest gap, and the partial-card count is the number that now matters most.
+**What the previous version of this section got wrong:** it listed 47 partial cards and called
+targeting the largest gap. The partials are gone — the fix was ten core primitives, not ten
+card fixes. Targeting is still the largest gap, and is now clearly the largest.
+
+### Primitives added this session, and what each unblocked
+
+Hidden end to end (9 cards) · additional costs at play time, including ones that gate legality
+(8) · a replacement layer (1) · Deflect as a real toll on the chooser, and every choice announced
+(4) · conditions and computed values on statics through hook tables (5) · `cardPlayed`,
+`spellPlayed`, `drew`, `leftBoard`, `showdownBegins`, `attack`, `defend`, `chosen`,
+`becameMighty`, `becameReady` (9) · per-turn counters (3) · narrow play-location permissions (2)
+· play-from-trash (2) · delayed abilities that outlive their source (1) · gates on activated
+abilities (2) · combat-damage exemption and lethality hooks (2) · the Champion Zone (all 10 decks).
+
+### Rules the audit found the engine had wrong
+
+- **Burn Out** was logged and ignored. It is a loss condition: recycle the trash in, the opponent
+  gains a point, then the draw completes — repeating until they reach the victory score.
+- **The Ending Phase** was missing three of its inserted cleanup steps: all damage heals, every
+  "this turn" effect expires, and *both* rune pools empty.
+- **Stun** was modelled as "skip your ready step". It is 0 Might in the Combat Damage Step, full
+  Might to kill, cleared in the Ending Cleanup — both stronger and weaker than what was built.
+- **Recycle** shuffled instead of going to the bottom of the deck.
+- **The attacker recall** was written as a comment, so a failed attack restaged forever.
+- **Buffs had no duration**, so every printed permanent buff was a temporary one.
+- **`scope: 'self'`** applied to every card rather than its source.
 
 ### Known gaps, in the order they matter
 
-1. **47 of 166 cards are partial** — they play as their printed body, and say so with an amber
-   `!` on the card face, the missing clause in the tooltip, and a count on the deck-picker tile.
-   The recurring reasons, which is where the next session's leverage is: **Hidden/facedown cards**
-   (D-5, no engine support at all), **a spell-played event** and **a defend event** (several cards
-   each, both cheap to add), **Accelerate and other optional additional costs at play time** (no
-   cost hook), and **conditional continuous modifiers** ("while defending alone") — the statics
-   layer carries fixed numbers with no condition.
-2. **Targeting does not ask the player** (D-2). A "choose a unit" clause auto-picks the highest
-   might. `may` and `choose` DO ask; a target does not. This is the largest interface gap.
-3. **Three ability packs wrap core functions** (`RB.kill`, `RB.apply`, `RB.score`, `RB.autoPick`,
-   `RB.cardText`) from their own ops files, each reading only its own prefixed data so they
-   compose rather than double-fire. It works and it is tested, but it is three copies of a hook
-   the core should own. Debt, logged as D-8.
-4. **Focus is not separated from Priority** (D-4).
-5. **No animation layer** (D-7).
+1. **Targeting does not ask the player** (D-2). `may` and `choose` do ask; a *target* does not —
+   "choose a unit" auto-picks. This is now the largest gap by a wide margin.
+2. **Combat damage is assigned by the engine** (D-10), within the printed constraints.
+3. **Five wrappers remain across two packs** (D-8), each naming the hook that would close it.
+4. **Focus is not separated from Priority** (D-4); **no animation layer** (D-7).
 
 ### Deliberate scope decisions
 
