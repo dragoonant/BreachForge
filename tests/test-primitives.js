@@ -522,6 +522,25 @@ export function run(t) {
     } finally { RB.card(spell.id).abilities = saved; }
   });
 
+  t.test('a FAILED canPay leaves the pool exactly as it found it', () => {
+    // planPayment is a probe. It reserved from the live pool while solving and restored
+    // afterwards, which was one early `return null` away from a permanent drain — and was
+    // draining a restricted-Power bucket on every failed price check, so the first card in
+    // the project to create one became unplayable a moment after being priced as payable.
+    const s = game();
+    const p = s.active;
+    const src = put(s, p, 'base');
+    const domain = RB.cardOf(s, src).domain;
+    s.players[p].runes = []; s.players[p].pool.energy = 0; s.players[p].pool.any = 0;
+    RB.runEffects(s, [{ op: 'addRestrictedPower', n: 1, only: 'Spell' }], { p: p, source: src });
+    const one = { energy: 0, power: 1, domains: [domain], each: false, forType: 'Spell' };
+    const two = { energy: 0, power: 2, domains: [domain], each: false, forType: 'Spell' };
+    t.ok(RB.canPay(s, p, one), 'one is affordable');
+    t.ok(!RB.canPay(s, p, two), 'two is not');
+    t.eq(s.players[p].pool.tagged[0].n, 1, 'and the failed check did not consume anything');
+    t.ok(RB.canPay(s, p, one), 'so one is still affordable afterwards');
+  });
+
   t.test('restricted POWER is a different bucket from restricted Energy, and both are honoured', () => {
     const s = game();
     const p = s.active;

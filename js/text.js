@@ -127,7 +127,7 @@
       const what = extraCost(x);
       // "You may pay kill a friendly unit" is not English. A resource surcharge is PAID;
       // a sacrifice is something you DO.
-      const verb = /^\d/.test(what) ? 'pay ' : '';
+      const verb = (/^\d/.test(what) || x.x) ? 'pay ' : '';
       out.push((x.optional === false
         ? 'As an additional cost, ' + what
         : 'You may ' + verb + what + ' as an additional cost') +
@@ -218,6 +218,12 @@
   RB.defineStaticAmountText = function (name, fn) {
     AMOUNT[name] = typeof fn === 'function' ? fn : () => fn;
   };
+  // A pack may put its own flag on a static; without a way to name it, staticText returns
+  // nothing and the card renders blank — which pushed a pack into carrying inert `grant`
+  // data purely so the auditor would print something.
+  RB.defineStaticText = function (flag, fn) {
+    FLAG[flag] = typeof fn === 'function' ? fn : () => fn;
+  };
   const FLAG = {
     bonusDamage: 'take 1 extra damage from spells and abilities',
     noCombatDamage: 'deal no combat damage',
@@ -242,7 +248,11 @@
       return 'Your Deathknell effects trigger ' +
         (st.deathknellExtra === 1 ? 'an additional time' : st.deathknellExtra + ' additional times') +
         cond + '.';
-    for (const k of Object.keys(FLAG)) if (st[k]) return who + ' ' + FLAG[k] + cond + '.';
+    for (const k of Object.keys(FLAG)) {
+      if (!st[k]) continue;
+      const e = FLAG[k];
+      return who + ' ' + (typeof e === 'function' ? e(st) : e) + cond + '.';
+    }
     const bits = [];
     const m = amountText(st.might);
     if (m) bits.push(m);
@@ -304,6 +314,10 @@
   };
   function cost(a) {
     const bits = [];
+    // An ability's own name and its timing tags are printed on the card — "[Equip]" and
+    // "[Reaction]" are how the player knows what the ability IS and when it may be used.
+    if (a.keyword) bits.push(a.keyword);
+    for (const t of a.tags || []) bits.push(t);
     if (a.energy) bits.push(a.energy + ' Energy');
     if (a.power) bits.push(a.power + ' Power');
     if (a.exhaustSelf) bits.push('Exhaust me');

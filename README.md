@@ -38,12 +38,20 @@ node tools/test.mjs               # the suite  (--quiet --filter <name> --full)
 node tools/check-pages.mjs        # index.html and tests.html load the same engine, in order
 node tools/import-cards.mjs       # regenerate data/ from the gitignored scratch/ dumps
 node tools/gen-art.mjs --dry-run  # the art plan, free
+node tools/audit-card-text.mjs    # printed text vs generated prose, by id
 node tools/replay-report.mjs --selftest
 ```
 
 Start with [CLAUDE.md](CLAUDE.md) for the working rules and the three regime decisions,
 [PLAN.md](PLAN.md) for the current status and the architecture, and
 [DEVIATIONS.md](DEVIATIONS.md) for what does not yet play as printed.
+
+`audit-card-text` is the fidelity instrument. The card face shows the printed text verbatim, so
+the describer in `js/text.js` is not what you read — it is the auditor. The tool generates prose
+from each card's ability data and diffs it against the printed text by id, which is the only
+automated way to catch a printed clause silently dropped for want of a primitive: the card plays,
+it looks structurally valid, and it is the wrong card. A test cannot see that, because both sides
+of a test come from the same ability data.
 
 Found a card behaving oddly? Hit **🐞** on the board. It saves a trace — seed, both deck ids,
 every action — and `node tools/replay-report.mjs <trace.json>` says whether it was an illegal

@@ -37,17 +37,24 @@
       else for (let i = 0; i < cost.power; i++) need.push(cost.domains.slice());
     }
     let universal = P.pool.any || 0;
+    // planPayment is a PROBE — canPay calls it without paying — so it must not touch the
+    // real pool at all. Reserving from it and restoring afterwards is one early `return
+    // null` away from a permanent drain, and that is exactly what happened: a FAILED
+    // canPay silently emptied a restricted-Power bucket, and the card that created the
+    // first such bucket then became unplayable a moment after being priced as payable.
+    // A local tally has no exits to get wrong.
+    const tagLeft = (P.pool.tagged || []).map(t => t.n);
+    plan.fromPool.taggedPower = [];
     for (const opts of need) {
       // Restricted POWER first, for the same reason restricted Energy goes first: it can
       // buy nothing else. "[Add] [C], use only to play spells" is Power of the card's own
       // domain, not Energy, and a tagged bucket that only held Energy made that card
       // unsayable rather than merely restricted.
-      const tp = (P.pool.tagged || []).findIndex(t =>
-        t.power && t.n > 0 && RB.taggedApplies(t, cost) &&
+      const tp = (P.pool.tagged || []).findIndex((t, i) =>
+        t.power && tagLeft[i] > 0 && RB.taggedApplies(t, cost) &&
         (!t.domain || opts.includes(t.domain)));
       if (tp >= 0) {
-        P.pool.tagged[tp].n--;                       // reserved on the probe, restored below
-        plan.fromPool.taggedPower = plan.fromPool.taggedPower || [];
+        tagLeft[tp]--;
         plan.fromPool.taggedPower.push(tp);
         continue;
       }
@@ -61,9 +68,6 @@
       plan.recycle.push(ready[idx].iid);
       ready.splice(idx, 1);
     }
-    // planPayment is a PROBE — canPay calls it without paying — so anything it reserved
-    // on the real pool while solving must be put back before it returns.
-    for (const ix of plan.fromPool.taggedPower || []) P.pool.tagged[ix].n++;
     let e = cost.energy;
     // Restricted Energy is spent FIRST, because it is the resource that expires or that
     // nothing else can use — spending general Energy while a restricted pool sits unusable
@@ -74,9 +78,10 @@
     plan.fromPool.tagged = [];
     for (let ti = 0; ti < (P.pool.tagged || []).length; ti++) {
       const t = P.pool.tagged[ti];
-      if (t.power || !t.n || !RB.taggedApplies(t, cost)) continue;
-      const use = Math.min(e, t.n);
+      if (t.power || !tagLeft[ti] || !RB.taggedApplies(t, cost)) continue;
+      const use = Math.min(e, tagLeft[ti]);
       if (!use) continue;
+      tagLeft[ti] -= use;
       plan.fromPool.tagged.push({ ix: ti, n: use });
       e -= use;
     }

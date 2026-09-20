@@ -168,6 +168,19 @@ is the same thing for an activated ability's cost, and pairs with
 `RB.defineAbilityCostModifier`. A cost the auditor renders as its raw key is a clause nobody can
 check.
 
+## Naming an activated ability
+
+An ability's printed **name** and its **timing tags** are part of what the card says —
+`[Equip]` tells the player what the ability is, `[Reaction]` tells them when it may be used.
+Both render from the entry:
+
+```js
+activated: [{ keyword: 'Equip', tags: ['Reaction'], power: 1, effects: [ … ] }]
+```
+
+`tags` already gates timing in `legalActions`; `keyword` is prose only. An ability that prints a
+name and does not carry one renders as a bare cost, and `tools/audit-card-text.mjs` reports it.
+
 ## Gates on activated abilities
 
 An ability's legality is not only its cost. `{ energy, power, exhaustSelf, killSelf, when }` —
