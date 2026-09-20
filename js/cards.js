@@ -11,7 +11,11 @@
   RB.VICTORY_SCORE = 8;
 
   RB.registerCards = function () {
-    for (const c of RB.cardData) {
+    // Tokens register alongside real cards so every selector, describer and renderer sees
+    // one card table. A token's might can still be overridden at mint time by the card
+    // that makes it, because several cards create the same token at different sizes.
+    if (!RB.abilityData || !RB.abilityData['tok-gold']) RB.registerAbilities(RB.tokenAbilities);
+    for (const c of RB.cardData.concat(RB.tokenData)) {
       byId[c.id] = c;
       byNameId[c.nameId] = c;
       c.abilities = (RB.abilityData && RB.abilityData[c.id]) || null;

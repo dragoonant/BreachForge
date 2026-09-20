@@ -218,6 +218,9 @@
       applyContested(s, i, p);
     }
     RB.log(s, 'move', { p: p, iid: iid, to: a.to }, 'unit.move');
+    RB.runTriggers(s, 'moved', { p: p, iid: iid,
+      bf: a.to === 'base' ? undefined : +a.to.slice(2),
+      fromBf: from.kind === 'bf' ? from.bf : undefined });
   }
 
   // Contested is applied when a unit of a player who does not control the battlefield
@@ -289,9 +292,12 @@
     // Awaken Phase — ready everything you control. Rule 316.2.
     s.phase = 'awaken';
     for (const iid of s.players[p].runes) RB.obj(s, iid).exhausted = false;
-    for (const iid of s.players[p].base) RB.obj(s, iid).exhausted = false;
-    for (let i = 0; i < s.bf.length; i++) for (const iid of RB.unitsAt(s, i, p)) RB.obj(s, iid).exhausted = false;
-    if (s.players[p].legend) RB.obj(s, s.players[p].legend).exhausted = false;
+    // A stunned permanent is "able to be readied" only after its stun is spent, so the
+    // Awaken Phase clears the stun instead of the exhaustion.
+    const wake = iid => { const o = RB.obj(s, iid); if (o.stunned) o.stunned = false; else o.exhausted = false; };
+    for (const iid of s.players[p].base) wake(iid);
+    for (let i = 0; i < s.bf.length; i++) for (const iid of RB.unitsAt(s, i, p)) wake(iid);
+    if (s.players[p].legend) wake(s.players[p].legend);
 
     // Beginning Phase — start-of-turn effects, then the Scoring Step: the turn player
     // HOLDS every battlefield they control. Rule 316.3.
@@ -345,9 +351,16 @@
     else if (loc.kind === 'bf') RB.removeFrom(s.bf[loc.bf].units, iid);
     else if (loc.kind === 'bfGear') RB.removeFrom(s.bf[loc.bf].gear, iid);
     else return;
-    o.damage = 0; o.buffs = 0; o.granted = []; o.exhausted = false; o.temporary = false;
-    if (!o.token) s.players[o.owner].trash.push(iid);
     RB.log(s, 'die', { iid: iid, p: o.controller }, 'unit.die');
+    // Deathknell fires from the dying card itself, noting where it was — rule 808. It has
+    // to run BEFORE the card's modifications are cleared and before it reaches the trash,
+    // or a death trigger is a silent drop, which is worse than the card being unplayable.
+    RB.runDeathTriggers(s, iid, loc);
+    RB.runTriggers(s, 'died', { p: o.controller, iid: iid, bf: loc.kind === 'bf' ? loc.bf : undefined });
+    o.damage = 0; o.buffs = 0; o.granted = []; o.exhausted = false; o.temporary = false;
+    o.stunned = false; o.attachedTo = null;
+    for (const g of o.attached.slice()) { o.attached = []; RB.kill(s, g); }
+    if (!o.token) s.players[o.owner].trash.push(iid);
   };
 
   // ------------------------------------------------------------------- advance

@@ -36,8 +36,10 @@
     for (const d of decks) {
       const t = RB.el('decktile' + (d === myDeck ? ' sel' : ''));
       const legend = RB.card(d.legend);
+      // The legend's name is already beside the tile, so the tile shows the art alone —
+      // a name plate at this size covers the face and reads as a smudge.
       const c = RB.renderCard(legend, { size: 'board' });
-      c.style.width = '4.4rem';
+      c.classList.add('tile-art');
       t.appendChild(c);
       const m = RB.el('');
       m.innerHTML = '<div class="nm">' + legend.name + '</div>' +

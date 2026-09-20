@@ -31,7 +31,10 @@ validation rejects from any registered deck, so it fails loudly instead of playi
 
 ## Trigger events
 
-`played` · `unitPlayed` · `conquer` · `hold` · `beginningPhase` · `endOfTurn` · `combatEnd`
+`played` · `unitPlayed` · `conquer` · `hold` · `beginningPhase` · `endOfTurn` · `combatEnd` ·
+`died` (any unit dies, from anywhere on the board) · `moved` (a unit finishes a move;
+`event.bf` is the destination, `event.fromBf` the origin) · `deathknell` (**this** card dies —
+it runs while the card is still where it died, before it reaches the trash)
 
 A trigger may carry `mine: true` (only when the event's player is this card's controller) and
 `here: true` (only when the event's battlefield is this card's location).
@@ -44,9 +47,44 @@ or `{ pick: <selector>, n: 1, filter: 'damaged', maxMight: 3 }` for "choose a �
 ## Ops in the core (js/abilities.js)
 
 `draw` `damage` `kill` `buff` `grant` `ready` `exhaust` `channel` `addEnergy` `addPower`
-`gainPoint` `discard` `recycleRune` `heal` `token` `nothing`
+`gainPoint` `discard` `recycleRune` `heal` `token` `stun` `counter` `xp` `counters` `nothing`
 
 Each takes `n` (default 1), most take `target`, `draw`/`discard` take `opponent: true`.
+
+### Optionality and modes — never approximate these
+
+```js
+{ op: 'may', prompt: 'Ready me?', effects: [ … ], otherwise: [ … ] }
+{ op: 'choose', options: [ { label: 'Draw 1', effects: [ … ] },
+                           { label: 'Deal 2 damage', effects: [ … ] } ] }
+```
+
+Both open a queue step that the human answers on the prompt line and the AI answers through
+`legalActions`, so there is exactly one place that knows what "may" means. A printed "you may"
+authored as a compulsion is the wrong card; use `may`.
+
+### Tokens
+
+`{ op: 'token', cardId: 'tok-sand-soldier', might: 2, to: 'here' | 'base', ready: true,
+   temporary: true }`. Token ids: `tok-sand-soldier` `tok-gold` `tok-reflection` `tok-bird`
+`tok-sprite` `tok-mech`. `might` overrides the token's own, because several cards make the same
+token at different sizes.
+
+## Continuous modifiers (`statics`)
+
+Any permanent may carry them, not just battlefields. `RB.staticsOn(state, iid)` asks every
+static in play whether it reaches that card, in one place, with a reentrancy guard.
+
+```js
+statics: [ { might: 1, scope: 'here' },              // units standing on this battlefield
+           { might: 2, scope: 'hereMine' },          // …that I control
+           { grant: 'Ganking', scope: 'mine' },      // every unit I control, anywhere
+           { might: -2, scope: 'here', tag: 'Mech' } // only cards with that tag
+         ]
+```
+
+`scope` is `here` (default) · `hereMine` · `mine` · `all` · `self`. A static never applies to its
+own source unless it says `includeSelf: true` or `scope: 'self'`.
 
 ## Adding an op
 

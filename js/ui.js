@@ -150,6 +150,23 @@
     if (state.queue.length && state.queue[0].kind === 'chooseShowdown')
       return say('Two battlefields are contested — <b>click one</b> to open its showdown.');
 
+    // A card-driven choice names the card and shows its printed text, so a "may" reads as a
+    // question about a card rather than a bare yes/no.
+    const q = state.queue[0];
+    if (q && (q.kind === 'may' || q.kind === 'choose')) {
+      const src = q.source ? RB.cardOf(state, q.source) : null;
+      say((src ? '<b>' + src.name + '</b> — ' : '') +
+        '<span style="color:#cfe6ff">' + (q.prompt || (src ? RB.iconHTML(RB.printedText(src.id)) : 'Choose.')) + '</span>');
+      if (q.kind === 'may') {
+        btn('Yes', () => RB.commit({ t: 'choose', ix: 0 }), 'primary');
+        btn('No', () => RB.commit({ t: 'choose', ix: 1 }));
+      } else {
+        q.options.forEach((label, i) =>
+          btn(label, () => RB.commit({ t: 'choose', ix: i }), i === 0 ? 'primary' : ''));
+      }
+      return;
+    }
+
     if (state.showdown) {
       const sd = state.showdown;
       say('<b>' + (sd.combat ? 'Combat' : 'Showdown') + '</b> at ' +

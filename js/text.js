@@ -34,6 +34,14 @@
   RB.defineDescriber('token', e => 'Play a ' + (e.might != null ? e.might + ' Might ' : '') + 'token' +
     (e.to === 'here' ? ' there' : ' to your base') + (e.temporary ? ', Temporary' : '') + '.');              // ops.token
   RB.defineDescriber('nothing', () => '');                                                                  // ops.nothing
+  RB.defineDescriber('may', e => 'You may ' + lower(e.effects.map(line).join(' ')));                        // ops.may
+  RB.defineDescriber('choose', e => 'Choose one — ' +
+    e.options.map(o => o.label).join('; ') + '.');                                                          // ops.choose
+  RB.defineDescriber('stun', e => 'Stun ' + sel(e.target) + '.');                                           // ops.stun
+  RB.defineDescriber('counter', () => 'Counter it.');                                                       // ops.counter
+  RB.defineDescriber('xp', e => 'Gain ' + n(e) + ' XP.');                                                   // ops.xp
+  RB.defineDescriber('counters', e => 'Put ' + n(e) + ' counter' + (n(e) === 1 ? '' : 's') +
+    ' on ' + sel(e.target) + '.');                                                                          // ops.counters
 
   function sel(s, subject) {
     if (!s || s === 'self') return subject ? 'It' : 'me';
@@ -46,6 +54,7 @@
 
   const TRIGGER_WORDS = {
     played: 'When I am played', conquer: 'When you conquer', hold: 'When you hold',
+    died: 'When a unit dies', deathknell: 'Deathknell', moved: 'When a unit moves',
     beginningPhase: 'At the start of your turn', endOfTurn: 'At the end of your turn',
     combatEnd: 'When a combat ends', unitPlayed: 'When you play a unit',
   };

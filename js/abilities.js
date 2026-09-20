@@ -43,6 +43,22 @@
     RB.runEffects(s, ab.effects || [], { p: item.controller, source: item.iid, targets: item.targets || [] });
   };
 
+  // A dying card's own Deathknell, run while it is still where it died. Separated from
+  // runTriggers because the card has already left its zone: runTriggers walks the board.
+  RB.runDeathTriggers = function (s, iid, loc) {
+    const ab = RB.cardOf(s, iid).abilities;
+    if (!ab || !ab.triggers) return;
+    const o = RB.obj(s, iid);
+    for (const t of ab.triggers) {
+      if (t.on !== 'deathknell') continue;
+      const prev = s.via;
+      s.via = { iid: iid };
+      RB.runEffects(s, t.effects, { p: o.controller, source: iid,
+        event: { p: o.controller, iid: iid, bf: loc.kind === 'bf' ? loc.bf : undefined } });
+      s.via = prev;
+    }
+  };
+
   // Triggered abilities. Every permanent in play plus both legends is asked; a trigger that
   // fires stamps `via` on everything it logs, so a consequence never reads as a turn.
   RB.runTriggers = function (s, event, data) {
@@ -81,12 +97,13 @@
 
   RB.answerQueue = function (s, a) {
     const step = s.queue.shift();
-    if (step.kind === 'may' || step.kind === 'choose') {
-      const chosen = step.options ? step.options[a.ix] : a.ix;
-      if (step.onAnswer) RB.runEffects(s, step.onAnswer[a.ix] || [], step.ctx);
-      RB.log(s, 'choice', { p: step.who, ix: a.ix });
-      void chosen;
-    }
+    if (step.kind !== 'may' && step.kind !== 'choose') return;
+    const prev = s.via;
+    if (step.source) s.via = { iid: step.source };
+    RB.log(s, 'choice', { p: step.who, ix: a.ix,
+      label: step.options ? step.options[a.ix] : (a.ix === 0 ? 'yes' : 'no') });
+    if (step.onAnswer) RB.runEffects(s, step.onAnswer[a.ix] || [], step.ctx);
+    s.via = prev;
   };
 
   // --- the ops --------------------------------------------------------------
@@ -123,12 +140,63 @@
     const iid = RB.mint(s, e.cardId, ctx.p);
     const o = RB.obj(s, iid);
     o.token = true; o.exhausted = !e.ready;
+    // Several cards make the same token at different sizes, so the creating card's printed
+    // might wins over the token's own.
+    if (e.might != null) o.buffs = e.might - (RB.card(e.cardId).might || 0);
     if (e.temporary) o.temporary = true;
     if (e.to === 'here' && ctx.event && ctx.event.bf !== undefined) { s.bf[ctx.event.bf].units.push(iid); RB.applyContested(s, ctx.event.bf, ctx.p); }
     else s.players[ctx.p].base.push(iid);
     RB.log(s, 'token', { p: ctx.p, iid: iid, card: e.cardId }, 'unit.deploy');
   });
   RB.defineOp('nothing', () => {});
+
+  // "You may X." A real optional clause: it asks, and declining is a legal answer. The
+  // human seat answers on the prompt line; the AI answers through the same queue step, so
+  // there is exactly one place that knows what "may" means.
+  RB.defineOp('may', (s, e, ctx) => {
+    s.queue.push({
+      kind: 'may', who: ctx.p, source: ctx.source, prompt: e.prompt || null,
+      ctx: { p: ctx.p, source: ctx.source, event: ctx.event, targets: ctx.targets },
+      onAnswer: [e.effects || [], e.otherwise || []],
+    });
+  });
+
+  // "Choose one." The options are the card's own clauses in printed order.
+  RB.defineOp('choose', (s, e, ctx) => {
+    s.queue.push({
+      kind: 'choose', who: ctx.p, source: ctx.source,
+      options: e.options.map(o => o.label),
+      ctx: { p: ctx.p, source: ctx.source, event: ctx.event, targets: ctx.targets },
+      onAnswer: e.options.map(o => o.effects),
+    });
+  });
+
+  RB.defineOp('stun', (s, e, ctx) => {
+    for (const iid of asList(s, e.target, ctx)) {
+      const o = RB.obj(s, iid);
+      o.exhausted = true; o.stunned = true;
+      RB.log(s, 'stun', { iid: iid }, 'ui.invalid');
+    }
+  });
+  RB.defineOp('counter', (s, e, ctx) => {
+    // Remove the top card of the chain without resolving it. The chain is LIFO, so "the
+    // spell being responded to" is always its head.
+    const item = s.chain.pop();
+    if (!item) return;
+    s.players[item.controller].trash.push(item.iid);
+    RB.log(s, 'counter', { p: ctx.p, iid: item.iid }, 'chain.resolve');
+  });
+  RB.defineOp('xp', (s, e, ctx) => {
+    const P = s.players[ctx.p];
+    P.xp = (P.xp || 0) + (e.n || 1);
+    RB.log(s, 'xp', { p: ctx.p, xp: P.xp });
+  });
+  RB.defineOp('counters', (s, e, ctx) => {
+    for (const iid of asList(s, e.target, ctx)) {
+      const o = RB.obj(s, iid);
+      o.counters = (o.counters || 0) + (e.n || 1);
+    }
+  });
 
   // Selectors. `self` and the event's own subject cover most cards; anything that needs the
   // player to pick opens a pendingChoice instead, and that is one place, not many.

@@ -114,22 +114,58 @@
     const o = RB.obj(state, iid);
     const c = RB.card(o.cardId);
     let m = (c.might || 0) + (o.buffs || 0);
-    const loc = RB.locationOf(state, iid);
-    if (loc.kind === 'bf') {
-      for (const s of RB.battlefieldStatics(state, loc.bf)) m += s.might || 0;
-    }
+    for (const st of RB.staticsOn(state, iid)) m += st.might || 0;
     for (const g of o.attached) m += (RB.card(RB.obj(state, g).cardId).might || 0);
     return Math.max(0, m);
   };
 
-  // Static might modifiers a battlefield applies to the units standing on it. Battlefield
-  // abilities are the only continuous layer in the first pass; unit statics ride the same
-  // table when they land, so this is the one place that answers "what is my might here".
+  // The continuous layer. Every static in play is asked whether it applies to this card,
+  // in one place — scoring, combat, card conditions and the AI all read might through
+  // RB.mightOf, and four copies of "does this modifier reach me" is the bug class that ate
+  // a previous project. A reentrancy guard keeps a static whose scope asks about might
+  // from recursing: a nested call sees no statics rather than blowing the stack.
+  let staticsDepth = 0;
+  RB.staticsOn = function (state, iid) {
+    if (staticsDepth > 0) return [];
+    staticsDepth++;
+    try {
+      const out = [];
+      const target = RB.obj(state, iid);
+      const loc = RB.locationOf(state, iid);
+      const consider = (ab, sourceIid, sourceBf, sourceP) => {
+        if (!ab || !ab.statics) return;
+        for (const st of ab.statics) {
+          if (sourceIid === iid && !st.includeSelf && st.scope !== 'self') continue;
+          if (!inScope(st, sourceBf, sourceP)) continue;
+          if (st.tag && !(RB.card(target.cardId).tags || []).includes(st.tag)) continue;
+          out.push(st);
+        }
+      };
+      const inScope = (st, sourceBf, sourceP) => {
+        const sc = st.scope || 'here';
+        if (sc === 'here') return loc.kind === 'bf' && loc.bf === sourceBf;
+        if (sc === 'mine') return target.controller === sourceP;
+        if (sc === 'hereMine') return loc.kind === 'bf' && loc.bf === sourceBf && target.controller === sourceP;
+        if (sc === 'self') return true;
+        if (sc === 'all') return true;
+        return false;
+      };
+      for (let i = 0; i < state.bf.length; i++) {
+        consider(RB.card(state.bf[i].cardId).abilities, state.bf[i].iid, i, target.controller);
+        for (const u of state.bf[i].units) consider(RB.card(RB.obj(state, u).cardId).abilities, u, i, RB.obj(state, u).controller);
+      }
+      for (let p = 0; p < 2; p++) {
+        for (const u of state.players[p].base) consider(RB.card(RB.obj(state, u).cardId).abilities, u, null, p);
+        if (state.players[p].legend) consider(RB.card(RB.obj(state, state.players[p].legend).cardId).abilities, state.players[p].legend, null, p);
+      }
+      return out;
+    } finally { staticsDepth--; }
+  };
+
+  // Kept as the narrow question the movement rules ask: what does THIS battlefield grant?
   RB.battlefieldStatics = function (state, bfIndex) {
-    const out = [];
     const ab = RB.card(state.bf[bfIndex].cardId).abilities;
-    if (ab && ab.statics) for (const s of ab.statics) out.push(s);
-    return out;
+    return (ab && ab.statics) ? ab.statics : [];
   };
 
   RB.controllerOf = function (state, bfIndex) { return state.bf[bfIndex].controller; };
@@ -143,7 +179,8 @@
     const o = RB.obj(state, iid);
     const c = RB.card(o.cardId);
     if ((o.granted || []).includes(kw)) return true;
-    return !!(c.abilities && c.abilities.keywords && c.abilities.keywords.some(k => k === kw || k.name === kw));
+    if (c.abilities && c.abilities.keywords && c.abilities.keywords.some(k => k === kw || k.name === kw)) return true;
+    return RB.staticsOn(state, iid).some(st => st.grant === kw);
   };
   RB.keywordValue = function (state, iid, kw) {
     const c = RB.cardOf(state, iid);

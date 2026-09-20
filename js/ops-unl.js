@@ -70,7 +70,7 @@
     if (!spec) return 'me';
     if (typeof spec === 'string') return NAMES[spec] || spec;
     let t = NAMES[spec.pick] || String(spec.pick);
-    if (spec.notTemporary) t += ' without Temporary';
+    if (spec.notTemporary) t += " that isn't Temporary";
     if (spec.at === 'battlefield') t += ' at a battlefield';
     if (spec.at === 'base') t += ' in a base';
     return t;
@@ -114,7 +114,7 @@
       RB.log(s, 'temporary', { iid: iid, p: RB.obj(s, iid).controller });
     }
   });
-  RB.defineDescriber('giveTemporary', e => 'Give ' + selText(e.target) + ' Temporary.');
+  RB.defineDescriber('giveTemporary', e => 'Give Temporary to ' + selText(e.target) + '.');
 
   // --- attach ---------------------------------------------------------------
   // The Equip keyword's ability: "Attach this to a unit you control."

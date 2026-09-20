@@ -67,8 +67,6 @@ window.RB = window.RB || {};
   // UI ticks, point.score, and the rest) are synth-only by design.
   var SAMPLES = {
     /* BEGIN GENERATED SAMPLES — written by tools/fetch-sfx.mjs, do not hand-edit */
-    'unit.deploy': { file: 'unit-deploy', gain: 0.60 },
-    'unit.die': { file: 'unit-die', gain: 0.55 },
     /* END GENERATED SAMPLES */
   };
 
