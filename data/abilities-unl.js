@@ -925,7 +925,9 @@ RB.registerAbilities({
     activated: [
       { when: { kind: 'haveXP', n: 1 }, exhaustSelf: true, effects: [
         { op: 'spendXP', n: 1 },
-        { op: 'buffTo', n: 1, permanent: true, target: { pick: 'allUnits', prefer: 'mine' } },
+        // [Buff], not "+1 Might permanently": a buff is a counter that grants the Might
+        // AND is what a "spend a buff" cost spends, and three Origins cards carry one.
+        { op: 'placeBuffTo', target: { pick: 'allUnits', prefer: 'mine' } },
       ] },
       { when: { kind: 'haveXP', n: 2 }, exhaustSelf: true, effects: [
         { op: 'spendXP', n: 2 },

@@ -789,6 +789,24 @@
   RB.defineDescriber('buffTo', e => 'Give ' + selText(e.target) + ' +' + n_(e) + ' Might' +
     (e.permanent ? '.' : ' this turn.'));
 
+  // --- placeBuffTo ----------------------------------------------------------
+  // "[Buff] a unit." A Buff is ONE thing in the core — a counter that is both the +1 Might
+  // and the resource a "spend a buff" cost spends — and `placeBuff` is where that rule
+  // lives. This op does not re-implement it: it only orders the pool, because the core's
+  // RB.select cannot say "any unit, but reach for one of mine first", and buffing whatever
+  // happens to be biggest hands the Might to the opponent as often as not.
+  //
+  // The chosen unit is handed to the core op as its own `self`, the same way
+  // counterSpellRestricting hands `restrict` a context whose player is the victim. The
+  // pool stays exactly as printed — "a unit" is any unit — and only the ORDER is this
+  // card's policy.
+  RB.defineOp('placeBuffTo', (s, e, ctx) => {
+    for (const iid of targets(s, e.target, ctx))
+      RB.ops.placeBuff(s, { target: 'self' }, Object.assign({}, ctx, { source: iid }));
+  });
+  RB.defineDescriber('placeBuffTo', e => 'Buff ' + selText(e.target) +
+    ". (If it doesn't have a buff, it gets a +1 Might buff.)");
+
   RB.defineOp('grantTo', (s, e, ctx) => {
     for (const iid of targets(s, e.target, ctx)) RB.obj(s, iid).granted.push(e.keyword);
   });
