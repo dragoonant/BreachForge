@@ -99,6 +99,77 @@ JSON when a line breaks them.
 
 ---
 
+## The second pipeline: board area art
+
+`tools/gen-board-art.mjs` paints the AREAS of the playmat rather than subjects on cards. It
+shares the router, model, token resolution, bottom crop and WebP encode with the card generator
+through `tools/lib/hf-image.mjs`, and writes its switch into the same `art/manifest.js` (as
+`RB.boardArt`) so `index.html` still loads one file.
+
+Battlefield zones do NOT use this — each one paints itself with its own battlefield card render.
+What this tool makes are the two areas with no card behind them, one image per side of the table:
+
+| Name | Area |
+| --- | --- |
+| `base-mine` / `base-theirs` | the base — the muster yard units wait in before they move out |
+| `runes-mine` / `runes-theirs` | the rune area — where channelled power is kept and spent |
+
+Each pair describes the *same place from opposite sides of the table* — same architecture, same
+materials — separated by vantage and by a warm/cool light shift. Different enough to tell apart at
+a glance, close enough to read as one board.
+
+### What is different from the card pipeline
+
+1. **Ask for an empty place.** These sit UNDER the cards standing in them, so anything with a
+   silhouette — a person, a creature, a figure — competes with the card on top of it. Ask
+   positively: *empty, still, deserted, vacant, unattended*. Asking for "no people" is a negation
+   and negations summon what they negate (rule 4 applies here exactly as it does to lettering).
+2. **Muted and heavily desaturated**, low contrast, soft diffuse light.
+3. **Detail gathers at the edges and softens toward the middle**, so the centre of the frame stays
+   calm under the cards.
+4. **Wide landscape**, 1344x768 — not the card pipeline's portrait 5:7. The base zone is a wide strip.
+5. **`BOARD_STYLE`, not `STYLE`** — a separate constant, byte-identical across all four images.
+
+### The BOARD_STYLE block — verbatim
+
+Reproduced exactly as it appears in `tools/gen-board-art.mjs`. If the two disagree, the code wins
+and this doc is stale.
+
+```
+Painted background art for one area of a tabletop playmat. The place stands empty, still and deserted — a vacant setting of bare ground and quiet architecture, motionless and unattended. Muted, heavily desaturated colour held to a narrow range of cool greys with a single restrained accent hue; low contrast throughout, soft diffuse light, every highlight gentle and every shadow open. Detail gathers along the outer edges of the frame and softens toward the middle, so the centre stays calm, simple and uncluttered. Cel-shaded digital painting with soft edges, gentle atmospheric haze, and a wide horizontal landscape composition filling the frame edge to edge. A wordless image, pure texture and place.
+```
+
+### How strongly it paints is a CSS decision
+
+Two knobs in `css/style.css`, next to the battlefield pair:
+
+```css
+--zone-art-opacity: .22;            /* how strongly the board image paints */
+--zone-scrim: rgba(8,11,19,.62);    /* how heavily the scrim knocks it back */
+```
+
+**Settled at .22 / .62** after an A/B on a live board with units in both bases. At .34 / .50 the
+base floor brightened enough to compete with the card plates and with the zone label, and it made
+the base louder than the battlefields beside it — which inverts the hierarchy, since the
+battlefields are where the game actually happens. .22 keeps the areas as texture and leaves the
+cards and the battlefields as the things you look at. A previous project wired board art at 50%
+art / 55% scrim and it was visibly too loud; start low and only come up if the board looks empty.
+
+`js/board.js` has a `paintZone(zone, name)` helper that appends a `.zone-art` div plus a
+`.zone-scrim` sibling inside a `.zone`. **A name with no file in `art/board/` simply does not
+paint**, and the zone reads exactly as it did before — the same guarantee `RB.artManifest` gives
+the cards.
+
+### Running it
+
+```bash
+node tools/gen-board-art.mjs --dry-run                     # the plan, free
+node tools/gen-board-art.mjs                               # generate whatever is missing
+node tools/gen-board-art.mjs --force --only runes-theirs   # re-roll one (archives the old file)
+```
+
+---
+
 ## Where things live
 
 ```
@@ -107,6 +178,8 @@ scratch/build-art-prompts.mjs The editable source of those 163 lines, plus the l
 tools/gen-art.mjs             The generator. Owns STYLE, the run plan and art/cards/ layout.
 tools/lib/hf-image.mjs        HTTP + crop + WebP. Generator-agnostic, shared with future tools.
 tools/art-contact-sheet.mjs   Builds scratch/art-contact-sheet.html for reviewing a run.
+tools/gen-board-art.mjs       The board-area pipeline. Owns BOARD_STYLE and the four area images.
+art/board/<name>.webp         Painted playmat areas: base-mine|theirs, runes-mine|theirs.
 art/cards/<id>.webp           Delivery art. WebP only — masters stay out of the repo.
 art-archive/                  Previous versions, stashed automatically by --force. Gitignored.
 art/manifest.js               GENERATED switch: RB.artManifest lists the ids that have a file.

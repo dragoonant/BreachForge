@@ -47,7 +47,11 @@ const decks = sel.map((d, i) => {
       const c = byDeckId[e.id.toUpperCase()];
       return c && c.cardType === 'Unit' && (c.tags || []).includes(tag);
     });
-    const fb = { LeBlanc: 'unl-172', Vex: 'unl-150', Azir: 'sfd-177', Sivir: 'sfd-143' }[tag];
+    const fb = {
+      LeBlanc: 'unl-172', Vex: 'unl-150', Azir: 'sfd-177', Sivir: 'sfd-143',
+      Viktor: 'ogn-246', Ezreal: 'sfd-149', "Kai'Sa": 'ogn-112', Lillia: 'unl-058',
+      Sett: 'ogn-164', 'Miss Fortune': 'ogn-193', "Kha'Zix": 'unl-143',
+    }[tag];
     if (!hasChampion && fb) entries.push({ id: fb, qty: 1 });
   }
   const grab = t => entries.filter(e => byDeckId[e.id.toUpperCase()].cardType === t);
@@ -78,7 +82,11 @@ const decks = sel.map((d, i) => {
   // the posted lists omit it — the site's payload does not record it — and a deck without
   // one is illegal, so the shortfall is filled with a champion of the legend's own name in
   // the deck's domains. D-11 in DEVIATIONS.md.
-  const CHAMPION_FALLBACK = { LeBlanc: 'unl-172', Vex: 'unl-150', Azir: 'sfd-177', Sivir: 'sfd-143' };
+  const CHAMPION_FALLBACK = {
+    LeBlanc: 'unl-172', Vex: 'unl-150', Azir: 'sfd-177', Sivir: 'sfd-143',
+    Viktor: 'ogn-246', Ezreal: 'sfd-149', "Kai'Sa": 'ogn-112', Lillia: 'unl-058',
+    Sett: 'ogn-164', 'Miss Fortune': 'ogn-193', "Kha'Zix": 'unl-143',
+  };
   const chosenChampion = (entries, legendCard) => {
     const tag = (legendCard.tags || [])[0];
     const found = entries.find(e => {

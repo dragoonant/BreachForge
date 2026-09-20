@@ -1207,5 +1207,1252 @@ RB.deckData = [
    }
   ],
   "champion": "ogs-010"
+ },
+ {
+  "id": "viktor-order",
+  "name": "Viktor, Herald of the Arcane",
+  "legend": "ogn-308",
+  "domains": [
+   "Order",
+   "Mind"
+  ],
+  "event": "S3 Harbin City Challenge",
+  "result": "1ST",
+  "date": "06/26",
+  "runes": [
+   {
+    "id": "ogn-214",
+    "qty": 6
+   },
+   {
+    "id": "ogn-089",
+    "qty": 6
+   }
+  ],
+  "battlefields": [
+   {
+    "id": "unl-210",
+    "qty": 1
+   },
+   {
+    "id": "unl-212",
+    "qty": 1
+   },
+   {
+    "id": "sfd-216",
+    "qty": 1
+   }
+  ],
+  "main": [
+   {
+    "id": "unl-153",
+    "qty": 3
+   },
+   {
+    "id": "ogn-216",
+    "qty": 3
+   },
+   {
+    "id": "unl-169",
+    "qty": 1
+   },
+   {
+    "id": "unl-164",
+    "qty": 3
+   },
+   {
+    "id": "ogn-116",
+    "qty": 2
+   },
+   {
+    "id": "sfd-080",
+    "qty": 3
+   },
+   {
+    "id": "ogn-095",
+    "qty": 3
+   },
+   {
+    "id": "ogn-209",
+    "qty": 3
+   },
+   {
+    "id": "ogn-213",
+    "qty": 3
+   },
+   {
+    "id": "unl-165",
+    "qty": 3
+   },
+   {
+    "id": "unl-072",
+    "qty": 2
+   },
+   {
+    "id": "unl-063",
+    "qty": 2
+   },
+   {
+    "id": "sfd-070",
+    "qty": 3
+   },
+   {
+    "id": "unl-073",
+    "qty": 2
+   },
+   {
+    "id": "ogn-221",
+    "qty": 3
+   },
+   {
+    "id": "ogn-224",
+    "qty": 3
+   },
+   {
+    "id": "unl-070",
+    "qty": 3
+   },
+   {
+    "id": "ogn-105",
+    "qty": 2
+   },
+   {
+    "id": "ogn-246",
+    "qty": 1
+   }
+  ],
+  "champion": "ogn-246"
+ },
+ {
+  "id": "ezreal-chaos",
+  "name": "Ezreal, Prodigal Explorer",
+  "legend": "sfd-248",
+  "domains": [
+   "Chaos",
+   "Mind"
+  ],
+  "event": "Pro-Play Summit: Dallas - $25k Riftbound Showdown - Final Standings",
+  "result": "1ST",
+  "date": "07/26",
+  "runes": [
+   {
+    "id": "ogn-166",
+    "qty": 7
+   },
+   {
+    "id": "ogn-089",
+    "qty": 5
+   }
+  ],
+  "battlefields": [
+   {
+    "id": "ogn-276",
+    "qty": 1
+   },
+   {
+    "id": "unl-212",
+    "qty": 1
+   },
+   {
+    "id": "ogn-287",
+    "qty": 1
+   }
+  ],
+  "main": [
+   {
+    "id": "unl-121",
+    "qty": 3
+   },
+   {
+    "id": "sfd-140",
+    "qty": 3
+   },
+   {
+    "id": "ogn-116",
+    "qty": 2
+   },
+   {
+    "id": "unl-138",
+    "qty": 2
+   },
+   {
+    "id": "ogn-181",
+    "qty": 3
+   },
+   {
+    "id": "unl-078",
+    "qty": 1
+   },
+   {
+    "id": "ogn-186",
+    "qty": 2
+   },
+   {
+    "id": "sfd-080",
+    "qty": 3
+   },
+   {
+    "id": "ogn-169",
+    "qty": 2
+   },
+   {
+    "id": "ogn-183",
+    "qty": 3
+   },
+   {
+    "id": "ogn-095",
+    "qty": 3
+   },
+   {
+    "id": "unl-070",
+    "qty": 2
+   },
+   {
+    "id": "unl-063",
+    "qty": 1
+   },
+   {
+    "id": "unl-128",
+    "qty": 3
+   },
+   {
+    "id": "sfd-070",
+    "qty": 2
+   },
+   {
+    "id": "unl-073",
+    "qty": 3
+   },
+   {
+    "id": "ogn-179",
+    "qty": 1
+   },
+   {
+    "id": "sfd-145",
+    "qty": 1
+   },
+   {
+    "id": "unl-132",
+    "qty": 1
+   },
+   {
+    "id": "ogn-105",
+    "qty": 1
+   },
+   {
+    "id": "ogn-192",
+    "qty": 1
+   },
+   {
+    "id": "ogn-123",
+    "qty": 1
+   },
+   {
+    "id": "sfd-149",
+    "qty": 1
+   }
+  ],
+  "champion": "sfd-149"
+ },
+ {
+  "id": "kai-sa-mind",
+  "name": "Kai'sa, Daughter of the Void",
+  "legend": "ogn-299",
+  "domains": [
+   "Mind",
+   "Fury"
+  ],
+  "event": "City League: Zhejiang - Finals",
+  "result": "1ST",
+  "date": "04/26",
+  "runes": [
+   {
+    "id": "ogn-089",
+    "qty": 6
+   },
+   {
+    "id": "ogn-007",
+    "qty": 6
+   }
+  ],
+  "battlefields": [
+   {
+    "id": "unl-207",
+    "qty": 1
+   },
+   {
+    "id": "ogn-288",
+    "qty": 1
+   },
+   {
+    "id": "ogn-296",
+    "qty": 1
+   }
+  ],
+  "main": [
+   {
+    "id": "sfd-069",
+    "qty": 3
+   },
+   {
+    "id": "ogn-103",
+    "qty": 2
+   },
+   {
+    "id": "ogn-096",
+    "qty": 3
+   },
+   {
+    "id": "ogn-087",
+    "qty": 3
+   },
+   {
+    "id": "ogn-026",
+    "qty": 2
+   },
+   {
+    "id": "sfd-021",
+    "qty": 2
+   },
+   {
+    "id": "ogn-116",
+    "qty": 3
+   },
+   {
+    "id": "sfd-080",
+    "qty": 2
+   },
+   {
+    "id": "ogn-009",
+    "qty": 3
+   },
+   {
+    "id": "ogn-104",
+    "qty": 2
+   },
+   {
+    "id": "ogn-095",
+    "qty": 3
+   },
+   {
+    "id": "ogn-029",
+    "qty": 3
+   },
+   {
+    "id": "unl-007",
+    "qty": 2
+   },
+   {
+    "id": "ogn-093",
+    "qty": 2
+   },
+   {
+    "id": "ogn-114",
+    "qty": 2
+   },
+   {
+    "id": "ogn-105",
+    "qty": 1
+   },
+   {
+    "id": "sfd-001",
+    "qty": 2
+   },
+   {
+    "id": "unl-070",
+    "qty": 3
+   },
+   {
+    "id": "ogn-122",
+    "qty": 2
+   },
+   {
+    "id": "ogn-112",
+    "qty": 1
+   }
+  ],
+  "champion": "ogn-112"
+ },
+ {
+  "id": "rengar-body",
+  "name": "Rengar, Pridestalker",
+  "legend": "unl-183",
+  "domains": [
+   "Body",
+   "Fury"
+  ],
+  "event": "Riftbound $5,000 Cash Tournament @ Pro-Play Summit: Dallas",
+  "result": "1ST",
+  "date": "07/26",
+  "runes": [
+   {
+    "id": "ogn-126",
+    "qty": 8
+   },
+   {
+    "id": "ogn-007",
+    "qty": 4
+   }
+  ],
+  "battlefields": [
+   {
+    "id": "sfd-207",
+    "qty": 1
+   },
+   {
+    "id": "sfd-217",
+    "qty": 1
+   },
+   {
+    "id": "ogn-290",
+    "qty": 1
+   }
+  ],
+  "main": [
+   {
+    "id": "unl-120",
+    "qty": 1
+   },
+   {
+    "id": "unl-111",
+    "qty": 3
+   },
+   {
+    "id": "unl-002",
+    "qty": 3
+   },
+   {
+    "id": "unl-112",
+    "qty": 3
+   },
+   {
+    "id": "ogn-136",
+    "qty": 3
+   },
+   {
+    "id": "unl-021",
+    "qty": 2
+   },
+   {
+    "id": "unl-097",
+    "qty": 2
+   },
+   {
+    "id": "unl-114",
+    "qty": 3
+   },
+   {
+    "id": "unl-028",
+    "qty": 1
+   },
+   {
+    "id": "sfd-025",
+    "qty": 2
+   },
+   {
+    "id": "ogn-012",
+    "qty": 3
+   },
+   {
+    "id": "ogn-026",
+    "qty": 2
+   },
+   {
+    "id": "sfd-021",
+    "qty": 3
+   },
+   {
+    "id": "sfd-097",
+    "qty": 3
+   },
+   {
+    "id": "ogn-156",
+    "qty": 3
+   },
+   {
+    "id": "ogn-128",
+    "qty": 2
+   },
+   {
+    "id": "unl-184",
+    "qty": 3
+   },
+   {
+    "id": "sfd-001",
+    "qty": 1
+   },
+   {
+    "id": "ogn-029",
+    "qty": 1
+   },
+   {
+    "id": "sfd-027",
+    "qty": 1
+   }
+  ],
+  "champion": "unl-120"
+ },
+ {
+  "id": "lillia-calm",
+  "name": "Lillia, Bashful Bloom",
+  "legend": "unl-230",
+  "domains": [
+   "Calm",
+   "Mind"
+  ],
+  "event": "Destined LegendsChallenge",
+  "result": "1ST",
+  "date": "05/26",
+  "runes": [
+   {
+    "id": "ogn-042",
+    "qty": 6
+   },
+   {
+    "id": "ogn-089",
+    "qty": 6
+   }
+  ],
+  "battlefields": [
+   {
+    "id": "unl-208",
+    "qty": 1
+   },
+   {
+    "id": "unl-209",
+    "qty": 1
+   },
+   {
+    "id": "unl-215",
+    "qty": 1
+   }
+  ],
+  "main": [
+   {
+    "id": "unl-081",
+    "qty": 1
+   },
+   {
+    "id": "sfd-036",
+    "qty": 2
+   },
+   {
+    "id": "unl-076",
+    "qty": 3
+   },
+   {
+    "id": "sfd-069",
+    "qty": 2
+   },
+   {
+    "id": "unl-053",
+    "qty": 1
+   },
+   {
+    "id": "unl-071",
+    "qty": 1
+   },
+   {
+    "id": "unl-080",
+    "qty": 2
+   },
+   {
+    "id": "ogn-116",
+    "qty": 2
+   },
+   {
+    "id": "unl-060",
+    "qty": 2
+   },
+   {
+    "id": "unl-078",
+    "qty": 3
+   },
+   {
+    "id": "ogn-043",
+    "qty": 2
+   },
+   {
+    "id": "ogn-045",
+    "qty": 3
+   },
+   {
+    "id": "ogn-095",
+    "qty": 2
+   },
+   {
+    "id": "ogn-058",
+    "qty": 3
+   },
+   {
+    "id": "unl-190",
+    "qty": 1
+   },
+   {
+    "id": "unl-083",
+    "qty": 3
+   },
+   {
+    "id": "unl-042",
+    "qty": 1
+   },
+   {
+    "id": "unl-069",
+    "qty": 3
+   },
+   {
+    "id": "unl-041",
+    "qty": 2
+   },
+   {
+    "id": "sfd-032",
+    "qty": 3
+   },
+   {
+    "id": "unl-054",
+    "qty": 1
+   },
+   {
+    "id": "ogn-123",
+    "qty": 2
+   },
+   {
+    "id": "unl-058",
+    "qty": 1
+   }
+  ],
+  "champion": "unl-058"
+ },
+ {
+  "id": "sett-body",
+  "name": "Sett, The Boss",
+  "legend": "ogn-310",
+  "domains": [
+   "Body",
+   "Order"
+  ],
+  "event": "S3 Tianjin City Challenge",
+  "result": "1ST",
+  "date": "05/26",
+  "runes": [
+   {
+    "id": "ogn-126",
+    "qty": 7
+   },
+   {
+    "id": "ogn-214",
+    "qty": 5
+   }
+  ],
+  "battlefields": [
+   {
+    "id": "sfd-207",
+    "qty": 1
+   },
+   {
+    "id": "ogn-282",
+    "qty": 1
+   },
+   {
+    "id": "sfd-218",
+    "qty": 1
+   }
+  ],
+  "main": [
+   {
+    "id": "ogn-136",
+    "qty": 3
+   },
+   {
+    "id": "sfd-098",
+    "qty": 3
+   },
+   {
+    "id": "ogn-132",
+    "qty": 3
+   },
+   {
+    "id": "unl-097",
+    "qty": 1
+   },
+   {
+    "id": "ogn-232",
+    "qty": 3
+   },
+   {
+    "id": "unl-169",
+    "qty": 1
+   },
+   {
+    "id": "sfd-101",
+    "qty": 3
+   },
+   {
+    "id": "sfd-108",
+    "qty": 1
+   },
+   {
+    "id": "unl-158",
+    "qty": 2
+   },
+   {
+    "id": "sfd-097",
+    "qty": 1
+   },
+   {
+    "id": "unl-173",
+    "qty": 2
+   },
+   {
+    "id": "ogn-270",
+    "qty": 3
+   },
+   {
+    "id": "ogn-128",
+    "qty": 3
+   },
+   {
+    "id": "unl-095",
+    "qty": 2
+   },
+   {
+    "id": "ogn-213",
+    "qty": 3
+   },
+   {
+    "id": "ogn-207",
+    "qty": 2
+   },
+   {
+    "id": "unl-106",
+    "qty": 3
+   },
+   {
+    "id": "ogn-156",
+    "qty": 2
+   },
+   {
+    "id": "ogn-224",
+    "qty": 2
+   },
+   {
+    "id": "unl-170",
+    "qty": 1
+   },
+   {
+    "id": "ogn-164",
+    "qty": 1
+   }
+  ],
+  "champion": "ogn-164"
+ },
+ {
+  "id": "reksai-fury",
+  "name": "Reksai, Void Burrower",
+  "legend": "sfd-187",
+  "domains": [
+   "Fury",
+   "Order"
+  ],
+  "event": "$10,000 Taps Games Open",
+  "result": "1ST",
+  "date": "06/26",
+  "runes": [
+   {
+    "id": "ogn-007",
+    "qty": 6
+   },
+   {
+    "id": "ogn-214",
+    "qty": 6
+   }
+  ],
+  "battlefields": [
+   {
+    "id": "ogn-290",
+    "qty": 1
+   },
+   {
+    "id": "ogn-291",
+    "qty": 1
+   },
+   {
+    "id": "ogn-298",
+    "qty": 1
+   }
+  ],
+  "main": [
+   {
+    "id": "sfd-029",
+    "qty": 1
+   },
+   {
+    "id": "unl-153",
+    "qty": 3
+   },
+   {
+    "id": "unl-002",
+    "qty": 3
+   },
+   {
+    "id": "unl-003",
+    "qty": 3
+   },
+   {
+    "id": "ogn-216",
+    "qty": 2
+   },
+   {
+    "id": "ogn-211",
+    "qty": 2
+   },
+   {
+    "id": "unl-028",
+    "qty": 1
+   },
+   {
+    "id": "sfd-025",
+    "qty": 2
+   },
+   {
+    "id": "ogn-012",
+    "qty": 3
+   },
+   {
+    "id": "sfd-175",
+    "qty": 3
+   },
+   {
+    "id": "sfd-022",
+    "qty": 1
+   },
+   {
+    "id": "sfd-003",
+    "qty": 3
+   },
+   {
+    "id": "ogn-209",
+    "qty": 3
+   },
+   {
+    "id": "ogn-029",
+    "qty": 3
+   },
+   {
+    "id": "ogn-213",
+    "qty": 2
+   },
+   {
+    "id": "ogn-212",
+    "qty": 1
+   },
+   {
+    "id": "ogn-224",
+    "qty": 2
+   },
+   {
+    "id": "ogn-036",
+    "qty": 1
+   },
+   {
+    "id": "unl-169",
+    "qty": 2
+   },
+   {
+    "id": "sfd-021",
+    "qty": 2
+   }
+  ],
+  "champion": "sfd-029"
+ },
+ {
+  "id": "miss-fortune-chaos",
+  "name": "Miss Fortune, Bounty Hunter",
+  "legend": "ogn-309",
+  "domains": [
+   "Chaos",
+   "Body",
+   "Order"
+  ],
+  "event": "SCG CON Cincinnati - $10K Constructed",
+  "result": "1ST",
+  "date": "05/26",
+  "runes": [
+   {
+    "id": "ogn-126",
+    "qty": 6
+   },
+   {
+    "id": "ogn-166",
+    "qty": 6
+   }
+  ],
+  "battlefields": [
+   {
+    "id": "ogn-276",
+    "qty": 1
+   },
+   {
+    "id": "ogn-287",
+    "qty": 1
+   },
+   {
+    "id": "ogn-295",
+    "qty": 1
+   }
+  ],
+  "main": [
+   {
+    "id": "ogn-192",
+    "qty": 2
+   },
+   {
+    "id": "unl-118",
+    "qty": 3
+   },
+   {
+    "id": "unl-136",
+    "qty": 3
+   },
+   {
+    "id": "ogn-181",
+    "qty": 2
+   },
+   {
+    "id": "ogn-186",
+    "qty": 3
+   },
+   {
+    "id": "sfd-150",
+    "qty": 2
+   },
+   {
+    "id": "ogn-160",
+    "qty": 3
+   },
+   {
+    "id": "ogn-268",
+    "qty": 1
+   },
+   {
+    "id": "sfd-135",
+    "qty": 2
+   },
+   {
+    "id": "ogn-133",
+    "qty": 3
+   },
+   {
+    "id": "ogn-169",
+    "qty": 3
+   },
+   {
+    "id": "ogn-183",
+    "qty": 3
+   },
+   {
+    "id": "ogn-128",
+    "qty": 1
+   },
+   {
+    "id": "unl-142",
+    "qty": 2
+   },
+   {
+    "id": "ogn-201",
+    "qty": 1
+   },
+   {
+    "id": "unl-125",
+    "qty": 3
+   },
+   {
+    "id": "ogn-138",
+    "qty": 3
+   },
+   {
+    "id": "ogn-156",
+    "qty": 2
+   },
+   {
+    "id": "ogn-145",
+    "qty": 1
+   },
+   {
+    "id": "sfd-147",
+    "qty": 2
+   },
+   {
+    "id": "unl-147",
+    "qty": 2
+   },
+   {
+    "id": "ogn-193",
+    "qty": 1
+   }
+  ],
+  "champion": "ogn-193"
+ },
+ {
+  "id": "lux-mind",
+  "name": "Lux, Lady of Luminosity",
+  "legend": "ogs-021",
+  "domains": [
+   "Mind",
+   "Order"
+  ],
+  "event": "Riftbound League Finals: Anhui",
+  "result": "1ST",
+  "date": "06/26",
+  "runes": [
+   {
+    "id": "ogn-089",
+    "qty": 6
+   },
+   {
+    "id": "ogn-214",
+    "qty": 6
+   }
+  ],
+  "battlefields": [
+   {
+    "id": "ogn-276",
+    "qty": 1
+   },
+   {
+    "id": "sfd-209",
+    "qty": 1
+   },
+   {
+    "id": "sfd-219",
+    "qty": 1
+   }
+  ],
+  "main": [
+   {
+    "id": "ogs-014",
+    "qty": 1
+   },
+   {
+    "id": "ogn-216",
+    "qty": 3
+   },
+   {
+    "id": "ogn-087",
+    "qty": 2
+   },
+   {
+    "id": "ogn-110",
+    "qty": 3
+   },
+   {
+    "id": "sfd-088",
+    "qty": 1
+   },
+   {
+    "id": "ogn-120",
+    "qty": 3
+   },
+   {
+    "id": "ogn-212",
+    "qty": 3
+   },
+   {
+    "id": "unl-085",
+    "qty": 2
+   },
+   {
+    "id": "ogn-104",
+    "qty": 3
+   },
+   {
+    "id": "unl-173",
+    "qty": 3
+   },
+   {
+    "id": "ogn-095",
+    "qty": 3
+   },
+   {
+    "id": "unl-061",
+    "qty": 2
+   },
+   {
+    "id": "sfd-166",
+    "qty": 1
+   },
+   {
+    "id": "unl-165",
+    "qty": 3
+   },
+   {
+    "id": "ogn-115",
+    "qty": 1
+   },
+   {
+    "id": "unl-069",
+    "qty": 3
+   },
+   {
+    "id": "ogn-114",
+    "qty": 3
+   },
+   {
+    "id": "unl-180",
+    "qty": 1
+   },
+   {
+    "id": "ogn-209",
+    "qty": 2
+   },
+   {
+    "id": "sfd-081",
+    "qty": 1
+   },
+   {
+    "id": "unl-169",
+    "qty": 1
+   },
+   {
+    "id": "ogn-122",
+    "qty": 2
+   }
+  ],
+  "champion": "ogs-014"
+ },
+ {
+  "id": "khazix-chaos",
+  "name": "Khazix, Voidreaver",
+  "legend": "unl-236",
+  "domains": [
+   "Chaos",
+   "Body"
+  ],
+  "event": "S3 Zhongshan City Challenge",
+  "result": "2ND",
+  "date": "05/26",
+  "runes": [
+   {
+    "id": "ogn-126",
+    "qty": 6
+   },
+   {
+    "id": "ogn-166",
+    "qty": 6
+   }
+  ],
+  "battlefields": [
+   {
+    "id": "unl-210",
+    "qty": 1
+   },
+   {
+    "id": "ogn-282",
+    "qty": 1
+   },
+   {
+    "id": "unl-215",
+    "qty": 1
+   }
+  ],
+  "main": [
+   {
+    "id": "unl-141",
+    "qty": 1
+   },
+   {
+    "id": "unl-112",
+    "qty": 3
+   },
+   {
+    "id": "unl-127",
+    "qty": 2
+   },
+   {
+    "id": "sfd-130",
+    "qty": 2
+   },
+   {
+    "id": "sfd-140",
+    "qty": 1
+   },
+   {
+    "id": "unl-097",
+    "qty": 3
+   },
+   {
+    "id": "unl-114",
+    "qty": 2
+   },
+   {
+    "id": "unl-145",
+    "qty": 2
+   },
+   {
+    "id": "unl-120",
+    "qty": 1
+   },
+   {
+    "id": "sfd-116",
+    "qty": 1
+   },
+   {
+    "id": "sfd-148",
+    "qty": 2
+   },
+   {
+    "id": "sfd-097",
+    "qty": 2
+   },
+   {
+    "id": "ogn-183",
+    "qty": 3
+   },
+   {
+    "id": "unl-131",
+    "qty": 3
+   },
+   {
+    "id": "unl-095",
+    "qty": 3
+   },
+   {
+    "id": "ogn-172",
+    "qty": 1
+   },
+   {
+    "id": "sfd-145",
+    "qty": 1
+   },
+   {
+    "id": "unl-202",
+    "qty": 3
+   },
+   {
+    "id": "unl-128",
+    "qty": 2
+   },
+   {
+    "id": "ogn-179",
+    "qty": 2
+   },
+   {
+    "id": "unl-106",
+    "qty": 1
+   },
+   {
+    "id": "ogn-145",
+    "qty": 2
+   },
+   {
+    "id": "sfd-150",
+    "qty": 1
+   },
+   {
+    "id": "unl-143",
+    "qty": 1
+   }
+  ],
+  "champion": "unl-143"
  }
 ];
