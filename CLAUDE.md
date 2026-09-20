@@ -53,10 +53,27 @@ Read before touching anything: `CARD-GAME-LESSONS.md`, `CARD-GAME-LESSONS-2.md`,
 11. **Commit messages describe the mechanism, by id.** The history should read as a bug diary.
 12. **One agent per working copy.** Slice bulk authoring by disjoint id ranges *with disjoint
     files*. Never measure against a tree someone else is fixing.
+13. **Every declared asset carries the hash of its own contents.** After changing ANY file
+    `index.html` loads — engine, data pack, stylesheet — run:
+
+    ```
+    node tools/stamp-assets.mjs
+    ```
+
+    It rewrites each `<script src>` and the stylesheet link as `path?v=<first 10 of sha256>`.
+    `--check` re-derives every hash and is in CI right after `check-pages`, so a stale stamp
+    fails the gate rather than reaching a player. Pages sends `cache-control: max-age=600` on
+    everything and ages each file separately: without the stamp a returning player holds a NEW
+    `index.html` next to a TEN-MINUTE-OLD `css/style.css`, which is how a fix that was verified,
+    green and deployed still rendered broken in a real browser. A file that did not change keeps
+    its URL and stays cached, so this costs nothing to ship. `tests.html` is deliberately not
+    stamped — it never deploys, and `check-pages` and `test.mjs` strip the query before
+    comparing lists or resolving a path, so rule 3 still asserts exactly what it always did.
 
 ## Layout
 
 `index.html` declares script order. `js/` engine + UI. `data/` generated card, deck and printed
-packs. `tools/` node-side tooling (importers, art, audit, the test runner, the replayer).
+packs. `tools/` node-side tooling (importers, art, audit, the test runner, the replayer, and
+`stamp-assets.mjs`, which runs after every change to a file the page loads — rule 13).
 `docs/` rules citations, grammar, architecture, art and sound. `scratch/` is gitignored and is
 the only place published words or third-party material may land besides the generated packs.
