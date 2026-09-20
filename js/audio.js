@@ -1,0 +1,849 @@
+// js/audio.js — BreachForge audio.
+//
+// One module owns every audio decision. The rest of the app makes exactly one
+// kind of call and never touches game state through here.
+//
+//   RB.audio.init()                 lazy; creates nothing until first use
+//   RB.audio.play(tag, opts)        SFX by tag; an unknown tag is ignored silently
+//   RB.audio.music(screen)          crossfade to a screen's track
+//   RB.audio.setMuted(bool) / RB.audio.isMuted()
+//
+// Two rules this file exists to enforce:
+//
+//  1. ONE AudioContext. Every sound effect and every music track lives in it.
+//     Mixing <audio> elements with Web Audio is how a prior project ended up
+//     with a context parked in 'suspended' and no error anywhere — music played,
+//     SFX did not, and nothing in the console said why. Music is fetched and
+//     decoded into this same context like everything else.
+//
+//  2. Sound effects are SYNTHESISED, not loaded. No SFX file ever ships or is
+//     fetched. Every tag below is built out of four hand-made voices (noise,
+//     FM hit, blip, sweep) so the whole set is free, instant, and tweakable by
+//     editing numbers in one table.
+//
+// See docs/sound.md for the tag table and music provenance.
+
+window.RB = window.RB || {};
+
+(function () {
+  'use strict';
+
+  // ---------------------------------------------------------------- config --
+
+  var STORE_KEY = 'rb.audio.muted';
+  var MUSIC_DIR = 'audio/music/';
+
+  // Bus levels. SFX sits well under music on purpose: a card game fires
+  // dozens of little transients a minute and they fatigue fast if they are
+  // the loudest thing in the mix.
+  var LEVEL = {
+    master: 0.90,
+    music: 0.55,
+    sfx: 0.30
+  };
+
+  var FADE = 0.90;   // music crossfade, seconds
+  var LOOKAHEAD = 0.012; // schedule SFX slightly ahead of currentTime
+  var MAX_VOICES = 48;   // hard cap; past this play() drops the request
+
+  // Music tracks. 'title' deliberately shares the deck-picker bed at a lower
+  // level — four sourced tracks, five screens.
+  var TRACKS = {
+    title:    { file: 'deckpick', loop: true,  gain: 0.70 },
+    deckpick: { file: 'deckpick', loop: true,  gain: 0.95 },
+    battle:   { file: 'battle',   loop: true,  gain: 0.90 },
+    victory:  { file: 'victory',  loop: false, gain: 1.00 },
+    defeat:   { file: 'defeat',   loop: false, gain: 1.00 }
+  };
+
+  // Preferred container order. We never create an <audio> element to sniff
+  // support (that would break "a muted reload creates no audio element"):
+  // we try Opus, and if fetch or decodeAudioData refuses it we fall back to
+  // AAC and remember that choice for every later track.
+  var FORMATS = ['ogg', 'm4a'];
+
+  // ----------------------------------------------------------------- state --
+
+  var ctx = null;
+  var master = null, musicBus = null, sfxBus = null;
+  var noiseBuf = null;
+
+  var muted = null;          // null until init()/first use reads localStorage
+  var started = false;       // init() has run
+  var unlockArmed = false;
+  var voices = 0;
+
+  var buffers = {};          // file -> AudioBuffer
+  var loading = {};          // file -> Promise<AudioBuffer>
+  var format = null;         // settled container once one decodes
+
+  var cur = null;            // { screen, src, gain, loop }
+  var wantScreen = null;     // last screen asked for, survives mute + autoplay block
+  var musicToken = 0;        // guards against a slow decode landing after a newer call
+
+  var lastAt = {};           // tag -> ctx time, for throttling
+
+  // --------------------------------------------------------------- storage --
+
+  function readMuted() {
+    try {
+      return window.localStorage.getItem(STORE_KEY) === '1';
+    } catch (e) {
+      return false; // private mode / storage disabled
+    }
+  }
+
+  function writeMuted(v) {
+    try {
+      window.localStorage.setItem(STORE_KEY, v ? '1' : '0');
+    } catch (e) { /* nothing we can do, and nothing worth breaking over */ }
+  }
+
+  // ----------------------------------------------------------------- graph --
+
+  // The ONLY place an AudioContext is ever constructed. Returns null when
+  // muted, so a muted session never builds a graph and never fetches a byte.
+  function ensureCtx() {
+    if (muted === null) muted = readMuted();
+    if (muted) return null;
+    if (ctx) return ctx;
+
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+
+    try {
+      ctx = new AC();
+    } catch (e) {
+      return null;
+    }
+
+    master = ctx.createGain();
+    master.gain.value = LEVEL.master;
+    master.connect(ctx.destination);
+
+    musicBus = ctx.createGain();
+    musicBus.gain.value = LEVEL.music;
+    musicBus.connect(master);
+
+    sfxBus = ctx.createGain();
+    sfxBus.gain.value = LEVEL.sfx;
+    sfxBus.connect(master);
+
+    if (ctx.state !== 'running') armUnlock();
+    return ctx;
+  }
+
+  // Autoplay refusal is not an error condition. It is "wait, then start on the
+  // first pointer or key event" — which is exactly what browsers ask for.
+  function armUnlock() {
+    if (unlockArmed || !ctx) return;
+    unlockArmed = true;
+
+    var events = ['pointerdown', 'touchstart', 'keydown', 'mousedown'];
+
+    function unlock() {
+      if (!ctx) { teardown(); return; }
+      var done = function () {
+        teardown();
+        // Whatever the app asked for while we were blocked starts now.
+        if (wantScreen && !muted) api.music(wantScreen);
+      };
+      if (ctx.state === 'running') { done(); return; }
+      var p = ctx.resume();
+      if (p && typeof p.then === 'function') p.then(done, function () { unlockArmed = false; });
+      else done();
+    }
+
+    function teardown() {
+      unlockArmed = false;
+      for (var i = 0; i < events.length; i++) {
+        window.removeEventListener(events[i], unlock, true);
+      }
+    }
+
+    for (var i = 0; i < events.length; i++) {
+      window.addEventListener(events[i], unlock, true);
+    }
+  }
+
+  // Nudge a suspended context whenever we are about to make noise. Safe to
+  // call constantly; resume() on a running context is a no-op.
+  function wake() {
+    if (!ctx) return;
+    if (ctx.state === 'suspended') {
+      var p = ctx.resume();
+      if (p && typeof p.catch === 'function') p.catch(function () {});
+      armUnlock();
+    }
+  }
+
+  // ------------------------------------------------------------ voice kit --
+  //
+  // Four primitives. Every one of the 27 tags is a short recipe over these.
+
+  function noiseBuffer() {
+    if (noiseBuf) return noiseBuf;
+    var n = Math.floor(ctx.sampleRate * 2);
+    noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate);
+    var d = noiseBuf.getChannelData(0);
+    // Slightly smoothed white noise: pure white is hissy and thin through a
+    // narrow filter, this keeps a touch more body.
+    var last = 0;
+    for (var i = 0; i < n; i++) {
+      var w = Math.random() * 2 - 1;
+      last = (last + 0.04 * w) / 1.04;   // one-pole tilt, unity gain at DC
+      var v = w * 0.80 + last * 0.35;
+      d[i] = v > 1 ? 1 : (v < -1 ? -1 : v);
+    }
+    return noiseBuf;
+  }
+
+  // Shared amplitude envelope. Exponential ramps never touch zero.
+  function shape(param, t, peak, a, hold, rel) {
+    var p = Math.max(0.0001, peak);
+    param.setValueAtTime(0.0001, t);
+    param.exponentialRampToValueAtTime(p, t + a);
+    if (hold > 0) param.setValueAtTime(p, t + a + hold);
+    param.exponentialRampToValueAtTime(0.0001, t + a + hold + rel);
+    param.setValueAtTime(0, t + a + hold + rel + 0.005);
+    return t + a + hold + rel + 0.02;
+  }
+
+  function outlet(o) {
+    var g = ctx.createGain();
+    g.gain.value = 1;
+    if (o && typeof o.pan === 'number' && ctx.createStereoPanner) {
+      var p = ctx.createStereoPanner();
+      p.pan.value = Math.max(-1, Math.min(1, o.pan));
+      g.connect(p);
+      p.connect(sfxBus);
+    } else {
+      g.connect(sfxBus);
+    }
+    return g;
+  }
+
+  function retire(node, at) {
+    voices++;
+    node.onended = function () {
+      voices--;
+      try { node.disconnect(); } catch (e) {}
+    };
+    try { node.stop(at); } catch (e) { voices--; }
+  }
+
+  // 1. NOISE — filtered noise burst. The workhorse for paper, cloth, impact
+  //    grit and anything percussive.
+  function vNoise(t, o) {
+    var dur = o.dur || 0.12;
+    var src = ctx.createBufferSource();
+    src.buffer = noiseBuffer();
+    src.loop = true;
+    src.playbackRate.value = o.rate || 1;
+
+    var f = ctx.createBiquadFilter();
+    f.type = o.filter || 'bandpass';
+    f.Q.value = o.q == null ? 1.2 : o.q;
+    f.frequency.setValueAtTime(Math.max(30, o.from || 1200), t);
+    if (o.to) f.frequency.exponentialRampToValueAtTime(Math.max(30, o.to), t + dur);
+
+    var g = ctx.createGain();
+    var end = shape(g.gain, t, o.peak == null ? 0.5 : o.peak,
+      o.a || 0.004, o.hold || 0, o.rel == null ? dur : o.rel);
+
+    src.connect(f); f.connect(g); g.connect(outlet(o));
+    // Random read offset into the 2s noise bed so repeated hits are never
+    // bit-identical — the cheapest possible anti-machine-gun measure.
+    src.start(t, Math.random() * 1.5);
+    retire(src, end);
+    return end;
+  }
+
+  // 2. FM HIT — two oscillators, one modulating the other's frequency. Gives
+  //    metal, bells, thuds with character and clangy legend stingers.
+  function vFM(t, o) {
+    var dur = o.dur || 0.25;
+    var car = ctx.createOscillator();
+    car.type = o.carrier || 'sine';
+    car.frequency.setValueAtTime(o.freq, t);
+    if (o.freqTo) car.frequency.exponentialRampToValueAtTime(Math.max(20, o.freqTo), t + dur);
+
+    var mod = ctx.createOscillator();
+    mod.type = o.modType || 'sine';
+    mod.frequency.setValueAtTime(o.freq * (o.ratio == null ? 2.01 : o.ratio), t);
+
+    var depth = ctx.createGain();
+    var idx = o.index == null ? 300 : o.index;
+    depth.gain.setValueAtTime(idx, t);
+    depth.gain.exponentialRampToValueAtTime(Math.max(1, o.indexTo == null ? idx * 0.05 : o.indexTo), t + dur);
+
+    mod.connect(depth);
+    depth.connect(car.frequency);
+
+    var g = ctx.createGain();
+    var end = shape(g.gain, t, o.peak == null ? 0.4 : o.peak,
+      o.a || 0.003, o.hold || 0, o.rel == null ? dur : o.rel);
+
+    car.connect(g); g.connect(outlet(o));
+    car.start(t); mod.start(t);
+    retire(car, end);
+    retire(mod, end);
+    return end;
+  }
+
+  // 3. BLIP — a plain pitched tone with an optional glide. Clicks, chimes,
+  //    arpeggio notes, score pings.
+  function vBlip(t, o) {
+    var dur = o.dur || 0.12;
+    var osc = ctx.createOscillator();
+    osc.type = o.type || 'triangle';
+    osc.frequency.setValueAtTime(o.freq, t);
+    if (o.freqTo) osc.frequency.exponentialRampToValueAtTime(Math.max(20, o.freqTo), t + dur);
+    if (o.detune) osc.detune.value = o.detune;
+
+    var node = osc, f = null;
+    if (o.cut) {
+      f = ctx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.setValueAtTime(o.cut, t);
+      if (o.cutTo) f.frequency.exponentialRampToValueAtTime(Math.max(60, o.cutTo), t + dur);
+      f.Q.value = o.q == null ? 0.7 : o.q;
+      osc.connect(f);
+      node = f;
+    }
+
+    var g = ctx.createGain();
+    var end = shape(g.gain, t, o.peak == null ? 0.3 : o.peak,
+      o.a || 0.005, o.hold || 0, o.rel == null ? dur : o.rel);
+
+    node.connect(g); g.connect(outlet(o));
+    osc.start(t);
+    retire(osc, end);
+    return end;
+  }
+
+  // 4. SWEEP — a long glide, either a tone or noise through a moving band.
+  //    Risers, whooshes, falls.
+  function vSweep(t, o) {
+    var dur = o.dur || 0.5;
+    if (o.noise) {
+      return vNoise(t, {
+        dur: dur, filter: 'bandpass', q: o.q == null ? 3.5 : o.q,
+        from: o.from, to: o.to, peak: o.peak == null ? 0.35 : o.peak,
+        a: o.a == null ? dur * 0.5 : o.a, rel: o.rel == null ? dur * 0.5 : o.rel,
+        pan: o.pan
+      });
+    }
+    return vBlip(t, {
+      dur: dur, type: o.type || 'sawtooth', freq: o.from, freqTo: o.to,
+      cut: o.cut || o.from * 4, cutTo: o.cutTo || (o.to * 4),
+      peak: o.peak == null ? 0.22 : o.peak,
+      a: o.a == null ? dur * 0.35 : o.a, rel: o.rel == null ? dur * 0.65 : o.rel,
+      pan: o.pan
+    });
+  }
+
+  // ------------------------------------------------------------------ tags --
+  //
+  // Each entry is (t, opts) -> void, where t is the scheduled start time.
+  // Add a tag by adding a key here; nothing else in the file needs to change.
+
+  var MAJ = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24];  // major pentatonic-ish ladder
+  function st(base, semis) { return base * Math.pow(2, semis / 12); }
+
+  var TAGS = {
+
+    // --- cards -------------------------------------------------------------
+    'card.draw': function (t) {
+      vNoise(t, { dur: 0.14, filter: 'bandpass', q: 1.1, from: 900, to: 3200, peak: 0.30, a: 0.012, rel: 0.13 });
+      vBlip(t + 0.01, { dur: 0.09, type: 'sine', freq: 520, freqTo: 780, peak: 0.07, rel: 0.09 });
+    },
+    'card.play': function (t) {
+      vNoise(t, { dur: 0.10, filter: 'lowpass', q: 0.9, from: 2600, to: 700, peak: 0.42, a: 0.002, rel: 0.09 });
+      vFM(t, { dur: 0.16, freq: 180, freqTo: 96, ratio: 1.7, index: 240, peak: 0.34, rel: 0.15 });
+    },
+    'card.discard': function (t) {
+      vNoise(t, { dur: 0.20, filter: 'bandpass', q: 1.0, from: 2600, to: 520, peak: 0.28, a: 0.010, rel: 0.19 });
+      vBlip(t + 0.02, { dur: 0.14, type: 'sine', freq: 300, freqTo: 150, peak: 0.10, rel: 0.13 });
+    },
+
+    // --- units -------------------------------------------------------------
+    'unit.deploy': function (t) {
+      vFM(t, { dur: 0.26, freq: 140, freqTo: 70, ratio: 1.4, index: 400, peak: 0.45, rel: 0.24 });
+      vNoise(t, { dur: 0.13, filter: 'bandpass', q: 0.8, from: 1800, to: 420, peak: 0.26, a: 0.002, rel: 0.12 });
+      vBlip(t + 0.03, { dur: 0.20, type: 'triangle', freq: 220, freqTo: 330, peak: 0.16, cut: 2200, rel: 0.18 });
+    },
+    'unit.move': function (t) {
+      vNoise(t, { dur: 0.11, filter: 'bandpass', q: 2.0, from: 700, to: 1700, peak: 0.20, a: 0.02, rel: 0.09 });
+      vBlip(t + 0.01, { dur: 0.08, type: 'sine', freq: 420, freqTo: 560, peak: 0.09, rel: 0.08 });
+    },
+    'unit.die': function (t) {
+      vSweep(t, { dur: 0.42, from: 420, to: 70, type: 'sawtooth', peak: 0.22, cut: 1600, cutTo: 200 });
+      vNoise(t, { dur: 0.30, filter: 'lowpass', q: 1.0, from: 1400, to: 180, peak: 0.34, a: 0.004, rel: 0.29 });
+      vFM(t + 0.02, { dur: 0.34, freq: 110, freqTo: 48, ratio: 2.7, index: 300, peak: 0.26, rel: 0.32 });
+    },
+
+    // --- gear / spells -----------------------------------------------------
+    'gear.equip': function (t) {
+      vFM(t, { dur: 0.20, freq: 1180, ratio: 3.13, index: 900, indexTo: 30, peak: 0.24, rel: 0.19 });
+      vFM(t + 0.035, { dur: 0.16, freq: 1760, ratio: 2.41, index: 620, indexTo: 20, peak: 0.16, rel: 0.15 });
+      vNoise(t, { dur: 0.07, filter: 'highpass', q: 0.7, from: 3800, peak: 0.16, a: 0.002, rel: 0.06 });
+    },
+    'spell.cast': function (t) {
+      vSweep(t, { dur: 0.38, noise: true, from: 600, to: 5200, q: 4.0, peak: 0.24 });
+      vBlip(t + 0.10, { dur: 0.22, type: 'triangle', freq: 660, freqTo: 990, peak: 0.16, cut: 3600, rel: 0.20 });
+      vFM(t + 0.16, { dur: 0.30, freq: 880, ratio: 2.0, index: 500, indexTo: 20, peak: 0.16, rel: 0.28 });
+    },
+
+    // --- the chain ---------------------------------------------------------
+    'chain.add': function (t) {
+      vBlip(t, { dur: 0.10, type: 'square', freq: 740, peak: 0.10, cut: 2400, rel: 0.09 });
+      vNoise(t, { dur: 0.05, filter: 'highpass', from: 3000, peak: 0.12, a: 0.002, rel: 0.045 });
+    },
+    'chain.resolve': function (t) {
+      var f = [784, 659, 523];
+      for (var i = 0; i < f.length; i++) {
+        vBlip(t + i * 0.055, { dur: 0.16, type: 'triangle', freq: f[i], peak: 0.15, cut: 3000, rel: 0.15 });
+      }
+      vNoise(t + 0.11, { dur: 0.20, filter: 'lowpass', from: 2200, to: 500, peak: 0.18, a: 0.006, rel: 0.19 });
+    },
+
+    // --- runes -------------------------------------------------------------
+    'rune.channel': function (t) {
+      vSweep(t, { dur: 0.46, noise: true, from: 320, to: 2400, q: 2.6, peak: 0.20 });
+      vBlip(t + 0.05, { dur: 0.36, type: 'sine', freq: 196, freqTo: 294, peak: 0.16, cut: 1600, cutTo: 3200, rel: 0.34 });
+    },
+    'rune.recycle': function (t) {
+      vBlip(t, { dur: 0.14, type: 'triangle', freq: 494, freqTo: 330, peak: 0.14, cut: 2600, rel: 0.13 });
+      vBlip(t + 0.10, { dur: 0.18, type: 'triangle', freq: 392, freqTo: 587, peak: 0.15, cut: 3000, rel: 0.17 });
+      vNoise(t, { dur: 0.16, filter: 'bandpass', q: 2.4, from: 1400, to: 2800, peak: 0.14, a: 0.02, rel: 0.15 });
+    },
+    'rune.ready': function (t) {
+      vFM(t, { dur: 0.52, freq: 1046, ratio: 3.51, index: 700, indexTo: 12, peak: 0.20, rel: 0.50 });
+      vFM(t + 0.01, { dur: 0.40, freq: 1568, ratio: 2.02, index: 300, indexTo: 8, peak: 0.10, rel: 0.39 });
+    },
+
+    // --- showdowns ---------------------------------------------------------
+    'showdown.start': function (t) {
+      vSweep(t, { dur: 0.55, from: 90, to: 480, type: 'sawtooth', peak: 0.22, cut: 400, cutTo: 2600 });
+      vNoise(t + 0.34, { dur: 0.26, filter: 'lowpass', from: 3000, to: 300, peak: 0.40, a: 0.003, rel: 0.25 });
+      vFM(t + 0.34, { dur: 0.34, freq: 160, freqTo: 62, ratio: 1.3, index: 500, peak: 0.42, rel: 0.33 });
+    },
+    'showdown.win': function (t) {
+      var f = [523, 659, 784];
+      for (var i = 0; i < f.length; i++) {
+        vBlip(t + i * 0.052, { dur: 0.26, type: 'triangle', freq: f[i], peak: 0.17, cut: 4200, rel: 0.25 });
+      }
+      vFM(t + 0.10, { dur: 0.36, freq: 1046, ratio: 2.0, index: 420, indexTo: 12, peak: 0.14, rel: 0.34 });
+      vNoise(t, { dur: 0.10, filter: 'highpass', from: 3400, peak: 0.16, a: 0.003, rel: 0.09 });
+    },
+    'showdown.lose': function (t) {
+      var f = [440, 370];
+      for (var i = 0; i < f.length; i++) {
+        vBlip(t + i * 0.09, { dur: 0.28, type: 'triangle', freq: f[i], peak: 0.15, cut: 1700, rel: 0.27 });
+      }
+      vFM(t + 0.15, { dur: 0.36, freq: 116, freqTo: 74, ratio: 1.6, index: 260, peak: 0.30, rel: 0.34 });
+    },
+
+    // --- battlefields ------------------------------------------------------
+    'battlefield.conquer': function (t) {
+      vFM(t, { dur: 0.70, freq: 84, freqTo: 42, ratio: 1.2, index: 500, peak: 0.52, rel: 0.68 });
+      vNoise(t, { dur: 0.36, filter: 'lowpass', from: 4200, to: 260, peak: 0.36, a: 0.003, rel: 0.35 });
+      var f = [262, 392, 523];
+      for (var i = 0; i < f.length; i++) {
+        vBlip(t + 0.05 + i * 0.06, { dur: 0.50, type: 'triangle', freq: f[i], peak: 0.17, cut: 3400, rel: 0.48 });
+      }
+      vSweep(t + 0.02, { dur: 0.50, noise: true, from: 900, to: 4800, q: 3.0, peak: 0.16 });
+    },
+    'battlefield.hold': function (t) {
+      vFM(t, { dur: 0.38, freq: 120, freqTo: 80, ratio: 1.5, index: 320, peak: 0.40, rel: 0.36 });
+      vBlip(t + 0.03, { dur: 0.34, type: 'triangle', freq: 330, peak: 0.15, cut: 2200, rel: 0.32 });
+      vNoise(t, { dur: 0.16, filter: 'lowpass', from: 2400, to: 420, peak: 0.24, a: 0.003, rel: 0.15 });
+    },
+
+    // --- legend ------------------------------------------------------------
+    'legend.activate': function (t) {
+      vSweep(t, { dur: 0.50, noise: true, from: 420, to: 6000, q: 3.2, peak: 0.24 });
+      vFM(t + 0.16, { dur: 0.80, freq: 330, ratio: 1.005, index: 200, indexTo: 20, peak: 0.26, rel: 0.78 });
+      vFM(t + 0.18, { dur: 0.72, freq: 494, ratio: 2.005, index: 300, indexTo: 14, peak: 0.18, rel: 0.70 });
+      vFM(t + 0.20, { dur: 0.66, freq: 660, ratio: 3.01, index: 400, indexTo: 10, peak: 0.14, rel: 0.64 });
+      vFM(t + 0.14, { dur: 0.60, freq: 82, freqTo: 55, ratio: 1.1, index: 300, peak: 0.36, rel: 0.58 });
+    },
+
+    // --- scoring: see scorePoint() below ------------------------------------
+    'point.score': function (t, o) { scorePoint(t, o); },
+
+    // --- turn --------------------------------------------------------------
+    'turn.start': function (t) {
+      vBlip(t, { dur: 0.20, type: 'sine', freq: 392, peak: 0.16, cut: 2600, rel: 0.19 });
+      vBlip(t + 0.085, { dur: 0.30, type: 'sine', freq: 587, peak: 0.16, cut: 3200, rel: 0.29 });
+      vNoise(t, { dur: 0.09, filter: 'highpass', from: 4000, peak: 0.08, a: 0.006, rel: 0.085 });
+    },
+    'turn.end': function (t) {
+      vBlip(t, { dur: 0.20, type: 'sine', freq: 494, peak: 0.14, cut: 2400, rel: 0.19 });
+      vBlip(t + 0.085, { dur: 0.32, type: 'sine', freq: 330, peak: 0.14, cut: 1800, rel: 0.31 });
+    },
+
+    // --- UI ----------------------------------------------------------------
+    'ui.click': function (t) {
+      vBlip(t, { dur: 0.045, type: 'square', freq: 900, peak: 0.10, cut: 2600, rel: 0.04 });
+      vNoise(t, { dur: 0.03, filter: 'highpass', from: 4200, peak: 0.10, a: 0.001, rel: 0.028 });
+    },
+    'ui.hover': function (t) {
+      vBlip(t, { dur: 0.035, type: 'sine', freq: 1320, peak: 0.045, rel: 0.033 });
+    },
+    'ui.invalid': function (t) {
+      vBlip(t, { dur: 0.09, type: 'square', freq: 168, peak: 0.16, cut: 900, rel: 0.085 });
+      vBlip(t + 0.10, { dur: 0.12, type: 'square', freq: 142, peak: 0.16, cut: 800, rel: 0.11 });
+    },
+
+    // --- match end ---------------------------------------------------------
+    'game.win': function (t) {
+      var f = [523, 659, 784, 1046];
+      for (var i = 0; i < f.length; i++) {
+        vBlip(t + i * 0.10, { dur: 0.70, type: 'triangle', freq: f[i], peak: 0.18, cut: 4600, rel: 0.68 });
+        vFM(t + i * 0.10, { dur: 0.60, freq: f[i] * 2, ratio: 2.0, index: 360, indexTo: 10, peak: 0.10, rel: 0.58 });
+      }
+      vFM(t, { dur: 1.30, freq: 131, freqTo: 65, ratio: 1.01, index: 260, peak: 0.34, rel: 1.28 });
+      vSweep(t + 0.24, { dur: 0.90, noise: true, from: 700, to: 7000, q: 2.2, peak: 0.18 });
+      vNoise(t + 0.40, { dur: 0.60, filter: 'lowpass', from: 5000, to: 240, peak: 0.34, a: 0.004, rel: 0.59 });
+    },
+    'game.lose': function (t) {
+      var f = [392, 330, 262, 196];
+      for (var i = 0; i < f.length; i++) {
+        vBlip(t + i * 0.13, { dur: 0.80, type: 'triangle', freq: f[i], peak: 0.16, cut: 1500, rel: 0.78 });
+      }
+      vFM(t + 0.10, { dur: 1.50, freq: 98, freqTo: 41, ratio: 1.49, index: 240, peak: 0.34, rel: 1.48 });
+      vSweep(t, { dur: 1.00, from: 300, to: 60, type: 'sawtooth', peak: 0.18, cut: 1200, cutTo: 120 });
+    }
+  };
+
+  // ------------------------------------------------------- point.score ------
+  //
+  // The whole game is a race to 8 points. This is the cheapest place to make
+  // that clock felt, so it is the one tag that takes an argument:
+  //
+  //   RB.audio.play('point.score', { points: 6, mine: true })
+  //
+  //  - points  the score AFTER this point lands, 1..8 (clamped).
+  //  - mine    true for the player's side (bright, higher), false for the
+  //            opponent's (a fifth lower, duller filters, minor colouring).
+  //
+  // Pitch, brightness and layer count all climb with the score; 7 (match
+  // point) and 8 (game) are categorically bigger events, not just louder.
+
+  var WIN_AT = 8;
+
+  function scorePoint(t, o) {
+    o = o || {};
+    var p = Math.max(1, Math.min(WIN_AT, Math.round(o.points == null ? 1 : o.points)));
+    var mine = o.mine !== false;
+    var k = (p - 1) / (WIN_AT - 1);           // 0 .. 1 across the whole race
+
+    // Root climbs the ladder; the opponent sits a fifth below and darker.
+    var base = mine ? 392 : 261.63;           // G4 vs C4
+    var root = st(base, MAJ[Math.min(MAJ.length - 1, p - 1)]);
+    if (!mine) root = root * 0.5 * 1.5;       // down an octave, up a fifth: darker register
+
+    var bright = (mine ? 2200 : 1100) + k * (mine ? 6000 : 2600);
+    var thirdRatio = mine ? 1.2599 : 1.1892;  // major vs minor-ish colouring
+    var lvl = 0.16 + k * 0.07;
+
+    // Layer 1 — always: the ping itself.
+    vBlip(t, {
+      dur: 0.40 + k * 0.25, type: mine ? 'triangle' : 'sawtooth',
+      freq: root, peak: lvl, cut: bright, cutTo: bright * 0.35, q: 0.8,
+      rel: 0.38 + k * 0.25
+    });
+    vNoise(t, {
+      dur: 0.06, filter: 'highpass', from: mine ? 4200 : 2000,
+      peak: mine ? 0.12 : 0.09, a: 0.002, rel: 0.055
+    });
+
+    // Layer 2 — from 3 points: an octave above, so it starts to ring.
+    if (p >= 3) {
+      vFM(t + 0.012, {
+        dur: 0.50 + k * 0.30, freq: root * 2, ratio: 2.0,
+        index: 260 + k * 400, indexTo: 10, peak: 0.10 + k * 0.05, rel: 0.48 + k * 0.30
+      });
+    }
+
+    // Layer 3 — from 5 points: a third, so the chord gets a colour. Major for
+    // the player, flatter for the opponent.
+    if (p >= 5) {
+      vBlip(t + 0.03, {
+        dur: 0.55, type: 'triangle', freq: root * thirdRatio,
+        peak: 0.09 + k * 0.04, cut: bright * 0.8, rel: 0.53
+      });
+    }
+
+    // Layer 4 — from 6 points: a sub under it. You feel the score now.
+    if (p >= 6) {
+      vFM(t, {
+        dur: 0.60, freq: root / (mine ? 4 : 2), freqTo: root / (mine ? 6 : 3),
+        ratio: 1.2, index: 300, peak: 0.28, rel: 0.58
+      });
+    }
+
+    // MATCH POINT (7) — categorically different: a riser in front of the hit,
+    // a fifth stacked on top, and a long bell tail. One more point ends it.
+    if (p >= WIN_AT - 1) {
+      vSweep(t - 0.0, {
+        dur: 0.34, noise: true, from: mine ? 700 : 400, to: mine ? 5200 : 2600,
+        q: 3.0, peak: 0.18
+      });
+      vFM(t + 0.05, {
+        dur: 1.10, freq: root * 1.4983, ratio: mine ? 3.01 : 2.49,
+        index: 500, indexTo: 8, peak: 0.13, rel: 1.08
+      });
+      vNoise(t + 0.02, {
+        dur: 0.40, filter: 'lowpass', from: mine ? 4800 : 2400, to: 240,
+        peak: 0.26, a: 0.003, rel: 0.39
+      });
+    }
+
+    // GAME (8) — the full stack, with the rolled chord underneath.
+    if (p >= WIN_AT) {
+      var chord = [1, 1.2599, 1.4983, 2];
+      for (var i = 0; i < chord.length; i++) {
+        vBlip(t + 0.06 + i * 0.05, {
+          dur: 1.20, type: 'triangle', freq: root * chord[i] * (mine ? 1 : 0.5),
+          peak: 0.13, cut: bright, rel: 1.18
+        });
+      }
+      vFM(t + 0.04, {
+        dur: 1.40, freq: (mine ? 131 : 98), freqTo: (mine ? 65 : 49),
+        ratio: 1.01, index: 280, peak: 0.34, rel: 1.38
+      });
+    }
+  }
+
+  // Tags that would otherwise machine-gun. Value is the minimum gap, seconds.
+  var THROTTLE = {
+    'ui.hover': 0.045,
+    'ui.click': 0.02,
+    'unit.move': 0.03,
+    'chain.add': 0.02,
+    'card.draw': 0.02
+  };
+
+  // ----------------------------------------------------------------- music --
+
+  function url(file, fmt) { return MUSIC_DIR + file + '.' + fmt; }
+
+  // Fetch + decode into the one context. Tries Opus first, falls back to AAC
+  // if either the fetch or the decode refuses, and remembers which one won.
+  function loadTrack(file) {
+    if (buffers[file]) return Promise.resolve(buffers[file]);
+    if (loading[file]) return loading[file];
+
+    var order = format ? [format] : FORMATS.slice();
+
+    var p = (function attempt(i) {
+      if (i >= order.length) return Promise.reject(new Error('no playable format for ' + file));
+      var fmt = order[i];
+      return fetch(url(file, fmt), { cache: 'force-cache' })
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.arrayBuffer();
+        })
+        .then(function (bytes) {
+          return new Promise(function (res, rej) {
+            // Callback form as well as promise form: Safari has shipped both.
+            var out = ctx.decodeAudioData(bytes, res, rej);
+            if (out && typeof out.then === 'function') out.then(res, rej);
+          });
+        })
+        .then(function (buf) {
+          format = fmt;
+          buffers[file] = buf;
+          return buf;
+        })
+        .catch(function () { return attempt(i + 1); });
+    })(0);
+
+    loading[file] = p;
+    p.catch(function () {}).then(function () { delete loading[file]; });
+    return p;
+  }
+
+  function fadeOut(entry, secs) {
+    if (!entry) return;
+    var t = ctx.currentTime;
+    try {
+      entry.gain.gain.cancelScheduledValues(t);
+      entry.gain.gain.setValueAtTime(Math.max(0.0001, entry.gain.gain.value), t);
+      entry.gain.gain.exponentialRampToValueAtTime(0.0001, t + secs);
+    } catch (e) {}
+    var src = entry.src;
+    src.onended = function () { try { src.disconnect(); entry.gain.disconnect(); } catch (e) {} };
+    try { src.stop(t + secs + 0.02); } catch (e) {}
+  }
+
+  function startTrack(screen, buf) {
+    var def = TRACKS[screen];
+    var t = ctx.currentTime + 0.02;
+
+    var g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(def.gain, t + FADE);
+    g.connect(musicBus);
+
+    var src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = !!def.loop;
+    // The file is already trimmed to its sustained body by tools/fetch-music.mjs,
+    // so looping the whole buffer is the seamless loop.
+    if (src.loop) { src.loopStart = 0; src.loopEnd = buf.duration; }
+    src.connect(g);
+
+    var entry = { screen: screen, src: src, gain: g, loop: !!def.loop };
+
+    // A one-shot that has finished must leave no "currently playing" state
+    // behind, or losing twice in a row is silent the second time. Each play
+    // builds a fresh BufferSource from time 0, so it is always rewound.
+    src.onended = function () {
+      try { src.disconnect(); g.disconnect(); } catch (e) {}
+      if (cur === entry) { cur = null; if (wantScreen === screen) wantScreen = null; }
+    };
+
+    src.start(t);
+    cur = entry;
+  }
+
+  // ------------------------------------------------------------------- api --
+
+  var api = {
+
+    // Lazy on purpose: reads the mute flag and nothing else. No AudioContext,
+    // no element, no fetch. Safe to call at script load.
+    init: function () {
+      if (started) return;
+      started = true;
+      muted = readMuted();
+    },
+
+    // Play a sound effect. An unknown tag is silently ignored — the engine is
+    // allowed to tag events whose sound does not exist yet.
+    play: function (tag, opts) {
+      if (!started) api.init();
+      if (muted) return;
+
+      var make = TAGS[tag];
+      if (!make) return;                 // unknown tag: nothing, no warning
+
+      if (!ensureCtx()) return;
+      wake();
+
+      var now = ctx.currentTime;
+      var gap = THROTTLE[tag];
+      if (gap && lastAt[tag] != null && now - lastAt[tag] < gap) return;
+      lastAt[tag] = now;
+
+      if (voices > MAX_VOICES) return;
+
+      try {
+        make(now + LOOKAHEAD, opts || {});
+      } catch (e) {
+        // A bad recipe must never take the game down with it.
+        if (window.console && console.warn) console.warn('[audio] tag failed:', tag, e);
+      }
+    },
+
+    // Crossfade to a screen's track. Pass null (or an unknown screen) to fade
+    // to silence. Looping screens ignore a repeat call; one-shots restart.
+    music: function (screen) {
+      if (!started) api.init();
+
+      if (!screen || !TRACKS[screen]) {
+        wantScreen = null;
+        if (ctx && cur) { fadeOut(cur, FADE * 0.6); cur = null; }
+        return;
+      }
+
+      wantScreen = screen;
+      if (muted) return;                 // remembered, starts on unmute
+      if (!ensureCtx()) return;
+      wake();
+
+      var def = TRACKS[screen];
+
+      // Already on this looping bed: leave it alone so the loop is unbroken.
+      if (cur && cur.screen === screen && cur.loop) return;
+
+      var token = ++musicToken;
+
+      loadTrack(def.file).then(function (buf) {
+        if (token !== musicToken) return;   // a newer music() call won
+        if (muted || !ctx) return;
+        if (cur) fadeOut(cur, FADE);
+        cur = null;
+        startTrack(screen, buf);
+      }, function (err) {
+        if (window.console && console.warn) console.warn('[audio] music unavailable:', screen, err && err.message);
+      });
+    },
+
+    setMuted: function (v) {
+      if (!started) api.init();
+      v = !!v;
+      if (v === muted) return v;
+      muted = v;
+      writeMuted(v);
+
+      if (v) {
+        // Silence immediately and drop the music source; keep wantScreen so
+        // unmuting picks the same bed back up.
+        if (ctx) {
+          var t = ctx.currentTime;
+          try {
+            master.gain.cancelScheduledValues(t);
+            master.gain.setValueAtTime(master.gain.value, t);
+            master.gain.linearRampToValueAtTime(0, t + 0.12);
+          } catch (e) {}
+          if (cur) { fadeOut(cur, 0.12); cur = null; }
+          musicToken++;
+        }
+      } else {
+        if (ensureCtx()) {
+          wake();
+          var t2 = ctx.currentTime;
+          try {
+            master.gain.cancelScheduledValues(t2);
+            master.gain.setValueAtTime(master.gain.value, t2);
+            master.gain.linearRampToValueAtTime(LEVEL.master, t2 + 0.12);
+          } catch (e) {}
+        }
+        if (wantScreen) api.music(wantScreen);
+      }
+      return muted;
+    },
+
+    isMuted: function () {
+      if (muted === null) muted = readMuted();
+      return muted;
+    },
+
+    // Read-only constant, not part of the call surface — handy for a settings
+    // screen or a test harness that wants to enumerate what exists.
+    TAGS: Object.freeze(Object.keys(TAGS)),
+
+    // Internal, for the scratch verification page only.
+    _debug: function () {
+      return {
+        ctx: ctx ? ctx.state : null,
+        sampleRate: ctx ? ctx.sampleRate : null,
+        muted: api.isMuted(),
+        format: format,
+        voices: voices,
+        screen: cur ? cur.screen : null,
+        want: wantScreen,
+        decoded: Object.keys(buffers).map(function (f) {
+          return { file: f, duration: buffers[f].duration, channels: buffers[f].numberOfChannels };
+        })
+      };
+    }
+  };
+
+  RB.audio = api;
+})();
