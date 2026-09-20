@@ -210,7 +210,14 @@
   // A static may carry a computed value, a granted keyword, or one of the rule-bending
   // flags — and a describer that renders only `might` and `grant` silently drops the rest,
   // which is the auditor going blind exactly where the continuous layer does its work.
+  // Every hook in the family has a prose twin, and this was the last one without: a pack
+  // registering a computed amount through RB.defineStaticAmount had no way to name it, so
+  // the auditor read back the identifier. defineStaticAmountText is to defineStaticAmount
+  // what defineWhenText is to defineStaticWhen.
   const AMOUNT = { points: 'your points', xp: 'your XP', counters: 'its counters' };
+  RB.defineStaticAmountText = function (name, fn) {
+    AMOUNT[name] = typeof fn === 'function' ? fn : () => fn;
+  };
   const FLAG = {
     bonusDamage: 'take 1 extra damage from spells and abilities',
     noCombatDamage: 'deal no combat damage',
@@ -220,7 +227,9 @@
   function amountText(v) {
     if (v == null) return null;
     if (typeof v === 'number') return (v > 0 ? '+' : '') + v + ' Might';
-    const src = AMOUNT[v.from] || v.from;
+    const e = AMOUNT[v.from];
+    const src = typeof e === 'function' ? e(v)
+      : e || v.from.replace(/([A-Z])/g, ' $1').toLowerCase().trim();
     return '+1 Might for each of ' + src;
   }
   function staticText(st) {

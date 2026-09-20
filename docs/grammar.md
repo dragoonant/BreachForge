@@ -281,6 +281,12 @@ A modifier may carry a **condition** and a **computed value**:
 contributes **0 Might in the Combat Damage Step** but still takes damage equal to its **full**
 Might to die, cannot be stunned twice, and clears in the Ending Cleanup.
 
+**Every hook in this family has a prose twin, and a hook without one makes the auditor read back
+an identifier**: `RB.defineStaticWhen` ↔ `RB.defineWhenText`, `RB.defineStaticAmount` ↔
+`RB.defineStaticAmountText`, `RB.defineReplacement` ↔ `RB.defineReplacementText`,
+`RB.defineExtraCost` ↔ `RB.defineExtraCostText` / `RB.defineExtraCostNote`,
+`RB.defineAbilityCostModifier` ↔ `RB.defineAbilityCostNote`. If you add a hook, add its twin.
+
 `when`: `defendingAlone` · `attacking` · `defending` · `mighty` · `{ xpAtLeast: 6 }` ·
 `sourceMighty`. `from`: `points` · `xp` · `counters`. Add your own with
 `RB.defineStaticWhen` / `RB.defineStaticAmount` — **never by wrapping `RB.staticsOn`**.
