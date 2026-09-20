@@ -1,0 +1,11 @@
+scratch/
+art-masters/
+art-archive/
+traces/
+node_modules/
+*.token
+*.token.rtf
+hf_token.md
+elevenlabs.token*
+.DS_Store
+*.pdf
