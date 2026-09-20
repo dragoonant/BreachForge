@@ -22,10 +22,16 @@
       unitOnBf: 1.6, unitInBase: 1.0, unitFlat: 1.5,
       hand: 2.2, rune: 1.1, energy: 0.15,
       held: 0,              // option value of a card kept for the opponent's turn
+      sandbag: 0,           // what it costs to spend an answer at main-phase speed
       endTurnBar: 6, passBar: 4,
     },
   };
-  RB.WEIGHTS.competition = Object.assign({}, RB.WEIGHTS.hard);
+  // competition is hard, plus one thing hard is forbidden to think about: what the card in
+  // its hand is worth on the OPPONENT'S turn. Measured at 81% of 42 decisive shuffles on
+  // 200 holdout pairings the weight had never seen (tools/arena.mjs). The knob saturates
+  // above ~40 — 40 and 70 choose byte-identically — so this sits on the plateau rather than
+  // at the edge of the sweep.
+  RB.WEIGHTS.competition = Object.assign({}, RB.WEIGHTS.hard, { sandbag: 40 });
 
   RB.evaluate = function (s, me, w) {
     w = w || RB.WEIGHTS.hard;
@@ -67,16 +73,19 @@
     return v;
   };
 
+  // A card that can be played on the opponent's turn. The same shape timingOk reads:
+  // Action and Reaction are KEYWORDS, and a keyword is either a bare string or an object
+  // with a name.
+  function isAnswer(s, iid) {
+    const kws = (RB.cardOf(s, iid).abilities && RB.cardOf(s, iid).abilities.keywords) || [];
+    return kws.some(k => k === 'Reaction' || k.name === 'Reaction'
+                      || k === 'Action' || k.name === 'Action');
+  }
+
   // Cards in hand playable at instant speed — the ones worth not spending on your own turn.
   function heldAnswers(s, p) {
     let n = 0;
-    for (const iid of s.players[p].hand) {
-      // The same shape timingOk reads: Action and Reaction are KEYWORDS, and a keyword is
-      // either a bare string or an object with a name.
-      const kws = (RB.cardOf(s, iid).abilities && RB.cardOf(s, iid).abilities.keywords) || [];
-      if (kws.some(k => k === 'Reaction' || k.name === 'Reaction'
-                     || k === 'Action' || k.name === 'Action')) n++;
-    }
+    for (const iid of s.players[p].hand) if (isAnswer(s, iid)) n++;
     return n;
   }
 
@@ -140,6 +149,13 @@
       // than win ties — otherwise the AI passes with playable cards in hand.
       if (a.t === 'endTurn') v -= w.endTurnBar;
       if (a.t === 'pass' && !s.chain.length && !s.showdown) v -= w.passBar;
+      // Holding the right card for the right moment. An Action or Reaction spent in your
+      // own neutral open state buys whatever it does; spent on the opponent's turn it buys
+      // that AND the information about what they committed to first. The penalty is on the
+      // TIMING, not on the card — during a showdown or with a chain to answer, the same
+      // play is the whole reason the card was kept, and costs nothing here.
+      if (w.sandbag && a.t === 'play' && !s.chain.length && !s.showdown && isAnswer(s, a.iid))
+        v -= w.sandbag;
       if (v > bestV) { bestV = v; best = a; }
     }
     return best || acts[0];

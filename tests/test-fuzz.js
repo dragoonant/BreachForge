@@ -67,6 +67,36 @@ export function run(t) {
     t.eq(bad.length, 0, bad.slice(0, 3).join(' | '));
   });
 
+  t.test('competition keeps its answers for the opponent\'s turn; hard spends them on its own', () => {
+    // The one thing competition is allowed to know that hard is not. Measured, not asserted
+    // by eye: over eight games hard spends roughly as many Action/Reaction cards in its own
+    // neutral open state as it does in showdowns, and competition almost none — which is
+    // what lets it spend MORE of them at the moment they are worth something.
+    const isAnswer = (st, iid) => {
+      const k = (RB.cardOf(st, iid).abilities && RB.cardOf(st, iid).abilities.keywords) || [];
+      return k.some(x => x === 'Reaction' || x.name === 'Reaction'
+                      || x === 'Action' || x.name === 'Action');
+    };
+    const count = tier => {
+      let own = 0, theirs = 0;
+      for (let g = 0; g < 8; g++) {
+        let st = RB.newGame({ seed: 'sb' + g, decks: [decks[g % 10], decks[(g * 7 + 3) % 10]] });
+        for (let n = 0; n < 1200 && !RB.isTerminal(st); n++) {
+          const a = RB.aiChoose(st, tier);
+          if (a.t === 'play' && isAnswer(st, a.iid)) {
+            if (!st.chain.length && !st.showdown) own++; else theirs++;
+          }
+          st = RB.apply(st, a);
+        }
+      }
+      return { own: own, theirs: theirs };
+    };
+    const h = count('hard'), c = count('competition');
+    t.ok(h.own > 10, 'hard spends answers at main-phase speed: ' + JSON.stringify(h));
+    t.ok(c.own * 4 < h.own, 'competition spends far fewer: ' + JSON.stringify(c) + ' vs ' + JSON.stringify(h));
+    t.ok(c.theirs > h.theirs, 'and more of them on the opponent\'s turn: ' + c.theirs + ' vs ' + h.theirs);
+  });
+
   t.test('the AI beats random play over a short match set', () => {
     let wins = 0, played = 0;
     // Six games is inside the noise band for a one-ply evaluator: a 24-game run measures 71%

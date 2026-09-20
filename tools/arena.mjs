@@ -18,6 +18,10 @@ const A = argv[0] || 'competition';
 const B = argv[1] || 'hard';
 const GAMES = +opt('games', 40);
 const CAP = +opt('cap', 4000);
+// A weight chosen on one set of shuffles and reported on the same set is a weight fitted to
+// those shuffles. --seedbase moves the whole set, so a value picked on the tuning seeds can
+// be confirmed on shuffles it has never seen.
+const SEEDBASE = opt('seedbase', 'arena');
 const verbose = argv.includes('--verbose');
 
 const RB = loadEngine();
@@ -86,7 +90,7 @@ for (let g = 0; g < GAMES; g++) {
     // independent games and throws the variance reduction away — with that bug, two
     // IDENTICAL tiers scored 60/40 over 20 pairings instead of the exact 50/50 that a
     // matched design guarantees. That equality is the instrument's self-test.
-    const r = play('arena' + g, d0, d1, seats);
+    const r = play(SEEDBASE + g, d0, d1, seats);
     plies += r.n;
     if (r.winner === null) { tally.draws++; if (r.reason !== 'no termination') tally.broken.push(r.reason); continue; }
     tally[seats[r.winner]]++;
