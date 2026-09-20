@@ -29,12 +29,53 @@ Every registered card needs an entry, even a card with no abilities at all — u
 `{ vanilla: true }`. A clause the grammar cannot express is `{ unimplemented: 'why' }`, which
 validation rejects from any registered deck, so it fails loudly instead of playing wrong quietly.
 
+## Additional costs (chosen as the card is played)
+
+An additional cost is part of a card's **total cost** (§349 step 3), not an effect that happens
+afterwards. A cost that gates legality — "kill a friendly Mighty unit" — authored as an effect
+makes the card castable with nothing to sacrifice, which is a different card.
+
+```js
+additionalCosts: [
+  { id: 'accelerate', energy: 1, power: 1, entersReady: true },        // optional by default
+  { id: 'sac', optional: false, pays: 'killFriendly', mighty: true },  // gates legality
+  { id: 'glory', pays: 'spendBuff', n: 1, waivesBaseCost: true },
+]
+```
+
+`pays` kinds: `killFriendly` (`mighty`, `tag`) · `discard` (`n`) · `spendBuff` (`n`) ·
+`recycleFromTrash` (`n`). An additional cost may also carry `effects` that run on resolution.
+Every combination the player can afford becomes its own `play` action, so `a.pay` says which
+were chosen; `ctx.paid` carries them into resolution.
+
+## Play-location permissions
+
+A unit is played to your base. `playAlso` names the battlefields it may ALSO go to — narrow, not
+the blanket `playTo: 'battlefield'`:
+`whereIHaveUnits` (what `[Ambush]` grants) · `whereEnemyUnits` · `whereIAmAttacking` ·
+`whereIControl` · `anyBattlefield`.
+
+## Hidden
+
+`[Hidden]` in `keywords` is enough — the engine owns the whole keyword. It offers the **hide**
+action (pay 1 Power, at a battlefield you control with no facedown card there), plays the card
+from face down at Reaction speed **from the next turn, ignoring its base cost**, and trashes it if
+you lose the battlefield. `ctx.fromHidden` tells a play from face down from a play from hand.
+
 ## Trigger events
 
-`played` · `unitPlayed` · `conquer` · `hold` · `beginningPhase` · `endOfTurn` · `combatEnd` ·
-`died` (any unit dies, from anywhere on the board) · `moved` (a unit finishes a move;
-`event.bf` is the destination, `event.fromBf` the origin) · `deathknell` (**this** card dies —
-it runs while the card is still where it died, before it reaches the trash)
+`played` · `unitPlayed` · `cardPlayed` (any card; `event.nth` is which card this is for that
+player this turn, `event.type` its type, `event.fromHidden` whether it came from face down) ·
+`spellPlayed` · `drew` (`event.nth` is which draw this is this turn) · `conquer` · `hold` ·
+`beginningPhase` · `endOfTurn` · `combatEnd` · `died` (any unit dies) · `leftBoard` ·
+`moved` (`event.bf` destination, `event.fromBf` origin) · `deathknell` (**this** card dies — it
+runs while the card is still where it died, before it reaches the trash) ·
+`showdownBegins` · `attack` · `defend` (all three carry `event.bf`) ·
+`becameMighty` · `becameReady` (crossings, raised once each time the value actually changes) ·
+`chosen` (a spell or ability chose this unit; `event.chooser` is who chose)
+
+**Delayed abilities** outlive their source — `{ op: 'delayed', on: '<event>', effects: [...] }`
+promises a future trigger that fires even after the card that made the promise has left the board.
 
 A trigger may carry `mine: true` (only when the event's player is this card's controller) and
 `here: true` (only when the event's battlefield is this card's location).
@@ -48,6 +89,8 @@ or `{ pick: <selector>, n: 1, filter: 'damaged', maxMight: 3 }` for "choose a �
 
 `draw` `damage` `kill` `buff` `grant` `ready` `exhaust` `channel` `addEnergy` `addPower`
 `gainPoint` `discard` `recycleRune` `heal` `token` `stun` `counter` `xp` `counters` `nothing`
+`playFromZone` (play a card out of your trash or deck) `swapMight` `addBattlefield`
+`addShowdownEnergy` `delayed`
 
 Each takes `n` (default 1), most take `target`, `draw`/`discard` take `opponent: true`.
 
@@ -85,6 +128,21 @@ statics: [ { might: 1, scope: 'here' },              // units standing on this b
 
 `scope` is `here` (default) · `hereMine` · `mine` · `all` · `self`. A static never applies to its
 own source unless it says `includeSelf: true` or `scope: 'self'`.
+
+A modifier may carry a **condition** and a **computed value**:
+
+```js
+{ might: 2, scope: 'self', includeSelf: true, when: 'defendingAlone' }
+{ might: { from: 'points' }, scope: 'self', includeSelf: true }   // "+1 Might per point you have"
+```
+
+`when`: `defendingAlone` · `attacking` · `defending` · `mighty` · `{ xpAtLeast: 6 }` ·
+`sourceMighty`. `from`: `points` · `xp` · `counters`. Add your own with
+`RB.defineStaticWhen` / `RB.defineStaticAmount` — **never by wrapping `RB.staticsOn`**.
+
+Other static keys the engine reads: `grant: '<Keyword>'` · `noCombatDamage` (contributes nothing
+to its side's combat damage, but is no easier to kill) · `anyDamageKills` · `untargetableByEnemies`
+· `deathknellExtra: 1`.
 
 ## Adding an op
 

@@ -10,8 +10,12 @@
     return {
       deckId: deckId, hand: [], deck: [], runeDeck: [], trash: [], banished: [],
       runes: [], base: [], points: 0, legend: null, champion: null,
-      pool: { energy: 0, power: EMPTY_POWER(), any: 0 },
+      pool: { energy: 0, power: EMPTY_POWER(), any: 0, showdownOnly: 0 },
       scoredThisTurn: [], firstTurnDone: false,
+      // Per-turn counters. Several printed cards count what you have already done this
+      // turn ("your second card", "if you've played an Equipment this turn"), and a card
+      // cannot count something nobody records. Reset in startTurn, one place.
+      playedThisTurn: [], drawsThisTurn: 0, xp: 0, turnFlags: {},
     };
   }
 
@@ -22,6 +26,7 @@
       iid: iid, cardId: cardId, owner: owner, controller: owner,
       exhausted: false, damage: 0, buffs: 0, granted: [], attached: [],
       attachedTo: null, temporary: false, movedThisTurn: 0, enteredTurn: -1,
+      wasMighty: false, wasReady: false, counters: 0, untargetable: false,
     };
     return iid;
   }
@@ -36,7 +41,7 @@
       players: [newPlayer(opts.decks[0]), newPlayer(opts.decks[1])],
       bf: [], objects: {}, nextIid: 1,
       chain: [], priority: 0, focus: null, passes: 0,
-      showdown: null, queue: [], log: [], winner: null, via: null,
+      showdown: null, queue: [], log: [], winner: null, via: null, delayed: [],
       firstPlayer: 0,
     };
 
@@ -77,7 +82,11 @@
     if (!P.deck.length) { RB.log(state, 'burnOut', { p: p }); return null; }
     const iid = P.deck.shift();
     P.hand.push(iid);
-    RB.log(state, 'draw', { p: p, iid: iid }, 'card.draw');
+    P.drawsThisTurn = (P.drawsThisTurn || 0) + 1;
+    RB.log(state, 'draw', { p: p, iid: iid, nth: P.drawsThisTurn }, 'card.draw');
+    // Cards that count draws ("the second card you draw each turn") need the event, and
+    // a trigger that fires while a draw is mid-flight is why this comes after the push.
+    if (RB.runTriggers) RB.runTriggers(state, 'drew', { p: p, iid: iid, nth: P.drawsThisTurn });
     return iid;
   };
   RB.obj = function (state, iid) {
@@ -114,7 +123,7 @@
     const o = RB.obj(state, iid);
     const c = RB.card(o.cardId);
     let m = (c.might || 0) + (o.buffs || 0);
-    for (const st of RB.staticsOn(state, iid)) m += st.might || 0;
+    for (const st of RB.staticsOn(state, iid)) m += RB.staticValue(state, iid, st.might);
     for (const g of o.attached) m += (RB.card(RB.obj(state, g).cardId).might || 0);
     return Math.max(0, m);
   };
@@ -124,6 +133,25 @@
   // RB.mightOf, and four copies of "does this modifier reach me" is the bug class that ate
   // a previous project. A reentrancy guard keeps a static whose scope asks about might
   // from recursing: a nested call sees no statics rather than blowing the stack.
+  // Two hook tables so a card pack never has to wrap this function. `staticWhen` answers
+  // "does this condition hold for the affected card"; `staticAmount` answers "what number
+  // does this modifier carry right now", which is what a Might read from the game state
+  // (your points, your XP) needs and a fixed number cannot say.
+  RB.staticWhen = Object.create(null);
+  RB.staticAmount = Object.create(null);
+  RB.defineStaticWhen = function (name, fn) { RB.staticWhen[name] = fn; };
+  RB.defineStaticAmount = function (name, fn) { RB.staticAmount[name] = fn; };
+
+  // Resolve a modifier's value: a plain number, or { from: '<name>', n } read through the
+  // amount table. Used for `might` and for any other numeric key a static carries.
+  RB.staticValue = function (state, iid, v) {
+    if (v == null) return 0;
+    if (typeof v === 'number') return v;
+    const fn = RB.staticAmount[v.from];
+    if (!fn) throw new Error('no staticAmount named ' + v.from);
+    return fn(state, iid, v) * (v.per == null ? 1 : v.per);
+  };
+
   let staticsDepth = 0;
   RB.staticsOn = function (state, iid) {
     if (staticsDepth > 0) return [];
@@ -138,6 +166,7 @@
           if (sourceIid === iid && !st.includeSelf && st.scope !== 'self') continue;
           if (!inScope(st, sourceBf, sourceP)) continue;
           if (st.tag && !(RB.card(target.cardId).tags || []).includes(st.tag)) continue;
+          if (st.when && !whenHolds(state, iid, st.when, sourceIid)) continue;
           out.push(st);
         }
       };
@@ -162,6 +191,24 @@
     } finally { staticsDepth--; }
   };
 
+  // A condition is written either as a bare name — `when: 'defendingAlone'` — or as a
+  // single-key object carrying its argument — `when: { xpAtLeast: 6 }`. Both read the same
+  // predicate table; the object form's value arrives as `w.n`.
+  function whenHolds(state, iid, when, sourceIid) {
+    let name, arg = {};
+    if (typeof when === 'string') name = when;
+    else if (when.kind) { name = when.kind; arg = when; }
+    else {
+      name = Object.keys(when)[0];
+      arg = { n: when[name] };
+    }
+    const fn = RB.staticWhen[name];
+    if (!fn) throw new Error('no staticWhen named ' + name);
+    return !!fn(state, iid, arg, sourceIid);
+  }
+
+  // Might now reads its modifier through staticValue, so a static may carry a computed
+  // number ("my Might is increased by your points") as well as a printed one.
   // Kept as the narrow question the movement rules ask: what does THIS battlefield grant?
   RB.battlefieldStatics = function (state, bfIndex) {
     const ab = RB.card(state.bf[bfIndex].cardId).abilities;
@@ -174,6 +221,31 @@
     return state.bf[bfIndex].units.filter(i => RB.obj(state, i).controller === p);
   };
   RB.opponentOf = function (p) { return 1 - p; };
+
+  // The default predicates and amounts. A pack adds its own through the same tables
+  // rather than wrapping RB.staticsOn — that is the hook-table rule, and three packs
+  // wrapping one function is how a continuous layer starts double-counting.
+  RB.defineStaticWhen('defendingAlone', function (state, iid) {
+    const o = RB.obj(state, iid);
+    if (o.role !== 'defender') return false;
+    const loc = RB.locationOf(state, iid);
+    return loc.kind === 'bf' && RB.unitsAt(state, loc.bf, o.controller).length === 1;
+  });
+  RB.defineStaticWhen('attacking', (state, iid) => RB.obj(state, iid).role === 'attacker');
+  RB.defineStaticWhen('defending', (state, iid) => RB.obj(state, iid).role === 'defender');
+  RB.defineStaticWhen('mighty', (state, iid) => RB.isMighty(state, iid));
+  RB.defineStaticWhen('xpAtLeast', (state, iid, w) =>
+    (state.players[RB.obj(state, iid).controller].xp || 0) >= (w.n || 0));
+  RB.defineStaticWhen('sourceMighty', (state, iid, w, src) => RB.isMighty(state, src));
+
+  RB.defineStaticAmount('points', (state, iid) => state.players[RB.obj(state, iid).controller].points);
+  RB.defineStaticAmount('xp', (state, iid) => state.players[RB.obj(state, iid).controller].xp || 0);
+  RB.defineStaticAmount('counters', (state, iid) => RB.obj(state, iid).counters || 0);
+
+  // "A unit is Mighty while it has 5+ Might" — printed reminder text on several cards, so
+  // it is a rule with exactly one home rather than a 5 written in six places.
+  RB.MIGHTY_AT = 5;
+  RB.isMighty = function (state, iid) { return RB.mightOf(state, iid) >= RB.MIGHTY_AT; };
 
   RB.hasKeyword = function (state, iid, kw) {
     const o = RB.obj(state, iid);

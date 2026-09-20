@@ -27,7 +27,7 @@
     const P = state.players[p];
     const pool = { energy: P.pool.energy, power: Object.assign({}, P.pool.power) };
     const ready = RB.runesReady(state, p).map(i => ({ iid: i, domain: RB.cardOf(state, i).domain }));
-    const plan = { exhaust: [], recycle: [], fromPool: { energy: 0, power: [] } };
+    const plan = { exhaust: [], recycle: [], fromPool: { energy: 0, showdownOnly: 0, power: [] } };
 
     // Power first — it is the constrained currency, and recycling a rune also removes it
     // from the energy pool, so a greedy energy-first solve strands power costs.
@@ -49,6 +49,11 @@
       ready.splice(idx, 1);
     }
     let e = cost.energy;
+    // Showdown-only Energy is spent FIRST while a showdown is open, because it is lost
+    // the moment the showdown closes and ordinary Energy is not.
+    const sdPool = state.showdown ? (P.pool.showdownOnly || 0) : 0;
+    const useSd = Math.min(e, sdPool);
+    plan.fromPool.showdownOnly = useSd; e -= useSd;
     const useFromPool = Math.min(e, pool.energy);
     plan.fromPool.energy = useFromPool; e -= useFromPool;
     if (e > ready.length) return null;
@@ -57,6 +62,110 @@
   };
 
   RB.canPay = function (state, p, cost) { return !!RB.planPayment(state, p, cost); };
+
+  // --- additional costs, and the cost-modifier layer ------------------------
+  // An additional cost is chosen AS a card is played and is part of its total cost
+  // (§349 step 3). Two kinds matter: a resource surcharge ([Accelerate]'s "pay [1][C] and
+  // I enter ready") and a sacrifice that gates legality ("kill a friendly Mighty unit").
+  // A sacrifice authored as an EFFECT instead would make the spell castable with nothing
+  // to sacrifice, which is a different card — so its availability is checked here.
+  RB.additionalCost = function (state, iid, id) {
+    const ab = RB.cardOf(state, iid).abilities || {};
+    const x = (ab.additionalCosts || []).find(c => c.id === id);
+    if (!x) throw new Error(RB.cardOf(state, iid).id + ' has no additional cost ' + id);
+    return x;
+  };
+  RB.extraAvailable = Object.create(null);
+  RB.defineExtraCost = function (name, spec) { RB.extraAvailable[name] = spec; };
+
+  // Which additional costs can this player actually choose right now? Returns the ids.
+  RB.availableExtras = function (state, p, iid) {
+    const ab = RB.cardOf(state, iid).abilities || {};
+    const out = [];
+    for (const x of ab.additionalCosts || []) {
+      if (x.pays) {
+        const spec = RB.extraAvailable[x.pays];
+        if (!spec) throw new Error('no extra-cost kind named ' + x.pays);
+        if (!spec.available(state, p, iid, x)) continue;
+      }
+      out.push(x.id);
+    }
+    return out;
+  };
+  RB.payExtra = function (state, p, iid, x) {
+    if (!x.pays) return;
+    RB.extraAvailable[x.pays].pay(state, p, iid, x);
+  };
+
+  // The kinds of additional cost a card can name. Each answers two questions: can the
+  // player pay it at all (which is what gates legality), and what happens when they do.
+  RB.defineExtraCost('killFriendly', {
+    available: (s, p, iid, x) => pickKillable(s, p, iid, x).length > 0,
+    pay: (s, p, iid, x) => { const c = pickKillable(s, p, iid, x); if (c.length) RB.kill(s, c[0]); },
+  });
+  function pickKillable(s, p, iid, x) {
+    const pool = RB.allUnits(s).filter(u => RB.obj(s, u).controller === p && u !== iid);
+    const f = pool.filter(u => (!x.mighty || RB.isMighty(s, u)) &&
+      (!x.tag || (RB.card(RB.obj(s, u).cardId).tags || []).includes(x.tag)));
+    // Cheapest first: an additional cost should not eat the best unit on the board.
+    return f.sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b));
+  }
+  RB.defineExtraCost('discard', {
+    available: (s, p, iid, x) => s.players[p].hand.filter(h => h !== iid).length >= (x.n || 1),
+    pay: (s, p, iid, x) => {
+      const P = s.players[p];
+      for (let i = 0; i < (x.n || 1); i++) {
+        const h = P.hand.filter(c => c !== iid);
+        if (!h.length) break;
+        RB.removeFrom(P.hand, h[h.length - 1]);
+        P.trash.push(h[h.length - 1]);
+      }
+    },
+  });
+  RB.defineExtraCost('spendBuff', {
+    available: (s, p, iid, x) => buffPool(s, p).length >= (x.n || 1),
+    pay: (s, p, iid, x) => {
+      const pool = buffPool(s, p);
+      for (let i = 0; i < (x.n || 1) && i < pool.length; i++) RB.obj(s, pool[i]).counters--;
+    },
+  });
+  function buffPool(s, p) {
+    return RB.allUnits(s).filter(u => RB.obj(s, u).controller === p && (RB.obj(s, u).counters || 0) > 0);
+  }
+  RB.defineExtraCost('recycleFromTrash', {
+    available: (s, p, iid, x) => s.players[p].trash.length >= (x.n || 1),
+    pay: (s, p, iid, x) => {
+      const P = s.players[p];
+      for (let i = 0; i < (x.n || 1) && P.trash.length; i++) P.deck.push(P.trash.pop());
+    },
+  });
+
+  // The total cost of playing a card: its printed cost, plus any additional costs chosen,
+  // through the modifier layer. Everything that changes what a card costs goes through
+  // here, so "I cost [2] less" and "ignore this spell's cost" have one home.
+  RB.costModifiers = [];
+  RB.defineCostModifier = function (fn) { RB.costModifiers.push(fn); };
+
+  RB.totalCost = function (state, iid, extras) {
+    const base = RB.costOf(state, iid);
+    const cost = { energy: base.energy, power: base.power,
+      domains: base.domains.slice(), each: base.each };
+    for (const x of extras || []) {
+      cost.energy += x.energy || 0;
+      if (x.power) {
+        cost.power += x.power;
+        cost.each = false;
+        if (x.domains) for (const d of x.domains) if (!cost.domains.includes(d)) cost.domains.push(d);
+      }
+      if (x.waivesBaseCost) { cost.energy = x.energy || 0; cost.power = x.power || 0; }
+    }
+    const o = RB.obj(state, iid);
+    for (const fn of RB.costModifiers) fn(state, o.controller, iid, cost);
+    cost.energy = Math.max(0, cost.energy);
+    cost.power = Math.max(0, cost.power);
+    if (cost.power === 0) cost.each = false;
+    return cost;
+  };
 
   // Say WHY a card cannot be paid for, in the player's terms, before the first click.
   // "Costs 3 and 1 Calm — you have 2 ready runes, none of them Calm" beats a greyed card.
@@ -79,6 +188,7 @@
   RB.pay = function (state, p, plan) {
     const P = state.players[p];
     P.pool.energy -= plan.fromPool.energy;
+    P.pool.showdownOnly -= (plan.fromPool.showdownOnly || 0);
     for (const d of plan.fromPool.power) { if (d === 'any') P.pool.any--; else P.pool.power[d]--; }
     for (const iid of plan.exhaust) {
       RB.obj(state, iid).exhausted = true;

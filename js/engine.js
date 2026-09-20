@@ -48,9 +48,25 @@
     if (who !== state.active) return [{ t: 'pass' }];
     for (const a of playableFrom(state, who, 'main')) out.push(a);
     for (const a of moveActions(state, who)) out.push(a);
+    for (const a of hideActions(state, who)) out.push(a);
     out.push({ t: 'endTurn' });
     return out;
   };
+
+  // The empty set first: a card with no additional costs yields exactly one combination,
+  // and a card with them still offers the plain play unless one is mandatory.
+  function extraCombinations(state, p, iid) {
+    const ab = RB.cardOf(state, iid).abilities || {};
+    const all = ab.additionalCosts || [];
+    if (!all.length) return [[]];
+    const usable = RB.availableExtras(state, p, iid);
+    const optional = all.filter(x => x.optional !== false && usable.includes(x.id)).map(x => x.id);
+    const required = all.filter(x => x.optional === false).map(x => x.id);
+    for (const r of required) if (!usable.includes(r)) return [];   // cannot be paid: unplayable
+    const out = [required.slice()];
+    for (const id of optional) out.push(required.concat([id]));
+    return out;
+  }
 
   function timingOk(state, card, mode) {
     const kws = (card.abilities && card.abilities.keywords) || [];
@@ -65,14 +81,36 @@
     const out = [];
     const P = state.players[p];
     const seen = new Set();
+    // A facedown card gains [Reaction] and may be played ignoring its base cost, from the
+    // turn after it was hidden (§811). It is offered in every mode a Reaction is.
+    for (let i = 0; i < state.bf.length; i++) {
+      for (const h of state.bf[i].hidden) {
+        if (h.owner !== p || state.bf[i].controller !== p) continue;
+        if (h.turnHidden >= state.turn) continue;             // not until the next turn
+        const card = RB.cardOf(state, h.iid);
+        for (const dest of playDestinations(state, p, card))
+          out.push({ t: 'play', iid: h.iid, to: dest, from: 'hidden', bf: i });
+      }
+    }
     for (const iid of P.hand) {
       const card = RB.cardOf(state, iid);
       if (seen.has(card.id)) continue;               // one action per distinct card in hand
       if (!timingOk(state, card, mode)) continue;
-      const cost = RB.costOf(state, iid);
-      if (!RB.canPay(state, p, cost)) continue;
-      seen.add(card.id);
-      for (const dest of playDestinations(state, p, card)) out.push({ t: 'play', iid: iid, to: dest });
+      // Every combination of optional additional costs the player could choose is its own
+      // action, because paying one changes both what the card costs and what it does —
+      // [Accelerate] is a different play, not a decision taken afterwards.
+      const dests = playDestinations(state, p, card);
+      if (!dests.length) continue;
+      let any = false;
+      for (const pick of extraCombinations(state, p, iid)) {
+        const cost = RB.totalCost(state, iid, pick.map(id => RB.additionalCost(state, iid, id)));
+        if (!RB.canPay(state, p, cost)) continue;
+        any = true;
+        for (const dest of dests)
+          out.push(pick.length ? { t: 'play', iid: iid, to: dest, pay: pick }
+                               : { t: 'play', iid: iid, to: dest });
+      }
+      if (any) seen.add(card.id);
     }
     // The legend's activated abilities and the units' own, in the same shape.
     const sources = [P.legend].concat(P.base, state.bf.flatMap(b => b.units))
@@ -103,9 +141,15 @@
       const out = ['base'];
       if (ab.playTo === 'any')
         for (let i = 0; i < state.bf.length; i++) out.push('bf' + i);
-      else if (kw('Ambush'))
+      else {
+        // A play-location permission is narrow on most cards — "where you have units",
+        // "where there are enemy units", "a battlefield you're attacking". Each is a named
+        // predicate, not the blanket playTo:'battlefield'.
+        const perms = (ab.playAlso || []).slice();
+        if (kw('Ambush')) perms.push('whereIHaveUnits');
         for (let i = 0; i < state.bf.length; i++)
-          if (RB.unitsAt(state, i, p).length) out.push('bf' + i);
+          if (perms.some(name => RB.playWhere(name)(state, p, i))) out.push('bf' + i);
+      }
       return out;
     }
     if (card.type === 'Gear') {
@@ -133,9 +177,47 @@
     }
     return out;
   }
+  // Where may this card be played, beyond your base? One predicate per printed phrase.
+  const PLAY_WHERE = {
+    whereIHaveUnits: (s, p, i) => RB.unitsAt(s, i, p).length > 0,
+    whereEnemyUnits: (s, p, i) => RB.unitsAt(s, i, RB.opponentOf(p)).length > 0,
+    whereIAmAttacking: (s, p, i) => !!(s.showdown && s.showdown.bf === i && s.showdown.attacker === p)
+      || s.bf[i].contestedBy === p,
+    whereIControl: (s, p, i) => s.bf[i].controller === p,
+    anyBattlefield: () => true,
+  };
+  RB.playWhere = function (name) {
+    const fn = PLAY_WHERE[name];
+    if (!fn) throw new Error('no play-location permission named ' + name);
+    return fn;
+  };
+  RB.definePlayWhere = function (name, fn) { PLAY_WHERE[name] = fn; };
+
   RB.bfGrantsGanking = function (state, i) {
     return RB.battlefieldStatics(state, i).some(s => s.grant === 'Ganking');
   };
+
+  // Hide: pay one Power of any domain to put a card facedown at a battlefield you control
+  // that has no facedown card there yet, for as long as you control it (§811). Hiding is
+  // not a subset of playing — it opens no chain.
+  function hideActions(state, p) {
+    const out = [];
+    const cost = { energy: 0, power: 1, domains: RB.DOMAINS.slice(), each: false };
+    if (!RB.canPay(state, p, cost)) return out;
+    const spots = [];
+    for (let i = 0; i < state.bf.length; i++)
+      if (state.bf[i].controller === p && !state.bf[i].hidden.length) spots.push(i);
+    if (!spots.length) return out;
+    const seen = new Set();
+    for (const iid of state.players[p].hand) {
+      const card = RB.cardOf(state, iid);
+      if (seen.has(card.id)) continue;
+      if (!RB.hasKeyword(state, iid, 'Hidden')) continue;
+      seen.add(card.id);
+      for (const i of spots) out.push({ t: 'hide', iid: iid, to: 'bf' + i });
+    }
+    return out;
+  }
 
   RB.queueActions = function (state, step) {
     if (step.kind === 'mulligan') {
@@ -171,6 +253,7 @@
       case 'mulligan': return doMulligan(s, who, a.toss);
       case 'play': return doPlay(s, who, a);
       case 'move': return doMove(s, who, a);
+      case 'hide': return doHide(s, who, a);
       case 'activate': return doActivate(s, who, a);
       case 'pass': return doPass(s, who);
       case 'endTurn': return endTurn(s);
@@ -191,17 +274,64 @@
     if (!s.queue.length) startTurn(s, s.firstPlayer, true);
   }
 
+  function doHide(s, p, a) {
+    const i = +a.to.slice(2);
+    const plan = RB.planPayment(s, p, { energy: 0, power: 1, domains: RB.DOMAINS.slice(), each: false });
+    if (!plan) throw new Error('cannot pay to hide');
+    RB.pay(s, p, plan);
+    RB.removeFrom(s.players[p].hand, a.iid);
+    s.bf[i].hidden.push({ iid: a.iid, owner: p, turnHidden: s.turn });
+    RB.log(s, 'hide', { p: p, iid: a.iid, bf: i }, 'card.play');
+  }
+
   function doPlay(s, p, a) {
     const iid = a.iid;
+    const P = s.players[p];
     const card = RB.cardOf(s, iid);
-    const plan = RB.planPayment(s, p, RB.costOf(s, iid));
+    if (a.from === 'hidden') return doPlayHidden(s, p, a);
+    // Optional additional costs are chosen as the card is played and are part of its
+    // total cost (§349 step 3), so they are solved and paid together with the base cost —
+    // never as an effect afterwards, which would make an unpayable card castable.
+    const extras = (a.pay || []).map(id => RB.additionalCost(s, iid, id));
+    const plan = RB.planPayment(s, p, RB.totalCost(s, iid, extras));
     if (!plan) throw new Error('cannot pay for ' + card.id);
     RB.pay(s, p, plan);
+    for (const x of extras) RB.payExtra(s, p, iid, x);
     RB.removeFrom(s.players[p].hand, iid);
-    RB.log(s, 'play', { p: p, iid: iid, card: card.id, to: a.to }, soundFor(card));
+    // Count it before anything resolves: a card that asks "is this my second card this
+    // turn" is asking about itself, and a counter bumped afterwards answers one too low.
+    P.playedThisTurn.push(card.id);
+    if ((card.tags || []).includes('Equipment') || card.type === 'Gear') P.turnFlags.equipment = true;
+    RB.log(s, 'play', { p: p, iid: iid, card: card.id, to: a.to,
+      nth: P.playedThisTurn.length }, soundFor(card));
+    RB.runTriggers(s, 'cardPlayed', { p: p, iid: iid, nth: P.playedThisTurn.length,
+      type: card.type });
     // Units and Gear resolve immediately on finalization and never sit on the chain
     // (rules §356); only spells and non-Add abilities linger there.
-    const item = { iid: iid, controller: p, to: a.to, kind: 'card', targets: a.targets };
+    const item = { iid: iid, controller: p, to: a.to, kind: 'card', targets: a.targets,
+      paid: (a.pay || []).slice(), cardId: card.id, energy: card.energy || 0 };
+    if (card.type === 'Unit' || card.type === 'Gear') { RB.resolveCard(s, item); return; }
+    s.chain.push(item);
+    s.priority = RB.opponentOf(p);
+    s.passes = 0;
+  }
+
+  // Playing from face down ignores the card's base cost and is a different play from a
+  // hand play — several cards read one and not the other, so the distinction is recorded.
+  function doPlayHidden(s, p, a) {
+    const bf = s.bf[a.bf];
+    const h = bf.hidden.find(x => x.iid === a.iid);
+    if (!h) throw new Error('no hidden card ' + a.iid);
+    bf.hidden.splice(bf.hidden.indexOf(h), 1);
+    const card = RB.cardOf(s, a.iid);
+    const P = s.players[p];
+    P.playedThisTurn.push(card.id);
+    RB.log(s, 'play', { p: p, iid: a.iid, card: card.id, to: a.to, from: 'hidden',
+      nth: P.playedThisTurn.length }, soundFor(card));
+    RB.runTriggers(s, 'cardPlayed', { p: p, iid: a.iid, nth: P.playedThisTurn.length,
+      type: card.type, fromHidden: true });
+    const item = { iid: a.iid, controller: p, to: a.to, kind: 'card', fromHidden: true,
+      cardId: card.id, energy: card.energy || 0, paid: [] };
     if (card.type === 'Unit' || card.type === 'Gear') { RB.resolveCard(s, item); return; }
     s.chain.push(item);
     s.priority = RB.opponentOf(p);
@@ -299,6 +429,9 @@
   function startTurn(s, p, isFirst) {
     s.active = p; s.turn++; s.priority = p; s.passes = 0;
     s.players[p].scoredThisTurn = [];
+    s.players[p].playedThisTurn = [];
+    s.players[p].drawsThisTurn = 0;
+    s.players[p].turnFlags = {};
     RB.log(s, 'turnStart', { p: p, turn: s.turn }, 'turn.start');
 
     // Awaken Phase — ready everything you control. Rule 316.2.
@@ -331,6 +464,7 @@
     for (let q = 0; q < 2; q++) {
       s.players[q].pool.energy = 0;
       s.players[q].pool.any = 0;
+      s.players[q].pool.showdownOnly = 0;
       for (const d of RB.DOMAINS) s.players[q].pool.power[d] = 0;
     }
     s.phase = 'main';
@@ -365,6 +499,8 @@
     else if (loc.kind === 'bfGear') RB.removeFrom(s.bf[loc.bf].gear, iid);
     else return;
     RB.log(s, 'die', { iid: iid, p: o.controller }, 'unit.die');
+    RB.runTriggers(s, 'leftBoard', { p: o.controller, iid: iid,
+      bf: loc.kind === 'bf' ? loc.bf : undefined });
     // Deathknell fires from the dying card itself, noting where it was — rule 808. It has
     // to run BEFORE the card's modifications are cleared and before it reaches the trash,
     // or a death trigger is a silent drop, which is worse than the card being unplayable.
@@ -380,6 +516,11 @@
   // The cleanup loop (rule 323): win check, deaths, control, staging. It runs after every
   // action until the state stops changing, which is what makes triggers and chained
   // showdowns work without a second control flow.
+  // The cleanup loop, by name. apply() runs it after every action; a test or a tool that
+  // changes state directly needs the same settling, and a second copy of this loop is the
+  // last thing this engine should grow.
+  RB.settle = function (s) { advance(s); return s; };
+
   function advance(s) {
     for (let guard = 0; guard < 64; guard++) {
       if (s.winner !== null) return;
@@ -399,13 +540,43 @@
         RB.log(s, 'gameOver', { winner: p }, 'game.win');
         return false;
       }
+    // 2b. Crossings. "When one of your units becomes Mighty" and "when I become ready"
+    // are about a CHANGE, and Might is derived on demand — so the previous value is
+    // remembered on the object and the crossing is detected here, in the one loop that
+    // already runs after every state change.
+    for (const iid of RB.allUnits(s)) {
+      const o = s.objects[iid];
+      const mighty = RB.isMighty(s, iid);
+      if (mighty && o.wasMighty === false) {
+        o.wasMighty = true;
+        RB.runTriggers(s, 'becameMighty', { p: o.controller, iid: iid });
+        changed = true;
+      } else if (o.wasMighty !== mighty) o.wasMighty = mighty;
+      const ready = !o.exhausted;
+      if (ready && o.wasReady === false) {
+        o.wasReady = true;
+        RB.runTriggers(s, 'becameReady', { p: o.controller, iid: iid });
+        changed = true;
+      } else if (o.wasReady !== ready) o.wasReady = ready;
+    }
     // 3. Lethal damage.
     for (let i = 0; i < s.bf.length; i++)
       for (const iid of s.bf[i].units.slice())
-        if (RB.obj(s, iid).damage > 0 && RB.obj(s, iid).damage >= RB.mightOf(s, iid)) { RB.kill(s, iid); changed = true; }
+        if (RB.isLethalDamage(s, iid)) { RB.kill(s, iid); changed = true; }
     for (let p = 0; p < 2; p++)
       for (const iid of s.players[p].base.slice())
-        if (RB.obj(s, iid).damage > 0 && RB.obj(s, iid).damage >= RB.mightOf(s, iid)) { RB.kill(s, iid); changed = true; }
+        if (RB.isLethalDamage(s, iid)) { RB.kill(s, iid); changed = true; }
+    // 5. Remove all Hidden cards from battlefields not controlled by the same player and
+    // place them in their owner's trash (cleanup step 5). A hidden card lives only as
+    // long as you hold the ground it is buried under.
+    for (const bf of s.bf)
+      for (const h of bf.hidden.slice())
+        if (bf.controller !== h.owner) {
+          bf.hidden.splice(bf.hidden.indexOf(h), 1);
+          s.players[h.owner].trash.push(h.iid);
+          RB.log(s, 'hiddenLost', { p: h.owner, iid: h.iid });
+          changed = true;
+        }
     // 4. An open battlefield with nobody on it and no fight pending becomes uncontrolled.
     if (!s.showdown && !s.chain.length)
       for (const bf of s.bf)
@@ -445,6 +616,12 @@
     for (const iid of RB.unitsAt(s, i, attacker)) RB.obj(s, iid).role = 'attacker';
     for (const iid of RB.unitsAt(s, i, defender)) RB.obj(s, iid).role = 'defender';
     RB.log(s, 'showdownOpen', { bf: i, attacker: attacker, defender: defender, combat: s.showdown.combat }, 'showdown.start');
+    // Three events fire here, and cards want all three: the showdown beginning at this
+    // battlefield, and each side taking its designation. Roles are stamped above, so a
+    // trigger asking "am I a defender" already reads true.
+    RB.runTriggers(s, 'showdownBegins', { p: attacker, bf: i, attacker: attacker, defender: defender });
+    RB.runTriggers(s, 'attack', { p: attacker, bf: i });
+    RB.runTriggers(s, 'defend', { p: defender, bf: i });
   }
   RB.openShowdown = openShowdown;
 })(window.RB = window.RB || {});

@@ -43,6 +43,16 @@
   RB.defineDescriber('xp', e => 'Gain ' + n(e) + ' XP.');                                                   // ops.xp
   RB.defineDescriber('counters', e => 'Put ' + n(e) + ' counter' + (n(e) === 1 ? '' : 's') +
     ' on ' + sel(e.target) + '.');                                                                          // ops.counters
+  RB.defineDescriber('playFromZone', e => 'Play a ' + (e.type ? e.type.toLowerCase() : 'card') +
+    ' from your ' + (e.zone || 'trash') +
+    (e.ignoreCost ? ', ignoring its cost' : e.ignoreEnergy ? ', ignoring its Energy cost' : '') + '.');     // ops.playFromZone
+  RB.defineDescriber('swapMight', e => 'Swap the Might of ' + sel(e.target) + '.');                        // ops.swapMight
+  RB.defineDescriber('addBattlefield', () => 'Add a battlefield to the game.');                             // ops.addBattlefield
+  RB.defineDescriber('addShowdownEnergy', e => 'Add ' + n(e) +
+    ' Energy, spendable only during showdowns.');                                                           // ops.addShowdownEnergy
+  RB.defineDescriber('delayed', e => 'Later, ' + trigger(e.on) + ', ' +
+    lower(e.effects.map(line).join(' ')));                                                                  // ops.delayed
+  function trigger(on) { return (TRIGGER_WORDS[on] || on).replace(/^When /, 'when ').replace(/^At /, 'at '); }
 
   function sel(s, subject) {
     if (!s || s === 'self') return subject ? 'It' : 'me';
@@ -56,6 +66,11 @@
   const TRIGGER_WORDS = {
     played: 'When I am played', conquer: 'When you conquer', hold: 'When you hold',
     died: 'When a unit dies', deathknell: 'Deathknell', moved: 'When a unit moves',
+    cardPlayed: 'When a card is played', spellPlayed: 'When a spell is played',
+    drew: 'When you draw', showdownBegins: 'When a showdown begins here',
+    attack: 'When you attack here', defend: 'When you defend here',
+    becameMighty: 'When a unit becomes Mighty', becameReady: 'When a unit becomes ready',
+    chosen: 'When a unit is chosen', leftBoard: 'When a card leaves the board',
     beginningPhase: 'At the start of your turn', endOfTurn: 'At the end of your turn',
     combatEnd: 'When a combat ends', unitPlayed: 'When you play a unit',
   };
@@ -65,6 +80,12 @@
     const ab = c.abilities;
     if (!ab) return '';
     const out = [];
+    for (const x of ab.additionalCosts || [])
+      out.push((x.optional === false ? 'As an additional cost, ' : 'You may pay ') +
+        extraCost(x) + (x.optional === false ? '' : ' as an additional cost') +
+        (x.entersReady ? '; if you do, I enter ready' : '') +
+        (x.waivesBaseCost ? '; if you do, ignore my cost' : '') + '.');
+    for (const w of ab.playAlso || []) out.push(PLAY_WHERE_TEXT[w] || ('I may be played ' + w) + '.');
     for (const k of ab.keywords || []) out.push(typeof k === 'string' ? k : k.name + (k.value ? ' ' + k.value : ''));
     for (const t of ab.triggers || [])
       out.push((TRIGGER_WORDS[t.on] || t.on) + ', ' + lower(t.effects.map(line).join(' ')));
@@ -108,6 +129,23 @@
   RB.staticText = staticText;
 
   function lower(s) { return s.charAt(0).toLowerCase() + s.slice(1); }
+  const PLAY_WHERE_TEXT = {
+    whereIHaveUnits: 'I can be played to a battlefield where you have units.',
+    whereEnemyUnits: 'I can be played to a battlefield where there are enemy units.',
+    whereIAmAttacking: "I can be played to a battlefield you're attacking.",
+    whereIControl: 'I can be played to a battlefield you control.',
+  };
+  function extraCost(x) {
+    const bits = [];
+    if (x.energy) bits.push(x.energy + ' Energy');
+    if (x.power) bits.push(x.power + ' Power');
+    if (x.pays === 'killFriendly') bits.push('kill a friendly ' + (x.mighty ? 'Mighty ' : '') + 'unit');
+    if (x.pays === 'discard') bits.push('discard ' + (x.n || 1));
+    if (x.pays === 'spendBuff') bits.push('spend ' + (x.n || 1) + ' buff');
+    if (x.pays === 'recycleFromTrash') bits.push('recycle ' + (x.n || 1) + ' from your trash');
+    return bits.join(' and ') || 'nothing';
+  }
+
   function cost(a) {
     const bits = [];
     if (a.energy) bits.push(a.energy + ' Energy');

@@ -19,13 +19,34 @@
     const i = sd.bf;
     const A = RB.unitsAt(s, i, sd.attacker);
     const D = RB.unitsAt(s, i, sd.defender);
-    const sum = list => list.reduce((n, iid) => n + RB.mightOf(s, iid), 0);
+    // A unit may be prevented from dealing combat damage ("enemy units here with less
+    // Might than me don't deal combat damage"). Zeroing its Might instead would also make
+    // it die to any damage, which is a different card — so the exemption is on the SUM,
+    // not on the unit.
+    const sum = list => list.reduce((n, iid) => n + RB.combatMightOf(s, iid), 0);
     const assignA = assign(s, sum(A), D);
     const assignD = assign(s, sum(D), A);
     RB.log(s, 'combatDamage', { bf: i, attackerMight: sum(A), defenderMight: sum(D) }, 'showdown.start');
     for (const [iid, n] of assignA) RB.obj(s, iid).damage += n;
     for (const [iid, n] of assignD) RB.obj(s, iid).damage += n;
   }
+
+  // What this unit contributes to its side's combat damage. Usually its Might; a static
+  // carrying `noCombatDamage` zeroes the contribution without touching how much damage it
+  // takes to kill it.
+  RB.combatMightOf = function (s, iid) {
+    for (const st of RB.staticsOn(s, iid)) if (st.noCombatDamage) return 0;
+    return RB.mightOf(s, iid);
+  };
+
+  // Lethal damage is normally damage equal to or above Might. A static carrying
+  // `anyDamageKills` rewrites that for damage dealt by its controller.
+  RB.isLethalDamage = function (s, iid) {
+    const o = RB.obj(s, iid);
+    if (o.damage <= 0) return false;
+    for (const st of RB.staticsOn(s, iid)) if (st.anyDamageKills) return true;
+    return o.damage >= RB.mightOf(s, iid);
+  };
 
   // Tank must be assigned first; a unit that cannot be dealt damage is skipped entirely.
   function assign(s, pool, targets) {
@@ -61,8 +82,7 @@
   // then establish control — which is a Conquer if that player has not scored here yet.
   function resolveCombat(s, sd) {
     const i = sd.bf, bf = s.bf[i];
-    for (const iid of bf.units.slice())
-      if (RB.obj(s, iid).damage > 0 && RB.obj(s, iid).damage >= RB.mightOf(s, iid)) RB.kill(s, iid);
+    for (const iid of bf.units.slice()) if (RB.isLethalDamage(s, iid)) RB.kill(s, iid);
     for (const iid of bf.units) RB.obj(s, iid).damage = 0;     // 3c. Heal all Units.
 
     if (sd.combat) {

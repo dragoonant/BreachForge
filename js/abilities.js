@@ -13,10 +13,17 @@
     const iid = item.iid, p = item.controller;
     const card = RB.cardOf(s, iid);
     const ab = card.abilities || {};
-    const ctx = { p: p, source: iid, to: item.to, targets: item.targets || [] };
+    const ctx = { p: p, source: iid, to: item.to, targets: item.targets || [],
+      fromHidden: !!item.fromHidden, paid: item.paid || [] };
+
+    // An additional cost may change how the card enters or add its own clause —
+    // [Accelerate] is "pay more and I enter ready", which is a property of the play, not
+    // an effect that happens to it afterwards.
+    const extras = (item.paid || []).map(id => RB.additionalCost(s, iid, id));
+    const entersReady = extras.some(x => x.entersReady);
 
     if (card.type === 'Unit') {
-      RB.obj(s, iid).exhausted = true;             // units enter the board exhausted
+      RB.obj(s, iid).exhausted = !entersReady;     // units enter the board exhausted
       RB.obj(s, iid).enteredTurn = s.turn;
       if (item.to && item.to.startsWith('bf')) {
         const i = +item.to.slice(2);
@@ -37,6 +44,7 @@
       s.players[p].trash.push(iid);
       if (card.type === 'Spell') RB.runTriggers(s, 'spellPlayed', { p: p, iid: iid });
     }
+    for (const x of extras) if (x.effects) RB.runEffects(s, x.effects, ctx);
   };
 
   RB.resolveAbility = function (s, item) {
@@ -50,19 +58,52 @@
     const ab = RB.cardOf(s, iid).abilities;
     if (!ab || !ab.triggers) return;
     const o = RB.obj(s, iid);
+    // "Your Deathknell effects trigger an additional time" is a continuous modification of
+    // how often another card's trigger fires, so the count is asked here rather than
+    // written into the trigger.
+    let times = 1;
+    for (const u of RB.allUnits(s).concat([s.players[o.controller].legend]))
+      if (u && RB.obj(s, u).controller === o.controller)
+        for (const st of (RB.cardOf(s, u).abilities || {}).statics || [])
+          if (st.deathknellExtra) times += st.deathknellExtra;
     for (const t of ab.triggers) {
       if (t.on !== 'deathknell') continue;
-      const prev = s.via;
-      s.via = { iid: iid };
-      RB.runEffects(s, t.effects, { p: o.controller, source: iid,
-        event: { p: o.controller, iid: iid, bf: loc.kind === 'bf' ? loc.bf : undefined } });
-      s.via = prev;
+      for (let k = 0; k < times; k++) {
+        const prev = s.via;
+        s.via = { iid: iid };
+        RB.runEffects(s, t.effects, { p: o.controller, source: iid,
+          event: { p: o.controller, iid: iid, bf: loc.kind === 'bf' ? loc.bf : undefined } });
+        s.via = prev;
+      }
     }
   };
 
   // Triggered abilities. Every permanent in play plus both legends is asked; a trigger that
   // fires stamps `via` on everything it logs, so a consequence never reads as a turn.
+  // A delayed ability outlives its source: "return it when they hold, even if I'm no
+  // longer on the board". Every trigger in the table is asked of a card still in play, so
+  // these live on the state instead and are drained by the same dispatcher.
+  RB.defineOp('delayed', (s, e, ctx) => {
+    s.delayed = s.delayed || [];
+    s.delayed.push({ on: e.on, p: ctx.p, source: ctx.source, effects: e.effects,
+      once: e.once !== false, data: e.data || {} });
+    RB.log(s, 'delayed', { p: ctx.p, on: e.on });
+  });
+
   RB.runTriggers = function (s, event, data) {
+    // Delayed abilities first: they were promised earlier and do not depend on their
+    // source still existing.
+    if (s.delayed && s.delayed.length) {
+      for (const d of s.delayed.slice()) {
+        if (d.on !== event) continue;
+        if (d.mine !== false && d.watch === 'mine' && data.p !== d.p) continue;
+        if (d.once) s.delayed.splice(s.delayed.indexOf(d), 1);
+        const prev = s.via;
+        s.via = { iid: d.source };
+        RB.runEffects(s, d.effects, { p: d.p, source: d.source, event: data, delayed: d.data });
+        s.via = prev;
+      }
+    }
     const sources = [];
     for (let p = 0; p < 2; p++) {
       if (s.players[p].legend) sources.push([s.players[p].legend, p]);
@@ -157,6 +198,67 @@
   });
   RB.defineOp('nothing', () => {});
 
+  // Play a card out of a zone that is not your hand. Playing is otherwise a core action
+  // from hand only, which is why "play a unit from your trash" had nowhere to live.
+  RB.defineOp('playFromZone', (s, e, ctx) => {
+    const P = s.players[ctx.p];
+    const zone = e.zone === 'deck' ? P.deck : P.trash;
+    const pool = zone.filter(iid => {
+      const c = RB.cardOf(s, iid);
+      if (e.type && c.type !== e.type) return false;
+      if (e.maxEnergy != null && (c.energy || 0) > e.maxEnergy) return false;
+      return true;
+    });
+    if (!pool.length) return;
+    // Biggest first: a card that lets you replay something from the trash means the best
+    // thing there, and an op that takes the worst is a weaker card than the printed one.
+    pool.sort((a, b) => (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0));
+    const iid = pool[0];
+    RB.removeFrom(zone, iid);
+    // The cost is ignored where the card says so; where it is not, the power half is
+    // still owed and is solved through the ordinary payment path.
+    if (!e.ignoreCost) {
+      const cost = RB.costOf(s, iid);
+      if (e.ignoreEnergy) cost.energy = 0;
+      const plan = RB.planPayment(s, ctx.p, cost);
+      if (!plan) { zone.push(iid); return; }
+      RB.pay(s, ctx.p, plan);
+    }
+    RB.log(s, 'play', { p: ctx.p, iid: iid, card: RB.cardOf(s, iid).id,
+      from: e.zone || 'trash' }, 'card.play');
+    RB.resolveCard(s, { iid: iid, controller: ctx.p, to: e.to || 'base', kind: 'card' });
+  });
+
+  // A unit's Might is swapped, held for the turn. RB.mightOf derives Might on demand, so
+  // a swap is expressed as the buff that makes the derivation come out right.
+  RB.defineOp('swapMight', (s, e, ctx) => {
+    const list = asList(s, e.target, ctx);
+    if (list.length < 2) return;
+    const [a, b] = list;
+    const ma = RB.mightOf(s, a), mb = RB.mightOf(s, b);
+    RB.obj(s, a).buffs += mb - ma;
+    RB.obj(s, b).buffs += ma - mb;
+    RB.log(s, 'swapMight', { a: a, b: b });
+  });
+
+  // "Play a battlefield token." The board is a fixed list of two in 1v1, so a card that
+  // adds one adds a third — provider null, controlled by nobody until someone takes it.
+  RB.defineOp('addBattlefield', (s, e, ctx) => {
+    const iid = RB.mint(s, e.cardId, ctx.p);
+    RB.obj(s, iid).token = true;
+    s.bf.push({ iid: iid, cardId: e.cardId, provider: ctx.p, controller: null,
+      units: [], gear: [], hidden: [], contestedBy: null,
+      showdownStaged: false, combatStaged: false, token: true });
+    RB.log(s, 'addBattlefield', { p: ctx.p, card: e.cardId });
+  });
+
+  RB.defineOp('addShowdownEnergy', (s, e, ctx) => {
+    // Energy that may only be spent during showdowns. It is a separate bucket because the
+    // rune pool is one untagged number, and adding it there would be strictly better than
+    // the printed card.
+    s.players[ctx.p].pool.showdownOnly = (s.players[ctx.p].pool.showdownOnly || 0) + (e.n || 1);
+  });
+
   // "You may X." A real optional clause: it asks, and declining is a legal answer. The
   // human seat answers on the prompt line; the AI answers through the same queue step, so
   // there is exactly one place that knows what "may" means.
@@ -228,13 +330,53 @@
 
   // A "choose a unit" clause resolves against the best candidate by a stated rule rather
   // than opening a modal for every minor effect. D-2: the player does not yet choose.
+  //
+  // Choosing is not free. [Deflect] is a mandatory additional Power cost on a spell or
+  // ability that chooses the unit (§809), so a candidate whose Deflect the chooser cannot
+  // pay is not a legal choice at all — and one they can pay costs them the Power. And
+  // every choice is ANNOUNCED, because "when you choose a friendly unit" is a printed
+  // trigger that has nothing to fire on otherwise.
   RB.autoPick = function (s, sel, ctx) {
     let pool = RB.select(s, sel.pick, ctx);
     if (sel.filter === 'damaged') pool = pool.filter(i => RB.obj(s, i).damage > 0);
     if (sel.maxMight !== undefined) pool = pool.filter(i => RB.mightOf(s, i) <= sel.maxMight);
+    if (sel.mighty) pool = pool.filter(i => RB.isMighty(s, i));
+    pool = pool.filter(i => RB.canChoose(s, ctx.p, i));
     if (!pool.length) return [];
-    pool = pool.slice().sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
-    return pool.slice(0, sel.n || 1);
+    const low = sel.smallest;
+    pool = pool.slice().sort((a, b) => low ? RB.mightOf(s, a) - RB.mightOf(s, b)
+                                           : RB.mightOf(s, b) - RB.mightOf(s, a));
+    const taken = pool.slice(0, sel.n || 1);
+    for (const iid of taken) RB.announceChoice(s, ctx.p, iid, ctx.source);
+    return taken;
+  };
+
+  // The Deflect toll: what an opposing chooser must pay to choose this unit, in Power of
+  // any domain. Zero for your own units and for units without the keyword.
+  RB.deflectCost = function (s, chooser, iid) {
+    const o = RB.obj(s, iid);
+    if (o.controller === chooser) return 0;
+    let n = 0;
+    if (RB.hasKeyword(s, iid, 'Deflect')) n += Math.max(1, RB.keywordValue(s, iid, 'Deflect'));
+    for (const st of RB.staticsOn(s, iid)) if (st.grant === 'Deflect') n += 1;
+    return n;
+  };
+  RB.canChoose = function (s, chooser, iid) {
+    if (RB.obj(s, iid).untargetable && RB.obj(s, iid).controller !== chooser) return false;
+    for (const st of RB.staticsOn(s, iid))
+      if (st.untargetableByEnemies && RB.obj(s, iid).controller !== chooser) return false;
+    const n = RB.deflectCost(s, chooser, iid);
+    if (!n) return true;
+    return RB.canPay(s, chooser, { energy: 0, power: n, domains: RB.DOMAINS.slice(), each: false });
+  };
+  RB.announceChoice = function (s, chooser, iid, source) {
+    const n = RB.deflectCost(s, chooser, iid);
+    if (n) {
+      const plan = RB.planPayment(s, chooser, { energy: 0, power: n, domains: RB.DOMAINS.slice(), each: false });
+      if (plan) { RB.pay(s, chooser, plan); RB.log(s, 'deflectPaid', { p: chooser, iid: iid, n: n }); }
+    }
+    RB.runTriggers(s, 'chosen', { p: RB.obj(s, iid).controller, chooser: chooser,
+      iid: iid, source: source });
   };
 })(window.RB = window.RB || {});
 
