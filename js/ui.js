@@ -188,10 +188,12 @@
       btn('Cancel', () => { U.sel = null; RB.paintBoard(state, me); });
       return;
     }
-    const plays = acts.filter(a => a.t === 'play').length;
-    const moves = acts.filter(a => a.t === 'move').length;
-    say('Your main phase — ' + plays + ' card' + (plays === 1 ? '' : 's') + ' playable, ' +
-      moves + ' move' + (moves === 1 ? '' : 's') + ' available.');
+    const plays = new Set(acts.filter(a => a.t === 'play').map(a => a.iid)).size;
+    const moves = new Set(acts.filter(a => a.t === 'move').map(a => a.iid)).size;
+    const held = state.players[me].hand.length;
+    say('Your main phase — <b>' + plays + '</b> of ' + held + ' card' + (held === 1 ? '' : 's') +
+      ' playable, <b>' + moves + '</b> unit' + (moves === 1 ? '' : 's') + ' can move.' +
+      (plays === 0 && held > 0 ? ' <span style="color:#9fb0cc">Hover a card to see what it needs.</span>' : ''));
     btn('End turn', () => RB.commit({ t: 'endTurn' }), 'primary');
   };
 

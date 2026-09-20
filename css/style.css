@@ -71,7 +71,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .card-preview .stat{font-size:1.5rem}
 .stat.hurt{color:#ff9a8a}
 .stat.buffed{color:#9effc4}
-.card.is-exhausted{transform:rotate(7deg)}
+.card.is-exhausted{transform:rotate(7deg);transform-origin:50% 85%}
 .card.is-token .card-name{font-style:italic}
 .card-back{background:linear-gradient(150deg,#22304e,#0d1424 60%);display:flex;align-items:center;justify-content:center}
 .card-back::before{content:'';width:46%;aspect-ratio:1;border-radius:50%;
@@ -109,8 +109,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 /* ---------------------------------------------------------------- board */
 #game{display:grid;grid-template-rows:var(--chrome-top) 1fr var(--chrome-bottom)}
-#topbar{display:flex;align-items:center;gap:1rem;padding:0 .9rem;border-bottom:1px solid var(--edge);
-  background:linear-gradient(180deg,rgba(255,255,255,.05),transparent)}
+#topbar{display:flex;align-items:center;gap:.8rem;padding:0 .8rem;border-bottom:1px solid var(--edge);
+  background:linear-gradient(180deg,rgba(255,255,255,.05),transparent);white-space:nowrap;overflow:hidden}
 .scoreline{display:flex;align-items:center;gap:.4rem}
 .pips{display:flex;gap:.16rem}
 .sp{width:.62rem;height:.62rem;border-radius:50%;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.05)}
@@ -125,12 +125,12 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .side.them{align-items:flex-start}
 .zone{border:1px solid var(--edge);border-radius:.5rem;padding:.3rem .4rem;min-height:0;height:100%;
   background:rgba(255,255,255,.022);position:relative}
-.zone>.lbl{position:absolute;top:.18rem;left:.45rem;font-size:.58rem;letter-spacing:.14em;
-  text-transform:uppercase;color:#63748f;pointer-events:none}
-.zonerow{display:flex;gap:.28rem;align-items:center;flex-wrap:wrap;padding-top:.85rem;min-height:0;
-  overflow:hidden}
+.zone>.lbl{position:absolute;top:.18rem;left:.45rem;right:.45rem;font-size:.58rem;letter-spacing:.1em;
+  text-transform:uppercase;color:#63748f;pointer-events:none;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.zonerow{display:flex;gap:.34rem;align-items:center;flex-wrap:wrap;padding-top:.95rem;min-height:0}
 .legendbox{display:flex;flex-direction:column;align-items:center;gap:.22rem;width:7.2rem}
-.runes{display:flex;flex-wrap:wrap;gap:.15rem;width:7.6rem;padding-top:.85rem}
+.runes{display:flex;flex-wrap:wrap;gap:.15rem;width:7.6rem;padding-top:1.05rem;align-content:flex-start}
 .rune{width:1.05rem;height:1.5rem;border-radius:.2rem;border:1px solid rgba(255,255,255,.28);
   background:currentColor;opacity:.92;transition:transform .12s,opacity .12s}
 .rune.ex{opacity:.3;transform:rotate(16deg)}

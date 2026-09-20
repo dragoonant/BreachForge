@@ -43,7 +43,8 @@
     };
     bar.appendChild(mk('YOU', me, false));
     const mid = el(''); mid.style.cssText = 'flex:1;text-align:center;font-size:.72rem;letter-spacing:.24em;color:#7d8ea8';
-    mid.textContent = 'TURN ' + state.turn + ' · ' + (state.active === me ? 'YOUR TURN' : 'OPPONENT');
+    mid.style.overflow = 'hidden'; mid.style.textOverflow = 'ellipsis';
+    mid.textContent = 'TURN ' + state.turn + ' · ' + (state.active === me ? 'YOUR TURN' : 'THEIR TURN');
     bar.appendChild(mid);
     bar.appendChild(mk('RIVAL', RB.opponentOf(me), true));
     const btns = el(''); btns.style.cssText = 'display:flex;gap:.4rem;margin-left:.8rem';
@@ -86,6 +87,7 @@
     const bz = el('zone base');
     bz.dataset.drop = mine ? 'base' : '';
     bz.innerHTML = '<div class="lbl">Base · ' + P.base.length + '</div>';
+    bz.style.overflow = 'visible';
     const brow = el('zonerow');
     for (const iid of P.base) {
       const c = RB.renderCard(RB.cardOf(state, iid), { size: 'board', iid: iid });
@@ -97,8 +99,8 @@
     root.appendChild(bz);
 
     const rz = el('zone');
-    rz.innerHTML = '<div class="lbl">Runes ' + P.runes.length + ' · Deck ' + P.deck.length +
-      ' · Trash ' + P.trash.length + '</div>';
+    rz.innerHTML = '<div class="lbl" title="Runes on board · Main deck · Trash">' +
+      P.runes.length + 'R · ' + P.deck.length + 'D · ' + P.trash.length + 'T</div>';
     if (!mine) {
       const th = el('', 'div'); th.id = 'them-hand'; th.style.paddingTop = '.85rem';
       for (let i = 0; i < P.hand.length; i++) {
@@ -114,10 +116,19 @@
       rr.appendChild(r);
     }
     const pool = el('');
-    pool.style.cssText = 'font-size:.64rem;color:#9fb0cc;margin-top:.3rem;width:100%';
+    pool.style.cssText = 'font-size:.64rem;color:#9fb0cc;margin-top:.3rem;width:100%;line-height:1.5';
     const pw = Object.keys(P.pool.power).filter(d => P.pool.power[d] > 0)
       .map(d => '<span style="color:var(--d-' + d + ')">' + P.pool.power[d] + '◈</span>').join(' ');
-    pool.innerHTML = (P.pool.energy ? P.pool.energy + '⚡ ' : '') + pw;
+    // What you can still pay for this turn, not just what is already in the pool — unspent
+    // resources are lost at end of turn, so "available" is the number that matters.
+    const ready = RB.runesReady(state, p);
+    const avail = {};
+    for (const i of ready) { const d = RB.cardOf(state, i).domain; avail[d] = (avail[d] || 0) + 1; }
+    pool.innerHTML = (P.pool.energy ? '<b>' + P.pool.energy + '</b>⚡ ' : '') + pw +
+      (mine ? '<div style="opacity:.8">can pay <b>' + (P.pool.energy + ready.length) + '</b>⚡ · ' +
+        (Object.keys(avail).length
+          ? Object.keys(avail).map(d => '<span style="color:var(--d-' + d + ')">' + avail[d] + '◈</span>').join(' ')
+          : 'no Power') + '</div>' : '');
     rr.appendChild(pool);
     rz.appendChild(rr);
     root.appendChild(rz);
@@ -171,9 +182,16 @@
     h.innerHTML = '';
     const playable = new Set(RB.legalActions(state).filter(a => a.t === 'play').map(a => a.iid));
     const P = state.players[me];
+    const mull = state.queue.length && state.queue[0].kind === 'mulligan';
     for (const iid of P.hand) {
       const c = RB.renderCard(RB.cardOf(state, iid), { size: 'hand', iid: iid });
-      if (!playable.has(iid)) c.classList.add('unplayable');
+      if (!playable.has(iid) && !mull) {
+        c.classList.add('unplayable');
+        // Say why a disabled control is disabled, next to it, before the first click.
+        const why = RB.whyCannotPay(state, me, RB.costOf(state, iid));
+        c.title = why ? RB.cardOf(state, iid).name + ' — ' + why
+                      : RB.cardOf(state, iid).name + ' — cannot be played right now';
+      }
       RB.ui.bindCard(c, state, iid, 'hand');
       h.appendChild(c);
     }

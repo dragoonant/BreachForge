@@ -54,6 +54,24 @@
 
   RB.canPay = function (state, p, cost) { return !!RB.planPayment(state, p, cost); };
 
+  // Say WHY a card cannot be paid for, in the player's terms, before the first click.
+  // "Costs 3 and 1 Calm — you have 2 ready runes, none of them Calm" beats a greyed card.
+  RB.whyCannotPay = function (state, p, cost) {
+    if (RB.planPayment(state, p, cost)) return null;
+    const P = state.players[p];
+    const ready = RB.runesReady(state, p);
+    const byDomain = {};
+    for (const i of ready) { const d = RB.cardOf(state, i).domain; byDomain[d] = (byDomain[d] || 0) + 1; }
+    const have = P.pool.energy + ready.length;
+    if (cost.power > 0) {
+      const usable = cost.domains.reduce((n, d) => n + (byDomain[d] || 0) + (P.pool.power[d] || 0), 0);
+      if (usable < cost.power)
+        return 'needs ' + cost.power + ' ' + cost.domains.join('/') + ' Power — you have ' +
+          usable + ' rune' + (usable === 1 ? '' : 's') + ' of that domain ready';
+    }
+    return 'needs ' + cost.energy + ' Energy — you have ' + have + ' ready';
+  };
+
   RB.pay = function (state, p, plan) {
     const P = state.players[p];
     P.pool.energy -= plan.fromPool.energy;

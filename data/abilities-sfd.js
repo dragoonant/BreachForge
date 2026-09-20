@@ -19,21 +19,21 @@
     // "Give a friendly unit at a battlefield +2 [S] this turn for each enemy unit there."
     'sfd-001': {
       keywords: ['Reaction'],
-      effects: [{ op: 'buffPerEnemyAt', n: 2 }],
+      effects: [{ op: 'sfd.buffPerEnemyAt', n: 2 }],
     },
 
     // "[Deathknell] — Play two 3 [S] Mech unit tokens to your base."
     'sfd-021': {
       keywords: ['Deathknell'],
-      sfdTriggers: [{ on: 'death', effects: [{ op: 'playToken', cardId: 'sfd-t-mech', n: 2, to: 'base' }] }],
+      sfdTriggers: [{ on: 'death', effects: [{ op: 'sfd.playToken', cardId: 'tok-mech', might: 3, n: 2, to: 'base' }] }],
     },
 
     // "[Quick-Draw] … [Equip] [C]". Quick-Draw's reminder grants Reaction and attaches on
     // play; the printed Might Bonus (+2) is already read off the card by RB.mightOf.
     'sfd-022': {
       keywords: ['Reaction', 'Quick-Draw'],
-      triggers: [{ on: 'played', effects: [{ op: 'attach' }] }],
-      activated: [{ power: 1, domains: ['Fury'], effects: [{ op: 'attach' }] }],
+      triggers: [{ on: 'played', effects: [{ op: 'sfd.attach' }] }],
+      activated: [{ power: 1, domains: ['Fury'], effects: [{ op: 'sfd.attach' }] }],
     },
 
     'sfd-025': {
@@ -51,30 +51,30 @@
     // option, the price and the result are the printed ones; only the moment moves.
     'sfd-031': {
       effects: [
-        { op: 'playToken', cardId: 'sfd-t-sand' },
-        { op: 'mayPay', energy: 2, effects: [{ op: 'playToken', cardId: 'sfd-t-sand' }] },
+        { op: 'sfd.playToken', cardId: 'tok-sand-soldier', might: 2 },
+        { op: 'sfd.mayPay', energy: 2, effects: [{ op: 'sfd.playToken', cardId: 'tok-sand-soldier', might: 2 }] },
       ],
     },
 
     // "When you play me, you may kill a gear."
     'sfd-032': {
-      triggers: [{ on: 'played', effects: [{ op: 'may', effects: [{ op: 'killGear', side: 'enemy' }] }] }],
+      triggers: [{ on: 'played', effects: [{ op: 'sfd.may', effects: [{ op: 'sfd.killGear', side: 'enemy' }] }] }],
     },
 
     // "[Equip] [C]"
     'sfd-033': {
-      activated: [{ power: 1, domains: ['Calm'], effects: [{ op: 'attach' }] }],
+      activated: [{ power: 1, domains: ['Calm'], effects: [{ op: 'sfd.attach' }] }],
     },
 
     // "[Deathknell] — If I died alone, draw 1."
     'sfd-036': {
       keywords: ['Deathknell'],
-      sfdTriggers: [{ on: 'death', effects: [{ op: 'when', cond: 'diedAlone', effects: [{ op: 'draw', n: 1 }] }] }],
+      sfdTriggers: [{ on: 'death', effects: [{ op: 'sfd.when', cond: 'diedAlone', effects: [{ op: 'draw', n: 1 }] }] }],
     },
 
     // "[Equip] [C]"
     'sfd-042': {
-      activated: [{ power: 1, domains: ['Calm'], effects: [{ op: 'attach' }] }],
+      activated: [{ power: 1, domains: ['Calm'], effects: [{ op: 'sfd.attach' }] }],
     },
 
     'sfd-045': {
@@ -91,7 +91,7 @@
 
     // "[Equip] [C]"
     'sfd-051': {
-      activated: [{ power: 1, domains: ['Calm'], effects: [{ op: 'attach' }] }],
+      activated: [{ power: 1, domains: ['Calm'], effects: [{ op: 'sfd.attach' }] }],
     },
 
     // ---------------------------------------------------------------- Mind
@@ -99,7 +99,7 @@
     'sfd-069': {
       triggers: [{
         on: 'conquer', mine: true, here: true,
-        effects: [{ op: 'playToken', cardId: 'sfd-t-gold', exhausted: true }],
+        effects: [{ op: 'sfd.playToken', cardId: 'tok-gold', exhausted: true }],
       }],
     },
 
@@ -113,7 +113,7 @@
     // "Give a unit +5 [S] this turn." Buffs already expire at end of turn.
     'sfd-097': {
       keywords: ['Action'],
-      effects: [{ op: 'giveMight', n: 5, target: { pick: 'myUnits' } }],
+      effects: [{ op: 'sfd.giveMight', n: 5, target: { pick: 'myUnits' } }],
     },
 
     // "I can't be chosen by enemy spells and abilities."
@@ -138,18 +138,18 @@
 
     // "When I move, play a Gold gear token exhausted."
     'sfd-130': {
-      sfdTriggers: [{ on: 'move', effects: [{ op: 'playToken', cardId: 'sfd-t-gold', exhausted: true }] }],
+      sfdTriggers: [{ on: 'move', effects: [{ op: 'sfd.playToken', cardId: 'tok-gold', exhausted: true }] }],
     },
 
     // "[Equip] [C]"
     'sfd-133': {
-      activated: [{ power: 1, domains: ['Chaos'], effects: [{ op: 'attach' }] }],
+      activated: [{ power: 1, domains: ['Chaos'], effects: [{ op: 'sfd.attach' }] }],
     },
 
     // "Return a gear to its owner's hand."
     'sfd-135': {
       keywords: ['Action'],
-      effects: [{ op: 'bounceGear', side: 'enemy' }],
+      effects: [{ op: 'sfd.bounceGear', side: 'enemy' }],
     },
 
     'sfd-136': {
@@ -185,7 +185,7 @@
     // ---------------------------------------------------------------- Order
     // "[Equip] [C]"
     'sfd-153': {
-      activated: [{ power: 1, domains: ['Order'], effects: [{ op: 'attach' }] }],
+      activated: [{ power: 1, domains: ['Order'], effects: [{ op: 'sfd.attach' }] }],
     },
 
     'sfd-154': {
@@ -195,14 +195,14 @@
 
     // "[Equip] [C]"
     'sfd-161': {
-      activated: [{ power: 1, domains: ['Order'], effects: [{ op: 'attach' }] }],
+      activated: [{ power: 1, domains: ['Order'], effects: [{ op: 'sfd.attach' }] }],
     },
 
     // "Kill a friendly unit. If you do, give +[M] equal to its Might to another friendly unit
     //  this turn. Draw 1."
     'sfd-163': {
       keywords: ['Reaction'],
-      effects: [{ op: 'killAndTransferMight' }, { op: 'draw', n: 1 }],
+      effects: [{ op: 'sfd.killAndTransferMight' }, { op: 'draw', n: 1 }],
     },
 
     'sfd-165': {
@@ -214,14 +214,14 @@
     // "[Deathknell] — If I was [Mighty], draw 2." Mighty is Might 5 or more.
     'sfd-167': {
       keywords: ['Deathknell'],
-      sfdTriggers: [{ on: 'death', effects: [{ op: 'when', cond: 'wasMighty', effects: [{ op: 'draw', n: 2 }] }] }],
+      sfdTriggers: [{ on: 'death', effects: [{ op: 'sfd.when', cond: 'wasMighty', effects: [{ op: 'draw', n: 2 }] }] }],
     },
 
     // ------------------------------------------------------- Legends and pairs
     // "When you win a combat, draw 1." combatEnd carries the winner; `mine` cannot be used
     // here because that event has no player field for the core filter to compare.
     'sfd-185': {
-      triggers: [{ on: 'combatEnd', effects: [{ op: 'when', cond: 'wonCombat', effects: [{ op: 'draw', n: 1 }] }] }],
+      triggers: [{ on: 'combatEnd', effects: [{ op: 'sfd.when', cond: 'wonCombat', effects: [{ op: 'draw', n: 1 }] }] }],
     },
 
     // "[Quick-Draw] … [Equip] [C] … [Temporary]". Temporary here is the conditional printed
@@ -230,10 +230,10 @@
     'sfd-186': {
       keywords: ['Reaction', 'Quick-Draw', 'Temporary'],
       triggers: [
-        { on: 'played', effects: [{ op: 'attach' }] },
-        { on: 'beginningPhase', mine: true, effects: [{ op: 'when', cond: 'unattached', effects: [{ op: 'kill', target: 'self' }] }] },
+        { on: 'played', effects: [{ op: 'sfd.attach' }] },
+        { on: 'beginningPhase', mine: true, effects: [{ op: 'sfd.when', cond: 'unattached', effects: [{ op: 'kill', target: 'self' }] }] },
       ],
-      activated: [{ power: 1, domains: ['Fury', 'Chaos'], effects: [{ op: 'attach' }] }],
+      activated: [{ power: 1, domains: ['Fury', 'Chaos'], effects: [{ op: 'sfd.attach' }] }],
     },
 
     'sfd-195': {
@@ -246,8 +246,8 @@
     'sfd-196': {
       keywords: ['Reaction'],
       effects: [
-        { op: 'giveMight', n: 2, target: { pick: 'myUnits' } },
-        { op: 'weaken', n: 2, target: { pick: 'enemyUnits' } },
+        { op: 'sfd.giveMight', n: 2, target: { pick: 'myUnits' } },
+        { op: 'sfd.weaken', n: 2, target: { pick: 'enemyUnits' } },
       ],
     },
 
@@ -262,8 +262,8 @@
     //  Ready up to two of them."
     'sfd-198': {
       effects: [
-        { op: 'playTokenPer', cardId: 'sfd-t-sand', per: 'Equipment' },
-        { op: 'readyMade', n: 2 },
+        { op: 'sfd.playTokenPer', cardId: 'tok-sand-soldier', might: 2, per: 'Equipment' },
+        { op: 'sfd.readyMade', n: 2 },
       ],
     },
 
@@ -274,7 +274,7 @@
       sfdTriggers: [
         {
           on: 'runeRecycle', mine: true,
-          effects: [{ op: 'mayPay', exhaustSelf: true, effects: [{ op: 'playToken', cardId: 'sfd-t-gold', exhausted: true }] }],
+          effects: [{ op: 'sfd.mayPay', exhaustSelf: true, effects: [{ op: 'sfd.playToken', cardId: 'tok-gold', exhausted: true }] }],
         },
         { on: 'anyDeath', enemy: true, unit: true, effects: [{ op: 'ready', target: 'self' }] },
       ],
@@ -300,10 +300,10 @@
       triggers: [{
         on: 'conquer',
         effects: [{
-          op: 'when', cond: 'here',
+          op: 'sfd.when', cond: 'here',
           effects: [{
-            op: 'mayPay', energy: 1, bounceHere: true,
-            effects: [{ op: 'playToken', cardId: 'sfd-t-sand', to: 'here' }],
+            op: 'sfd.mayPay', energy: 1, bounceHere: true,
+            effects: [{ op: 'sfd.playToken', cardId: 'tok-sand-soldier', might: 2, to: 'here' }],
           }],
         }],
       }],
@@ -318,7 +318,7 @@
     'sfd-210': {
       triggers: [{
         on: 'conquer',
-        effects: [{ op: 'when', cond: 'here', effects: [{ op: 'mayPay', energy: 1, effects: [{ op: 'readyLegend' }] }] }],
+        effects: [{ op: 'sfd.when', cond: 'here', effects: [{ op: 'sfd.mayPay', energy: 1, effects: [{ op: 'sfd.readyLegend' }] }] }],
       }],
     },
 
@@ -333,7 +333,7 @@
     'sfd-217': {
       triggers: [{
         on: 'conquer',
-        effects: [{ op: 'when', cond: 'here', effects: [{ op: 'drawPerOtherBattlefield', n: 1 }] }],
+        effects: [{ op: 'sfd.when', cond: 'here', effects: [{ op: 'sfd.drawPerOtherBattlefield', n: 1 }] }],
       }],
     },
 
@@ -342,10 +342,10 @@
       triggers: [{
         on: 'conquer',
         effects: [{
-          op: 'when', cond: 'here',
+          op: 'sfd.when', cond: 'here',
           effects: [{
-            op: 'when', cond: 'mightyHere',
-            effects: [{ op: 'mayPay', energy: 1, effects: [{ op: 'draw', n: 1 }] }],
+            op: 'sfd.when', cond: 'mightyHere',
+            effects: [{ op: 'sfd.mayPay', energy: 1, effects: [{ op: 'draw', n: 1 }] }],
           }],
         }],
       }],
@@ -356,8 +356,8 @@
       triggers: [{
         on: 'conquer',
         effects: [{
-          op: 'when', cond: 'here',
-          effects: [{ op: 'mayPay', energy: 1, effects: [{ op: 'playToken', cardId: 'sfd-t-gold', exhausted: true }] }],
+          op: 'sfd.when', cond: 'here',
+          effects: [{ op: 'sfd.mayPay', energy: 1, effects: [{ op: 'sfd.playToken', cardId: 'tok-gold', exhausted: true }] }],
         }],
       }],
     },
@@ -367,22 +367,6 @@
         'choose me) has no cost layer to live in, and "when you choose or ready me" needs both a ' +
         'Targeting Effect and a became-ready event, neither of which the engine announces.',
     },
-
-    // ----------------------------------------------------------------- Tokens
-    // The named tokens this set creates (§185.3). Their card entries are registered by
-    // js/ops-sfd.js, because data/cards.js is generated and carries no tokens.
-    // Gold: "[Reaction][>] Kill this, [E]: Add [A]". The kill rides the effect rather than
-    // the cost — the engine's activated-ability costs are Energy, Power and exhaust — which
-    // is indistinguishable in play, since the token is exhausted and gone either way.
-    'sfd-t-gold': {
-      keywords: ['Reaction'],
-      activated: [{
-        exhaustSelf: true, tags: ['Reaction'],
-        effects: [{ op: 'addAnyPower', n: 1 }, { op: 'kill', target: 'self' }],
-      }],
-    },
-    'sfd-t-sand': { vanilla: true },
-    'sfd-t-mech': { vanilla: true },
 
   });
 })(window.RB = window.RB || {});
