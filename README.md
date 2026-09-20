@@ -1,8 +1,8 @@
 # BreachForge
 
 A browser reproduction of the mechanics of **Riftbound: The League of Legends TCG**, played
-against an AI. Ten tournament-winning decks, one per legend. Not affiliated with Riot Games —
-see [NOTICE.md](NOTICE.md).
+against an AI. Twenty tournament-winning decks, one per legend, across all six domains. Not
+affiliated with Riot Games — see [NOTICE.md](NOTICE.md).
 
 ## Play it
 
@@ -12,9 +12,10 @@ node tools/serve.mjs
 
 Then open **http://localhost:8777**. It also runs straight from `file://` if you prefer.
 
-Pick a legend, keep or mulligan your opening four, and play. Click a card to select it, click a
-highlighted destination to commit. Hover anything to read it in full. **How to play** on the
-title screen has the rules in four paragraphs.
+Pick a legend, keep or mulligan your opening four, and play. Click a card to select it, then a
+highlighted destination to commit. When a card asks you to choose a target, the legal answers glow
+and you click the real card. Hover anything to read it in full; **List** on a deck tile shows the
+whole decklist. **How to play** on the title screen has the rules in four paragraphs.
 
 ## The shape of a game
 

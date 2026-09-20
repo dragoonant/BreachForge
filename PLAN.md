@@ -1,54 +1,46 @@
 # BreachForge — plan and status
 
-## Status — 2026-09-20, second session
+## Status — 2026-09-20, third session
 
-**Every card in the game now plays as it reads.** A complete 1v1 game start to finish against an
-AI, with generated art on every card and on every area of the board, and sound on every event.
+**Twenty decks, twenty distinct legends, across all six domains.** A complete 1v1 game start to
+finish against an AI, with generated art on every card and on every area of the board, sound on
+every event, and the player choosing their own targets.
 
 | | |
 |---|---|
-| Cards | 170 registered — **167 authored**, 3 with no printed ability (the basic runes, whose two abilities are the engine's payment rules), **0 partial** |
-| Decks | 10 of 10 offered, each with its Chosen Champion in a public Champion Zone |
-| Effect grammar | 116 ops, 116 describers, and **no authored card the auditor renders nothing for** |
-| Tests | 59, green in ~9s including 200 fuzzed games and 40 AI games |
-| Art | 170 card renders + 4 painted board areas; battlefields paint from their own cards |
-| Audio | 27 tags (15 ElevenLabs one-shots, 12 synthesized) + 4 CC0 tracks |
-| AI | one-ply evaluator, beats random 21/24; its action mix includes hiding cards and answering ~150 card-driven choices per 24 games |
+| Decks | **20**, all legal — one legend each, 12 runes, 3 battlefields, a Chosen Champion in a public zone |
+| Cards | **264 registered** (256 + 8 tokens); **all 264 have art**, nothing falls back |
+| Authoring | 237 authored at the start of this session; the last 16 are being closed against ten new primitives |
+| Effect grammar | 150+ ops, one describer each, and no authored card the auditor renders nothing for |
+| Tests | 69, green in ~10s including 200 fuzzed games and 40 AI games |
+| AI | one-ply evaluator; 40 games across all 20 decks complete with no failures, and it beats random play 19/20 |
 
-**What the previous version of this section got wrong:** it listed 47 partial cards and called
-targeting the largest gap. The partials are gone — the fix was ten core primitives, not ten
-card fixes. Targeting is still the largest gap, and is now clearly the largest.
+**What the previous version of this section got wrong:** it described ten decks and 170 cards, and
+listed targeting as the largest remaining gap. There are twenty decks now, and targeting is done.
 
-### Primitives added this session, and what each unblocked
+### The two things a session should know about how this code is shaped
 
-Hidden end to end (9 cards) · additional costs at play time, including ones that gate legality
-(8) · a replacement layer (1) · Deflect as a real toll on the chooser, and every choice announced
-(4) · conditions and computed values on statics through hook tables (5) · `cardPlayed`,
-`spellPlayed`, `drew`, `leftBoard`, `showdownBegins`, `attack`, `defend`, `chosen`,
-`becameMighty`, `becameReady` (9) · per-turn counters (3) · narrow play-location permissions (2)
-· play-from-trash (2) · delayed abilities that outlive their source (1) · gates on activated
-abilities (2) · combat-damage exemption and lethality hooks (2) · the Champion Zone (all 10 decks).
+**One door per rule, and the door is the point.** The recurring failure in this project has not
+been a wrong card — it has been a *second path around a rule*. Damage written directly to
+`obj.damage` skips prevention and bonus layers. A target pool sliced in a pack skips the player,
+Deflect, and the `chosen` trigger. A token pushed into `RB.tokenData` skips whatever builds a work
+list from `data/tokens.js`. Each of those looked fine and played wrong. The doors that now exist:
+`RB.dealDamage`, `RB.offerChoice`, `RB.defineToken`, `RB.staticsOn`, `RB.totalCost`,
+`RB.isLethalDamage`, `RB.combatMightOf`, `RB.keywordValue`, `RB.settle`.
 
-### Rules the audit found the engine had wrong
-
-- **Burn Out** was logged and ignored. It is a loss condition: recycle the trash in, the opponent
-  gains a point, then the draw completes — repeating until they reach the victory score.
-- **The Ending Phase** was missing three of its inserted cleanup steps: all damage heals, every
-  "this turn" effect expires, and *both* rune pools empty.
-- **Stun** was modelled as "skip your ready step". It is 0 Might in the Combat Damage Step, full
-  Might to kill, cleared in the Ending Cleanup — both stronger and weaker than what was built.
-- **Recycle** shuffled instead of going to the bottom of the deck.
-- **The attacker recall** was written as a comment, so a failed attack restaged forever.
-- **Buffs had no duration**, so every printed permanent buff was a temporary one.
-- **`scope: 'self'`** applied to every card rather than its source.
+**Primitives, not card fixes.** Twice now a large block of cards has been stuck — 47, then 16 —
+and both times the answer was roughly ten missing engine concepts, not N card problems. When a
+pack reports a card it cannot author, the reason it gives is usually the name of the primitive.
 
 ### Known gaps, in the order they matter
 
-1. **Targeting does not ask the player** (D-2). `may` and `choose` do ask; a *target* does not —
-   "choose a unit" auto-picks. This is now the largest gap by a wide margin.
-2. **Combat damage is assigned by the engine** (D-10), within the printed constraints.
-3. **Five wrappers remain across two packs** (D-8), each naming the hook that would close it.
-4. **Focus is not separated from Priority** (D-4); **no animation layer** (D-7).
+1. **Combat damage is assigned by the engine** (D-10), within the printed constraints — lethal
+   first, no overkill, Tank first. A player who would spread damage differently cannot.
+2. **Five wrappers remain across two packs** (D-8), each naming the hook that would close it.
+3. **Focus is not separated from Priority** (D-4).
+4. **No animation layer** (D-7). The structured log carries everything one would need.
+5. **Eleven of twenty decks have a reconstructed Chosen Champion** (D-11) and seventeen have a
+   reconstructed rune split (D-3), because the decklist source records neither in full.
 
 ### Deliberate scope decisions
 
