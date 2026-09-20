@@ -690,6 +690,11 @@
   // "As an additional cost, kill a friendly unit" whose COST the payoff then reads. The
   // core's killFriendly does the gating correctly but keeps no record of what died, so
   // this kind is the same cost that also remembers the price.
+  // A pack that defines its own `pays` kind supplies its own prose for it, or the auditor
+  // reads back "nothing" where a real cost stands — which is exactly the clause a reader
+  // would never think to check.
+  if (RB.defineExtraCostText)
+    RB.defineExtraCostText('killFriendlyRecord', () => 'kill a friendly unit');
   RB.defineExtraCost('killFriendlyRecord', {
     available: (s, p, iid) => candidates(s, p, iid).length > 0,
     pay: (s, p, iid) => {
@@ -999,6 +1004,8 @@
 
   // --- spendXP as an additional cost ----------------------------------------
   // The core has killFriendly / discard / spendBuff / recycleFromTrash; XP is this pack's.
+  if (RB.defineExtraCostText)
+    RB.defineExtraCostText('spendXP', x => 'spend ' + (x.n || 1) + ' XP');
   RB.defineExtraCost('spendXP', {
     available: (s, p, iid, x) => (s.players[p].xp || 0) >= (x.n || 1),
     pay: (s, p, iid, x) => {
@@ -1129,6 +1136,14 @@
       .sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b))[0] || null;
   }
   RB.unlWouldKill = wouldKill;           // the check harness reads this
+  // The clause belongs to the COST, not to the card — "if you do, I cost [1] less for each
+  // Energy it costs" is only true of a play that chose this cost — so it renders through
+  // the note hook rather than as a card-level cost modifier. `ab.costModifier` would have
+  // been the wrong home twice over: another pack's modifier applies that field, so writing
+  // it would have produced a real discount on top of this one.
+  if (RB.defineExtraCostNote)
+    RB.defineExtraCostNote('discountsByKilled', () => 'if you do, I cost 1 Energy less ' +
+      'for each Energy it costs and 1 Power less for each Power it costs');
   RB.defineCostModifier((s, p, iid, cost, extras) => {
     for (const x of extras || []) {
       if (!x.discountsByKilled) continue;
@@ -1151,7 +1166,13 @@
   RB.defineStaticWhen('isToken', (state, iid) => !!RB.obj(state, iid).token);
   RB.defineStaticWhen('isTemporary', (state, iid) => !!RB.obj(state, iid).temporary);
   // "+1 Might for each of your units with Temporary at my battlefield." Reads no Might, so
-  // it cannot recurse through the statics guard.
+  // it cannot recurse through the statics guard — and it names what it counts, because a
+  // computed amount the auditor reads back as its own key is a clause nobody can check.
+  // Add a hook, add its twin: defineStaticAmount is to defineStaticAmountText as
+  // defineStaticWhen is to defineWhenText.
+  if (RB.defineStaticAmountText)
+    RB.defineStaticAmountText('temporaryUnitsHere',
+      () => 'your units with Temporary at my battlefield');
   RB.defineStaticAmount('temporaryUnitsHere', (state, iid) => {
     const o = RB.obj(state, iid);
     const loc = RB.locationOf(state, iid);
@@ -1159,27 +1180,27 @@
     return state.bf[loc.bf].units
       .filter(i => RB.obj(state, i).controller === o.controller && RB.obj(state, i).temporary).length;
   });
-  // "This ability costs [1] less for each friendly unit with [Temporary]." An ability's
-  // cost is built inline in legalActions and doActivate, with no modifier hook to register
-  // into and no core function this pack will wrap — so the discount is expressed where an
-  // ability's cost CAN be varied: one entry per price, each gated on the count that makes
-  // that price the right one. The gates are mutually exclusive, so exactly one of them is
-  // ever offered, at exactly the printed cost. Four is the last band because the printed
-  // cost is [4] and a cost never goes below nothing.
-  RB.defineCondition('friendlyTemporary', (s, ctx, a) => {
-    const k = RB.allUnits(s).filter(i =>
-      RB.obj(s, i).controller === ctx.p && RB.obj(s, i).temporary).length;
-    return a.exact ? k === (a.n || 0) : k >= (a.n || 0);
+  // "This ability costs [1] less for each friendly unit with [Temporary]." RB.abilityCost
+  // is the one place an activated ability's cost is computed, and this is a modifier on
+  // it — registered, not wrapped. It touches only an ability that opted in by carrying
+  // `cheaperPerFriendlyTemporary`, so no other ability in any pack changes price, and
+  // RB.abilityCost clamps at nothing so the discount never goes past free.
+  RB.defineAbilityCostModifier((s, p, iid, ab, cost) => {
+    const per = ab.cheaperPerFriendlyTemporary;
+    if (!per) return;
+    cost.energy -= per * RB.allUnits(s)
+      .filter(i => RB.obj(s, i).controller === p && RB.obj(s, i).temporary).length;
   });
+  // …and the prose for it, against the same flag. The discount is a clause of the ABILITY
+  // — "this ability costs [1] less" — so it renders beside the ability's cost rather than
+  // as a card-level one, and the auditor reads the whole printed line instead of half of it.
+  if (RB.defineAbilityCostNote)
+    RB.defineAbilityCostNote('cheaperPerFriendlyTemporary', a => 'costs ' +
+      a.cheaperPerFriendlyTemporary + ' Energy less for each friendly unit with Temporary');
 
   // …and the prose for each, so the auditor names the condition instead of reading back a
   // camelCase identifier. A condition nobody can read is a clause nobody can check.
   if (RB.defineWhenText) {
-    RB.defineWhenText('friendlyTemporary', a => a.exact
-      ? (a.n ? 'while you control exactly ' + a.n + ' unit' + (a.n === 1 ? '' : 's') +
-          ' with Temporary'
-        : 'while you control no units with Temporary')
-      : 'while you control ' + (a.n || 0) + ' or more units with Temporary');
     RB.defineWhenText('enemyOfSource', () => 'for enemy units');
     RB.defineWhenText('weakerEnemyThanSource', () => 'for enemy units with less Might than me');
     RB.defineWhenText('isToken', () => 'while they are tokens');

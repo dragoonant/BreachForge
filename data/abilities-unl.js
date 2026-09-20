@@ -904,28 +904,16 @@ RB.registerAbilities({
     ] }] }],
   },
 
-  // Bashful Bloom — a legend, and so in a public zone all game. "[4], [T]: … This ability
-  // costs [1] less for each friendly unit with Temporary."
-  //
-  // An activated ability's cost is built inline in legalActions and doActivate, with no
-  // cost-modifier hook, and this pack wraps nothing. So the discount is authored where an
-  // ability's cost CAN vary: one entry per price, each gated on the count of friendly
-  // Temporary units that makes that price the right one. The gates are mutually exclusive
-  // — exactly one entry is legal at a time, at exactly the printed cost — and four is the
-  // last band because [4] minus four is nothing and a cost goes no lower.
+  // Bashful Bloom — a legend, and so in a public zone all game. One printed ability, one
+  // entry: RB.abilityCost is now the single place an ability's cost is computed, so the
+  // discount is a modifier on that cost (js/ops-unl.js) rather than several gated copies
+  // of the same ability. `cheaperPerFriendlyTemporary` is what opts this ability in; no
+  // other ability in any pack carries it, so none of them changes price.
   'unl-230': {
-    activated: [
-      { energy: 4, exhaustSelf: true, when: { kind: 'friendlyTemporary', n: 0, exact: true },
-        effects: [{ op: 'keywordToken', cardId: 'tok-sprite', might: 3, ready: true, temporary: true }] },
-      { energy: 3, exhaustSelf: true, when: { kind: 'friendlyTemporary', n: 1, exact: true },
-        effects: [{ op: 'keywordToken', cardId: 'tok-sprite', might: 3, ready: true, temporary: true }] },
-      { energy: 2, exhaustSelf: true, when: { kind: 'friendlyTemporary', n: 2, exact: true },
-        effects: [{ op: 'keywordToken', cardId: 'tok-sprite', might: 3, ready: true, temporary: true }] },
-      { energy: 1, exhaustSelf: true, when: { kind: 'friendlyTemporary', n: 3, exact: true },
-        effects: [{ op: 'keywordToken', cardId: 'tok-sprite', might: 3, ready: true, temporary: true }] },
-      { exhaustSelf: true, when: { kind: 'friendlyTemporary', n: 4 },
-        effects: [{ op: 'keywordToken', cardId: 'tok-sprite', might: 3, ready: true, temporary: true }] },
-    ],
+    activated: [{
+      energy: 4, exhaustSelf: true, cheaperPerFriendlyTemporary: 1,
+      effects: [{ op: 'keywordToken', cardId: 'tok-sprite', might: 3, ready: true, temporary: true }],
+    }],
   },
 
   // Voidreaver — XP on winning a combat, and two abilities gated on spending it. The gate
