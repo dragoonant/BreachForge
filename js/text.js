@@ -62,8 +62,7 @@
     (e.then ? ' ' + e.then.map(line).join(' ') : ''));                                                      // ops.counterIf
   RB.defineDescriber('buffByCounteredCost', e => sel(e.target, true) +
     " gets +Might equal to that card's Energy cost.");                                                      // ops.buffByCounteredCost
-  RB.defineDescriber('when', e => 'If ' + String(typeof e.test === 'string' ? e.test : e.test.kind)
-    .replace(/([A-Z])/g, ' $1').toLowerCase().trim() + ', ' +
+  RB.defineDescriber('when', e => 'If ' + whenText(e.test) + ', ' +
     lower((e.then || []).map(line).join(' ')) +
     (e.otherwise && e.otherwise.length ? ' Otherwise, ' + lower(e.otherwise.map(line).join(' ')) : ''));  // ops.when
   RB.defineDescriber('cantMove', e => sel(e.target, true) + " can't move this turn.");                     // ops.cantMove
@@ -99,6 +98,10 @@
     const ab = c.abilities;
     if (!ab) return '';
     const out = [];
+    if (ab.costModifier)
+      out.push('I cost ' + Math.abs(ab.costModifier.energy || 0) + ' Energy ' +
+        ((ab.costModifier.energy || 0) < 0 ? 'less' : 'more') +
+        (ab.costModifier.when ? ' ' + whenText(ab.costModifier.when) : '') + '.');
     for (const x of ab.additionalCosts || [])
       out.push((x.optional === false ? 'As an additional cost, ' : 'You may pay ') +
         extraCost(x) + (x.optional === false ? '' : ' as an additional cost') +
@@ -127,23 +130,78 @@
     here: 'Units here', hereMine: 'Your units here', mine: 'Your units',
     all: 'All units', self: 'I',
   };
+  // A condition's NUMBER is part of the clause — "at least 2 Power" and "at least 6 XP"
+  // are different cards from the same predicate, so each entry is a function of its
+  // argument rather than a fixed sentence.
   const WHEN = {
-    defendingAlone: 'while defending alone',
-    xpAtLeast: 'while you have enough XP',
+    defendingAlone: () => 'while defending alone',
+    attacking: () => "while I'm an attacker",
+    defending: () => "while I'm a defender",
+    mighty: () => "while I'm Mighty",
+    sourceMighty: () => 'while I am Mighty',
+    attackingOrDefending: () => 'while in a showdown',
+    inShowdown: () => 'during a showdown',
+    beginningPhase: () => "it's your Beginning Phase",
+    myTurn: () => "it's your turn",
+    eventIsUnit: () => 'it is a unit',
+    eventIsOpponents: () => "it is an opponent's",
+    sourceAtBattlefield: () => "I'm at a battlefield",
+    xpAtLeast: a => 'while you have ' + (a.n || 1) + '+ XP',
+    powerSpentAtLeast: a => 'if you have spent at least ' + (a.n || 1) + ' Power this turn',
+    playedThisTurnAtLeast: a => 'if you have played ' + (a.n || 1) + '+ cards this turn',
+    all: a => (a.tests || []).map(whenText).join(' and '),
   };
+  function whenArg(w) {
+    if (typeof w === 'string') return {};
+    if (w.kind) return w;
+    const k = Object.keys(w)[0];
+    return { n: w[k] };
+  }
+  // A pack that defines its own predicate supplies its own prose for it, or the auditor
+  // reads back a camelCase identifier where a printed clause should be.
+  RB.defineWhenText = function (name, fn) { WHEN[name] = typeof fn === 'function' ? fn : () => fn; };
+  function whenText(w) {
+    const fn = WHEN[whenName(w)];
+    return fn ? fn(whenArg(w))
+              : 'while ' + whenName(w).replace(/([A-Z])/g, ' $1').toLowerCase().trim();
+  }
+  // A static may carry a computed value, a granted keyword, or one of the rule-bending
+  // flags — and a describer that renders only `might` and `grant` silently drops the rest,
+  // which is the auditor going blind exactly where the continuous layer does its work.
+  const AMOUNT = { points: 'your points', xp: 'your XP', counters: 'its counters' };
+  const FLAG = {
+    noCombatDamage: 'deal no combat damage',
+    anyDamageKills: 'die to any amount of your damage',
+    untargetableByEnemies: "can't be chosen by enemy spells and abilities",
+  };
+  function amountText(v) {
+    if (v == null) return null;
+    if (typeof v === 'number') return (v > 0 ? '+' : '') + v + ' Might';
+    const src = AMOUNT[v.from] || v.from;
+    return '+1 Might for each of ' + src;
+  }
   function staticText(st) {
     let who = SCOPE[st.scope || 'here'] || 'Units here';
     if (st.tag) who = who.replace(/Units?$/i, st.tag + 's');
     if (!st.includeSelf && (st.scope || 'here') !== 'self' && /^Your units/.test(who))
       who = who.replace('Your units', 'Your other units');
-    const verb = who === 'I' ? 'have ' : 'have ';
-    const what = st.might != null
-      ? (st.might > 0 ? '+' : '') + st.might + ' Might'
-      : st.grant ? st.grant : null;
-    if (!what) return '';
-    const cond = st.when ? ' ' + (WHEN[st.when.kind || st.when] ||
-      ('while ' + (st.when.kind || st.when))) : '';
-    return who + ' ' + verb + what + cond + '.';
+    const cond = st.when ? ' ' + whenText(st.when) : '';
+    if (st.deathknellExtra)
+      return 'Your Deathknell effects trigger ' +
+        (st.deathknellExtra === 1 ? 'an additional time' : st.deathknellExtra + ' additional times') +
+        cond + '.';
+    for (const k of Object.keys(FLAG)) if (st[k]) return who + ' ' + FLAG[k] + cond + '.';
+    const bits = [];
+    const m = amountText(st.might);
+    if (m) bits.push(m);
+    if (st.grant) bits.push(st.grant);
+    if (!bits.length) return '';
+    return who + ' have ' + bits.join(' and ') + cond + '.';
+  }
+  function whenName(w) {
+    if (typeof w === 'string') return w;
+    if (w.kind) return w.kind;
+    return Object.keys(w)[0];
   }
   RB.staticText = staticText;
 

@@ -24,7 +24,9 @@ RB.registerAbilitiesFallback({
     keywords: [{ name: 'Assault', value: 1 }],
     triggers: [{
       on: 'deathknell',
-      effects: [{ op: 'when', test: 'beginningPhase',
+      // "If it's YOUR Beginning Phase" — a Deathknell resolving during the opponent's
+      // Beginning Phase (their Temporary sweep, a start-of-turn kill) must draw 1, not 2.
+      effects: [{ op: 'when', test: { kind: 'all', tests: ['beginningPhase', 'myTurn'] },
         then: [{ op: 'draw', n: 2 }], otherwise: [{ op: 'draw', n: 1 }] }],
     }],
   },

@@ -1,24 +1,37 @@
 // Ops added for the Origins set. Handlers and describers only — js/abilities.js and
-// js/text.js are never edited. Three things are worth knowing before reading on:
+// js/text.js are never edited. Four things are worth knowing before reading on:
 //
 // 1. NAMESPACED OP NAMES. Every op defined here is `ogn.<name>`. Three sets are authored
 //    in parallel into three ops files that all write into the same RB.ops table, and the
 //    last file loaded silently wins a name collision. A prefix makes that impossible.
 //
-// 2. WHAT IS *NOT* HERE. Optionality is the core's `may` (a real queue step the human
-//    answers and the AI answers through legalActions) and death triggers are the core's
-//    `deathknell`; neither is re-invented here. What remains are the clauses the core has
-//    no primitive for. The POOL a clause may choose from is always exactly what the card
-//    prints — `prefer` only orders a pool, it never trims one — and where a choice is
-//    still resolved by a stated rule rather than a prompt (which gear, which destination),
-//    the describer says which branch it takes, so the narrowing shows up in the audit
-//    instead of hiding in a handler.
+// 2. WHAT IS *NOT* HERE. Optionality is the core's `may`; a death trigger is the core's
+//    `deathknell`; "at the end of this turn" is the core's `delayed`; a condition or a
+//    computed number on a continuous modifier goes into RB.defineStaticWhen /
+//    RB.defineStaticAmount, never into a wrapper of RB.staticsOn. What is left here is
+//    only what the core has no primitive for.
 //
-// 3. FOUR CORE FUNCTIONS ARE WRAPPED (bottom of this file): a Might layer the core has no
-//    reader for (Buff counters, "-N to a minimum of M", granted Assault/Shield), a
-//    "leaves the board" event, delayed end-of-turn effects, and a play restriction. Each
-//    wrapper reads ONLY fields prefixed `ogn`, so a second set's wrapper on the same
-//    function composes with this one instead of double-counting its data.
+// 3. CHOICES. Where a choice is still resolved by a stated rule rather than a prompt
+//    (which gear, which destination), the describer says which branch it takes, so the
+//    narrowing shows up in the audit instead of hiding in a handler. The POOL is always
+//    exactly what the card prints: `prefer` orders a pool, it never trims one.
+//
+// 4. THREE CORE FUNCTIONS ARE STILL WRAPPED, and only these:
+//      * RB.mightOf — the Buff counter, "-N this turn to a minimum of M", and Assault /
+//        Shield, none of which anything in the core reads. A static cannot carry them:
+//        a Buff is a counter on an arbitrary unit and Assault is granted by a spell that
+//        is in the trash by the time it matters.
+//      * RB.kill — a Buff must vanish when its unit leaves play, a card that says "when
+//        THIS leaves the board" needs a self-dispatch (the core's `leftBoard` walks the
+//        board, so the leaving card, already lifted out of its zone, never hears its own
+//        event), and a Deathknell that recycles itself has to finish after the core has
+//        put the card in the trash.
+//      * RB.legalActions — "opponents can't play cards this turn". Legality here is
+//        whatever legalActions offers, so a play restriction has nowhere else to live.
+//    Each reads only `ogn`-prefixed fields plus `o.counters`, which is the core's own Buff
+//    representation (RB.defineExtraCost('spendBuff') spends exactly that). The wrapper of
+//    RB.runTriggers that used to carry "at the end of this turn" is gone: that is the
+//    core's `delayed` now.
 (function (RB) {
   'use strict';
 
@@ -45,6 +58,11 @@
     return out;
   }
   function unitsOf(s, p) { return RB.allUnits(s).filter(i => RB.obj(s, i).controller === p); }
+  function facedownOf(s, p) {
+    const out = [];
+    for (const bf of s.bf) for (const h of bf.hidden) if (h.owner === p) out.push(h.iid);
+    return out;
+  }
 
   function poolNamed(s, name, ctx) {
     if (name === 'gear') return allGear(s);
@@ -52,6 +70,9 @@
     if (name === 'enemyGear') return allGear(s).filter(i => RB.obj(s, i).controller !== ctx.p);
     if (name === 'myUnitsAndGear')
       return unitsOf(s, ctx.p).concat(allGear(s).filter(i => RB.obj(s, i).controller === ctx.p));
+    if (name === 'myUnitsGearOrFacedown')
+      return unitsOf(s, ctx.p).concat(allGear(s).filter(i => RB.obj(s, i).controller === ctx.p))
+        .concat(facedownOf(s, ctx.p));
     return RB.select(s, name, ctx);
   }
 
@@ -64,7 +85,7 @@
     if (spec.at === 'battlefield') pool = pool.filter(i => RB.locationOf(s, i).kind === 'bf');
     if (spec.at === 'base') pool = pool.filter(i => RB.locationOf(s, i).kind === 'base');
     if (spec.maxMight !== undefined) pool = pool.filter(i => RB.mightOf(s, i) <= spec.maxMight);
-    if (spec.noBuff) pool = pool.filter(i => !RB.obj(s, i).ognBuff);
+    if (spec.noBuff) pool = pool.filter(i => !RB.obj(s, i).counters);
     if (!pool.length) return [];
     pool = pool.slice().sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
     if (spec.low) pool.reverse();
@@ -77,38 +98,51 @@
   }
   RB.ognTargets = targets;
 
+  // [singular, plural]. A bare selector name means every member of that pool ("give enemy
+  // units -3"); a { pick } spec means one of them is chosen.
   const NAMES = {
     self: ['me', 'me'], eventUnit: ['that unit', 'those units'],
     myUnits: ['a friendly unit', 'friendly units'], enemyUnits: ['an enemy unit', 'enemy units'],
-    allUnits: ['a unit', 'units'], hereMine: ['a friendly unit there', 'friendly units there'],
+    allUnits: ['a unit', 'all units'], hereMine: ['a friendly unit there', 'your units there'],
     hereEnemy: ['an enemy unit there', 'enemy units there'],
-    gear: ['a gear', 'gear'], myGear: ['a friendly gear', 'friendly gear'],
+    gear: ['a gear', 'all gear'], myGear: ['a friendly gear', 'your gear'],
     enemyGear: ['an enemy gear', 'enemy gear'],
-    myUnitsAndGear: ['a friendly gear or unit', 'friendly gear or units'],
+    myUnitsAndGear: ['a friendly gear or unit', 'your gear and units'],
+    myUnitsGearOrFacedown: ['a friendly gear, unit, or facedown card', 'your cards on the board'],
   };
   function selText(spec) {
-    if (!spec || typeof spec === 'string') return (NAMES[spec] || ['me'])[0];
+    if (!spec || typeof spec === 'string') {
+      const pair = NAMES[spec] || ['me', 'me'];
+      return spec === 'self' || spec === 'eventUnit' ? pair[0] : pair[1];
+    }
     const n = spec.n || 1;
     const pair = NAMES[spec.pick] || [String(spec.pick), String(spec.pick)];
-    let t = n > 1 ? 'up to ' + n + ' ' + pair[1] : pair[0];
+    let t = n > 1 ? 'up to ' + n + ' ' + pluralOf(pair[0]) : pair[0];
     if (spec.other) t = t.replace(/^an? /, 'another ').replace(/^up to (\d+) /, 'up to $1 other ');
     if (spec.at === 'battlefield') t += ' at a battlefield';
     if (spec.at === 'base') t += ' in a base';
     if (spec.maxMight !== undefined) t += ' with ' + spec.maxMight + ' Might or less';
     return t;
   }
+  function pluralOf(singular) { return singular.replace(/^an? /, '') + 's'; }
   RB.ognSelText = selText;
 
   // --- the Might layer ------------------------------------------------------
-  // Everything this set does to a Might that the core has no reader for: the Buff counter
-  // (persistent, at most one, spendable), "+N/-N this turn" with its own floor, and a
-  // granted Assault/Shield. Each record is stamped with the turn it was made, so "this
-  // turn" expires without anything having to sweep it up.
+  // "This turn" records are stamped with the turn they were made, so they expire without
+  // anything having to sweep them. A "this combat" record is stamped with the point in
+  // the log it was made at instead, and stops applying the moment a later showdown opens.
   function stamp(s, o, key, rec) {
-    o[key] = (o[key] || []).filter(x => x.turn === s.turn);
+    o[key] = (o[key] || []).filter(x => live(s, x));
     o[key].push(rec);
   }
-  function clearLayers(o) { o.ognBuff = false; o.ognMods = []; o.ognKw = []; }
+  function live(s, rec) {
+    if (!rec.sd) return rec.turn === s.turn;
+    if (!s.showdown) return false;
+    for (let i = s.log.length - 1; i >= 0; i--)
+      if (s.log[i].kind === 'showdownOpen') return rec.at > i;
+    return false;
+  }
+  function clearLayers(o) { o.counters = 0; o.ognMods = []; o.ognKw = []; }
   function aloneThere(s, iid) {
     const o = RB.obj(s, iid), loc = RB.locationOf(s, iid);
     if (loc.kind === 'bf') return RB.unitsAt(s, loc.bf, o.controller).length === 1;
@@ -130,26 +164,32 @@
     (e.aloneBonus ? ', then an additional +' + e.aloneBonus +
       ' Might this turn if it is the only unit you control there' : '') + '.');
 
+  // Assault X / Shield X granted for a duration. Nothing in the core reads either keyword,
+  // so the Might wrapper below is where they are read.
   def('grantKeyword', (s, e, ctx) => {
     for (const iid of targets(s, e.target, ctx)) {
-      stamp(s, RB.obj(s, iid), 'ognKw', { k: e.keyword, v: num(e, 'value', 1), turn: s.turn });
+      stamp(s, RB.obj(s, iid), 'ognKw', e.duration === 'combat'
+        ? { k: e.keyword, v: num(e, 'value', 1), sd: true, at: s.log.length }
+        : { k: e.keyword, v: num(e, 'value', 1), turn: s.turn });
       RB.log(s, 'grant', { iid: iid, keyword: e.keyword, value: num(e, 'value', 1) });
     }
   });
   say('grantKeyword', e => 'Give ' + selText(e.target) + ' ' + e.keyword + ' ' +
-    num(e, 'value', 1) + ' this turn.');
+    num(e, 'value', 1) + (e.duration === 'combat' ? ' this combat.' : ' this turn.'));
 
   // The Buff game action: a counter worth +1 Might, at most one per unit, gone when the
-  // unit leaves play. Buffing an already-buffed unit does nothing and is not a choice, so
-  // an already-buffed unit is not a candidate.
+  // unit leaves play. It is kept in `o.counters`, which is what the core's `spendBuff`
+  // additional cost spends — one representation, so a buff placed here can pay for a
+  // card that asks for one. Buffing an already-buffed unit does nothing and is not a
+  // choice, so an already-buffed unit is not a candidate.
   def('buffCounter', (s, e, ctx) => {
     const n = num(e, 'n', 1);
     const spec = e.target === 'self' ? 'self'
       : { pick: 'myUnits', n: n, other: !!e.other, noBuff: true };
     for (const iid of targets(s, spec, ctx)) {
       const o = RB.obj(s, iid);
-      if (o.ognBuff) continue;
-      o.ognBuff = true;
+      if (o.counters) continue;
+      o.counters = 1;
       RB.log(s, 'buff', { p: ctx.p, iid: iid });
     }
   });
@@ -158,26 +198,32 @@
 
   def('spendBuff', (s, e, ctx) => {
     void e;
-    const got = unitsOf(s, ctx.p).filter(i => RB.obj(s, i).ognBuff);
+    const got = unitsOf(s, ctx.p).filter(i => RB.obj(s, i).counters > 0);
     if (!got.length) return;
     const iid = got.sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b))[0];   // the cheapest to lose
-    RB.obj(s, iid).ognBuff = false;
+    RB.obj(s, iid).counters--;
     RB.log(s, 'spendBuff', { p: ctx.p, iid: iid });
   });
   say('spendBuff', () => 'Spend a buff.');
 
   // --- damage and removal ---------------------------------------------------
   // The core's `damage`/`kill` take the core's selectors, which cannot say "a unit"
-  // (either side's) while still picking the one a player would pick. These keep the
-  // printed pool and order it with `prefer`.
+  // (either side's) while still picking the one a player would pick.
   def('damage', (s, e, ctx) => {
     for (const iid of targets(s, e.target, ctx)) RB.obj(s, iid).damage += num(e, 'n', 1);
   });
   say('damage', e => 'Deal ' + num(e, 'n', 1) + ' to ' +
     ((e.target && e.target.n > 1) ? 'each of ' : '') + selText(e.target) + '.');
 
-  def('kill', (s, e, ctx) => { for (const iid of targets(s, e.target, ctx)) RB.kill(s, iid); });
-  say('kill', e => 'Kill ' + selText(e.target) + '.');
+  def('kill', (s, e, ctx) => {
+    for (const iid of targets(s, e.target, ctx)) {
+      const owner = RB.obj(s, iid).controller;
+      RB.kill(s, iid);
+      for (let i = 0; i < (e.ownerDraws || 0); i++) RB.draw(s, owner);
+    }
+  });
+  say('kill', e => 'Kill ' + selText(e.target) + '.' +
+    (e.ownerDraws ? ' Its controller draws ' + e.ownerDraws + '.' : ''));
 
   def('damageAll', (s, e, ctx) => {
     void ctx;
@@ -242,23 +288,32 @@
   def('bounce', (s, e, ctx) => {
     for (const iid of targets(s, e.target, ctx)) {
       const o = RB.obj(s, iid), loc = RB.locationOf(s, iid);
-      if (loc.kind === 'bf') RB.removeFrom(s.bf[loc.bf].units, iid);
-      else if (loc.kind === 'base') RB.removeFrom(s.players[loc.p].base, iid);
-      else if (loc.kind === 'bfGear') RB.removeFrom(s.bf[loc.bf].gear, iid);
-      else if (o.attachedTo) { RB.removeFrom(RB.obj(s, o.attachedTo).attached, iid); o.attachedTo = null; }
-      else continue;
+      let facedown = false;
+      for (const bf of s.bf) {
+        const h = bf.hidden.find(x => x.iid === iid);
+        if (h) { bf.hidden.splice(bf.hidden.indexOf(h), 1); facedown = true; }
+      }
+      if (!facedown) {
+        if (loc.kind === 'bf') RB.removeFrom(s.bf[loc.bf].units, iid);
+        else if (loc.kind === 'base') RB.removeFrom(s.players[loc.p].base, iid);
+        else if (loc.kind === 'bfGear') RB.removeFrom(s.bf[loc.bf].gear, iid);
+        else if (o.attachedTo) { RB.removeFrom(RB.obj(s, o.attachedTo).attached, iid); o.attachedTo = null; }
+        else continue;
+      }
       for (const g of (o.attached || []).slice()) {           // attachments fall to their base
         const go = RB.obj(s, g);
         go.attachedTo = null;
         s.players[go.owner].base.push(g);
       }
       o.attached = [];
-      o.damage = 0; o.buffs = 0; o.granted = []; o.exhausted = false;
+      o.damage = 0; o.buffs = 0; o.permBuffs = 0; o.granted = []; o.exhausted = false;
       o.stunned = false; o.temporary = false; o.movedThisTurn = 0;
       delete o.role;
       clearLayers(o);
       if (!o.token) s.players[o.owner].hand.push(iid);        // a token ceases to exist
       RB.log(s, 'bounce', { p: o.controller, iid: iid }, 'unit.move');
+      RB.runTriggers(s, 'leftBoard', { p: o.controller, iid: iid,
+        bf: loc.kind === 'bf' ? loc.bf : undefined });
       fireLeave(s, iid, o.controller);
     }
   });
@@ -275,10 +330,24 @@
   });
   say('makeTemporary', () => 'Give a unit at a battlefield or a gear Temporary.');
 
+  // A Deathknell whose base cost is "recycle me" (§13.3): the card is in no zone while
+  // its death trigger runs, and the core puts it in the trash straight afterwards, so the
+  // move to the bottom of the deck is finished by the kill hook.
+  def('recycleSelfToReadyRunes', (s, e, ctx) => {
+    void e;
+    RB.obj(s, ctx.source).ognRecycle = true;
+    for (const i of s.players[ctx.p].runes) {
+      const o = RB.obj(s, i);
+      if (!o.exhausted) continue;
+      o.exhausted = false;
+      RB.log(s, 'runeReady', { p: ctx.p, iid: i }, 'rune.ready');
+    }
+  });
+  say('recycleSelfToReadyRunes', () => 'Recycle me to ready your runes.');
+
   // --- movement -------------------------------------------------------------
   // An effect's move: no exhaust cost (that is the Standard Move's cost, not a move's),
-  // and it raises `moved` exactly as the Standard Move does. `to:'here'` is the
-  // battlefield the card whose ability this is stands on.
+  // and it raises `moved` exactly as the Standard Move does.
   function relocate(s, iid, dest) {
     const o = RB.obj(s, iid), from = RB.locationOf(s, iid);
     if (from.kind === 'bf') RB.removeFrom(s.bf[from.bf].units, iid);
@@ -294,6 +363,7 @@
     RB.runTriggers(s, 'moved', { p: o.controller, iid: iid,
       bf: dest === 'base' ? undefined : dest, fromBf: from.kind === 'bf' ? from.bf : undefined });
   }
+  const placeOf = loc => (loc.kind === 'bf' ? loc.bf : loc.kind === 'base' ? 'base' : null);
   function destinationFor(s, iid, to, ctx) {
     if (to === 'base') return RB.locationOf(s, iid).kind === 'base' ? null : 'base';
     if (to === 'here') {
@@ -322,6 +392,26 @@
   say('moveUnit', e => 'Move ' + selText(e.target) +
     (e.to === 'base' ? ' to base' : e.to === 'here' ? ' here' : ' to a battlefield') +
     (e.ready ? ' and ready it' : '') + '.');
+
+  // "Move me to its location and it to my original location." Both places are read before
+  // either unit moves, or the second move would chase the first.
+  def('swapPlaces', (s, e, ctx) => {
+    void e;
+    const me = ctx.source;
+    const mine = placeOf(RB.locationOf(s, me));
+    if (mine === null) return;
+    const pool = unitsOf(s, ctx.p)
+      .filter(i => i !== me && placeOf(RB.locationOf(s, i)) !== null)
+      .filter(i => placeOf(RB.locationOf(s, i)) !== mine)
+      .sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
+    if (!pool.length) return;
+    const other = pool[0];
+    const theirs = placeOf(RB.locationOf(s, other));
+    relocate(s, me, theirs);
+    relocate(s, other, mine);
+  });
+  say('swapPlaces', () => 'Choose a unit you control at another location: move me to its ' +
+    'location and it to my original location.');
 
   def('readyOther', (s, e, ctx) => {
     void e;
@@ -374,28 +464,6 @@
   });
   say('returnSpellFromTrash', () => 'Return a spell from your trash to your hand.');
 
-  // "Play a unit from your trash, ignoring its Energy cost." The Power cost is still
-  // paid, so a unit whose Power cannot be paid right now is not a legal choice.
-  def('playUnitFromTrash', (s, e, ctx) => {
-    void e;
-    const P = s.players[ctx.p];
-    const pool = P.trash.filter(i => RB.cardOf(s, i).type === 'Unit')
-      .sort((a, b) => (RB.cardOf(s, b).might || 0) - (RB.cardOf(s, a).might || 0));
-    for (const iid of pool) {
-      const cost = RB.costOf(s, iid);
-      cost.energy = 0;
-      const plan = RB.planPayment(s, ctx.p, cost);
-      if (!plan) continue;
-      RB.pay(s, ctx.p, plan);
-      RB.removeFrom(P.trash, iid);
-      RB.log(s, 'play', { p: ctx.p, iid: iid, card: RB.obj(s, iid).cardId, to: 'base' }, 'unit.deploy');
-      RB.resolveCard(s, { iid: iid, controller: ctx.p, to: 'base', kind: 'card', targets: [] });
-      return;
-    }
-  });
-  say('playUnitFromTrash', () =>
-    'Play a unit from your trash, ignoring its Energy cost. You must still pay its Power cost.');
-
   // Reveal from the top UNTIL a unit turns up — not "look at the top N": the whole deck
   // is walked if it has to be, which is the difference between this card and a cantrip.
   def('playUnitFromDeck', (s, e, ctx) => {
@@ -444,19 +512,17 @@
     (e.filter === 'nonUnit' ? 'non-unit ' : '') + 'card from it, and recycle that card.');
 
   // --- the chain ------------------------------------------------------------
-  // Counter, but only a spell inside a printed cost bound. The core's `counter` takes the
-  // chain's head unconditionally; the bound is the whole of what this card may choose, so
-  // a head outside it is simply not countered.
+  // Counter, but only a spell inside a printed cost bound. The core's `counterIf` reads
+  // an Energy bound; this card's bound is on both halves of the cost, and a head outside
+  // it is not something this card may choose, so it is simply not countered.
   def('counterSpell', (s, e, ctx) => {
-    const item = s.chain[s.chain.length - 1];
+    const item = RB.chainTop(s);
     if (!item) return;
     const card = RB.cardOf(s, item.iid);
     if (item.kind !== 'card' || card.type !== 'Spell') return;
     if (e.maxEnergy !== undefined && (card.energy || 0) > e.maxEnergy) return;
     if (e.maxPower !== undefined && (card.power || 0) > e.maxPower) return;
-    s.chain.pop();
-    s.players[item.controller].trash.push(item.iid);
-    RB.log(s, 'counter', { p: ctx.p, iid: item.iid }, 'chain.resolve');
+    RB.ops.counter(s, {}, ctx);
   });
   say('counterSpell', e => 'Counter a spell that costs no more than ' + e.maxEnergy +
     ' and no more than ' + e.maxPower + ' Power.');
@@ -475,25 +541,29 @@
       return at === ctx.event.bf;
     },
     atBattlefield: (s, ctx) => RB.locationOf(s, ctx.source).kind === 'bf',
-    selfMoved: (s, ctx) => !!ctx.event && ctx.event.iid === ctx.source,
+    isSelf: (s, ctx) => !!ctx.event && ctx.event.iid === ctx.source,
+    nthCardPlayed: (s, ctx, e) => !!ctx.event && ctx.event.nth === num(e, 'n', 2),
     anyGear: s => allGear(s).length > 0,
-    myBuff: (s, ctx) => unitsOf(s, ctx.p).some(i => RB.obj(s, i).ognBuff),
+    myBuff: (s, ctx) => unitsOf(s, ctx.p).some(i => RB.obj(s, i).counters > 0),
   };
+  const ORDINAL = { 1: 'first', 2: 'second', 3: 'third' };
   const TEST_WORDS = {
-    here: 'If it is this battlefield, ',
-    atBattlefield: "While I'm at a battlefield, ",
-    selfMoved: 'If it is me, ',
-    anyGear: 'If there is a gear on the board, ',
-    myBuff: 'If you control a buffed unit, ',
+    here: () => 'If it is this battlefield, ',
+    atBattlefield: () => "While I'm at a battlefield, ",
+    isSelf: () => 'If it is me, ',
+    nthCardPlayed: e => 'If it is your ' + (ORDINAL[num(e, 'n', 2)] || num(e, 'n', 2) + 'th') +
+      ' card this turn, ',
+    anyGear: () => 'If there is a gear on the board, ',
+    myBuff: () => 'If you control a buffed unit, ',
   };
   def('when', (s, e, ctx) => {
     const t = TESTS[e.test];
     if (!t) throw new Error('ogn.when: unknown test ' + e.test);
-    if (t(s, ctx)) RB.runEffects(s, e.effects, ctx);
+    if (t(s, ctx, e)) RB.runEffects(s, e.effects, ctx);
   });
   say('when', e => {
     if (!TEST_WORDS[e.test]) throw new Error('ogn.when: unknown test ' + e.test);
-    return TEST_WORDS[e.test] + lower(lines(e.effects));
+    return TEST_WORDS[e.test](e) + lower(lines(e.effects));
   });
 
   def('onceEachPlayer', (s, e, ctx) => {
@@ -505,7 +575,6 @@
   });
   say('onceEachPlayer', e => 'The first time each player does so, ' + lower(lines(e.effects)));
 
-  // --- game-level modifiers -------------------------------------------------
   def('raiseVictoryScore', (s, e, ctx) => {
     const o = RB.obj(s, ctx.source);
     if (o.ognRaised) return;
@@ -516,14 +585,6 @@
   say('raiseVictoryScore', e => 'Increase the points needed to win the game by ' +
     num(e, 'n', 1) + ' (once per game).');
 
-  def('readyRunesAtEndOfTurn', (s, e, ctx) => {
-    s.ognDelayed = (s.ognDelayed || []).filter(d => d.turn === s.turn);
-    s.ognDelayed.push({ p: ctx.p, n: num(e, 'n', 1), turn: s.turn });
-    RB.log(s, 'delayed', { p: ctx.p, n: num(e, 'n', 1) });
-  });
-  say('readyRunesAtEndOfTurn', e => 'Ready up to ' + num(e, 'n', 1) +
-    ' runes at the end of this turn.');
-
   def('lockOpponentPlays', (s, e, ctx) => {
     void e;
     s.ognNoPlay = { p: RB.opponentOf(ctx.p), turn: s.turn };
@@ -531,37 +592,68 @@
   });
   say('lockOpponentPlays', () => "Opponents can't play cards this turn.");
 
+  // --- hook tables ----------------------------------------------------------
+  // "I cost [2] less" and its condition. Cost modification has exactly one home
+  // (RB.totalCost), and this is the Origins entry in it: a card declares `ognCostLess`
+  // and this reads it. The field is namespaced so a second pack's modifier, reading its
+  // own field, cannot apply this one twice.
+  const COST_WHEN = {
+    // [Legion]: satisfied by any other card you have finalized this turn. The card being
+    // priced is still in hand, so anything in the list is another card.
+    legion: (s, p) => (s.players[p].playedThisTurn || []).length > 0,
+  };
+  RB.defineCostModifier((s, p, iid, cost) => {
+    const ab = RB.cardOf(s, iid).abilities;
+    const r = ab && ab.ognCostLess;
+    if (!r) return;
+    if (r.when && !COST_WHEN[r.when](s, p)) return;
+    cost.energy -= r.energy || 0;
+    cost.power -= r.power || 0;
+  });
+
   // ==========================================================================
-  // Core wrappers. Each reads only `ogn`-prefixed fields, so a second set's wrapper on
-  // the same function composes with this one instead of double-counting its data.
+  // The three core wrappers. Each reads only `ogn`-prefixed fields plus `o.counters`.
   // ==========================================================================
 
-  // 1. Might. The core reads printed Might, buffs, statics and attached gear; this adds
-  //    the Buff counter, this-turn modifiers with their own floors, and granted
-  //    Assault/Shield, which nothing in the core reads at all.
+  // 1. Might. The core reads printed Might, buffs, statics and attached gear. This adds
+  //    the Buff counter, this-turn modifiers with their own floors, and Assault/Shield —
+  //    keywords nothing in the core reads, whether printed, granted by a static, or
+  //    granted for a turn by ogn.grantKeyword. The depth guard is because asking
+  //    hasKeyword re-enters the continuous layer, which may ask about Might again.
+  let mightDepth = 0;
   const baseMight = RB.mightOf;
   RB.mightOf = function (s, iid) {
     let m = baseMight(s, iid);
     const o = s.objects[iid];
     if (!o) return m;
-    if (o.ognBuff) m += 1;
+    m += o.counters || 0;                                    // Buff counters: +1 Might each
     for (const mod of o.ognMods || []) {
-      if (mod.turn !== s.turn) continue;
+      if (!live(s, mod)) continue;
       m += mod.n;
       if (mod.min != null && m < mod.min) m = mod.min;
     }
-    if (o.role) for (const k of o.ognKw || []) {
-      if (k.turn !== s.turn) continue;
-      if (k.k === 'Assault' && o.role === 'attacker') m += k.v;
-      if (k.k === 'Shield' && o.role === 'defender') m += k.v;
+    if (o.role && mightDepth === 0) {
+      mightDepth++;
+      try {
+        m += roleKeyword(s, iid, o, o.role === 'attacker' ? 'Assault' : 'Shield');
+      } finally { mightDepth--; }
     }
     return Math.max(0, m);
   };
+  function roleKeyword(s, iid, o, kw) {
+    let v = 0;
+    for (const k of o.ognKw || []) if (k.k === kw && live(s, k)) v += k.v;
+    if (RB.hasKeyword(s, iid, kw)) v += Math.max(1, RB.keywordValue(s, iid, kw));
+    return v;
+  }
 
-  // 2. Leaving the board. The core raises `deathknell` and `died` for a kill, but a card
-  //    that says "when this LEAVES THE BOARD" also means a return to hand, so that event
-  //    is raised here from both exits, and the layer fields above are cleared on the way
-  //    out (a Buff vanishes when its unit leaves play, and this object can come back).
+  // 2. Leaving the board. The core's `leftBoard` is an OBSERVER event: RB.runTriggers
+  //    walks the board, and the leaving card has already been lifted out of its zone, so
+  //    it never hears its own. A card that says "when THIS leaves the board" is authored
+  //    `on: 'leftBoard'` with an `isSelf` guard — the guard is what keeps the core's
+  //    observer firing from answering for it — and this dispatches the card's own copy.
+  //    The same hook finishes a Deathknell that recycled itself and clears a Buff, which
+  //    vanishes when its unit leaves play.
   function fireLeave(s, iid, p) {
     const ab = RB.cardOf(s, iid).abilities;
     if (!ab || !ab.triggers) return;
@@ -582,26 +674,17 @@
     const p = o ? o.controller : null;
     baseKill(s, iid);
     if (!onBoard || !o) return;
+    if (o.ognRecycle) {
+      o.ognRecycle = false;
+      RB.removeFrom(s.players[o.owner].trash, iid);
+      s.players[o.owner].deck.push(iid);
+      RB.log(s, 'recycle', { p: o.owner, iid: iid, n: 1 });
+    }
     clearLayers(o);
     fireLeave(s, iid, p);
   };
 
-  // 3. Delayed end-of-turn effects ("… at the end of this turn"). Flushed after the
-  //    core's own endOfTurn triggers, while it is still this turn.
-  const baseRunTriggers = RB.runTriggers;
-  RB.runTriggers = function (s, event, data) {
-    baseRunTriggers(s, event, data);
-    if (event !== 'endOfTurn') return;
-    const pending = s.ognDelayed || [];
-    s.ognDelayed = [];
-    for (const d of pending) {
-      if (d.turn !== s.turn) continue;
-      const rs = s.players[d.p].runes.filter(i => RB.obj(s, i).exhausted).slice(0, d.n);
-      for (const i of rs) { RB.obj(s, i).exhausted = false; RB.log(s, 'runeReady', { p: d.p, iid: i }, 'rune.ready'); }
-    }
-  };
-
-  // 4. "Opponents can't play cards this turn." Legality in this engine is whatever
+  // 3. "Opponents can't play cards this turn." Legality in this engine is whatever
   //    RB.legalActions offers, so a play restriction has nowhere else to live.
   const baseLegal = RB.legalActions;
   RB.legalActions = function (s) {

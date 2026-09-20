@@ -22,9 +22,10 @@ RB.registerAbilities({
       target: { pick: 'allUnits', prefer: 'mine' } }],
   },
 
-  'ogn-012': { unimplemented: '[Legion] — "I cost [2] less" is a conditional cost reduction. ' +
-    'RB.costOf has no hook for a card-driven cost modifier, and nothing counts the cards you ' +
-    'have finalized this turn, which is what Legion asks.' },
+  // [Legion] — I cost [2] less. The discount lives in the cost-modifier layer
+  // (js/ops-ogn.js reads `ognCostLess`), which is the one home for anything that changes
+  // what a card costs; [Legion]'s condition is "another card finalized this turn".
+  'ogn-012': { keywords: ['Legion'], ognCostLess: { energy: 2, when: 'legion' } },
 
   // [Action] Kill all gear.
   'ogn-022': { keywords: ['Action'], effects: [{ op: 'ogn.killGear', scope: 'all' }] },
@@ -32,13 +33,16 @@ RB.registerAbilities({
   // When you play me, opponents can't play cards this turn.
   'ogn-026': { triggers: [{ on: 'played', effects: [{ op: 'ogn.lockOpponentPlays' }] }] },
 
-  'ogn-027': { unimplemented: 'Triggers on playing your SECOND card in a turn. The engine ' +
-    'raises no event for a card being played (only `unitPlayed`, for units) and keeps no ' +
-    'count of the cards a player has played this turn.' },
+  // When you play your second card in a turn, give me +2 [S] this turn and ready me.
+  'ogn-027': {
+    triggers: [{ on: 'cardPlayed', mine: true, effects: [
+      { op: 'ogn.when', test: 'nthCardPlayed', n: 2, effects: [
+        { op: 'ogn.mightThisTurn', n: 2, target: 'self' },
+        { op: 'ready', target: 'self' }] }] }],
+  },
 
-  'ogn-028': { unimplemented: 'My Might is increased by your points — a continuous modifier ' +
-    'whose value is read from the game state each time Might is asked for. `statics` carry ' +
-    'fixed numbers only, so there is nowhere to put a computed one.' },
+  // My Might is increased by your points.
+  'ogn-028': { statics: [{ might: { from: 'points' }, scope: 'self', includeSelf: true }] },
 
   // Deal 3 to a unit.
   'ogn-029': { effects: [{ op: 'ogn.damage', n: 3, target: { pick: 'allUnits', prefer: 'enemy' } }] },
@@ -97,9 +101,9 @@ RB.registerAbilities({
       { op: 'ogn.when', test: 'atBattlefield', effects: [{ op: 'ready', what: 'runes', n: 4 }] }] }],
   },
 
-  'ogn-077': { unimplemented: '[Hidden], and a replacement effect: "if a friendly unit would ' +
-    'die, kill this instead". There is no facedown zone, and no replacement layer — an ' +
-    'effect cannot stand in front of a death and take its place.' },
+  'ogn-077': { unimplemented: 'A replacement effect: "if a friendly unit would die, kill ' +
+    'this instead". There is no replacement layer — an effect cannot stand in front of a ' +
+    'death and take its place. ([Hidden] itself is now expressible; this clause is not.)' },
 
   // When you play me, give a unit +8 [S] this turn.
   'ogn-082': {
@@ -126,9 +130,11 @@ RB.registerAbilities({
   // [Deathknell] — Draw 1.
   'ogn-096': { triggers: [{ on: 'deathknell', effects: [{ op: 'draw', n: 1 }] }] },
 
-  'ogn-103': { unimplemented: 'Triggers when you play a SPELL. The engine raises `unitPlayed` ' +
-    'for units and nothing at all for a spell being played, and a spell resolving is a ' +
-    'different moment from a spell being played.' },
+  // When you play a spell, give me +1 [S] this turn.
+  'ogn-103': {
+    triggers: [{ on: 'spellPlayed', mine: true, effects: [
+      { op: 'ogn.mightThisTurn', n: 1, target: 'self' }] }],
+  },
 
   // [Reaction] Return a friendly unit to its owner's hand. Its owner channels 1 rune exhausted.
   'ogn-104': {
@@ -143,13 +149,20 @@ RB.registerAbilities({
     effects: [{ op: 'ogn.damage', n: 6, target: { pick: 'allUnits', n: 2, prefer: 'enemy' } }],
   },
 
-  'ogn-110': { unimplemented: '[Accelerate] is an optional additional cost paid as the unit is ' +
-    'played ("pay [1][C] and I enter ready"). Playing a card is one action with one cost in ' +
-    'this engine; there is no step at which a player chooses to pay more.' },
+  // [Accelerate] · [Deathknell] — Recycle me to ready your runes.
+  // "Recycle me" is the trigger's base cost (§13.3), so it is part of the one op rather
+  // than an effect that could happen without it.
+  'ogn-110': {
+    additionalCosts: [{ id: 'accelerate', energy: 1, power: 1, entersReady: true }],
+    triggers: [{ on: 'deathknell', effects: [{ op: 'ogn.recycleSelfToReadyRunes' }] }],
+  },
 
-  'ogn-116': { unimplemented: '[Accelerate] is an optional additional cost paid as the unit is ' +
-    'played. Playing a card is one action with one cost here, so the choice to pay it has ' +
-    'nowhere to be made — the play trigger below it is expressible, the keyword is not.' },
+  // [Accelerate] · When you play me, give enemy units -3 [S] this turn, to a minimum of 1 [S].
+  'ogn-116': {
+    additionalCosts: [{ id: 'accelerate', energy: 1, power: 1, entersReady: true }],
+    triggers: [{ on: 'played', effects: [
+      { op: 'ogn.mightThisTurn', n: -3, min: 1, target: 'enemyUnits' }] }],
+  },
 
   // ---------------------------------------------------------------- Body
   'ogn-126': { vanilla: true },
@@ -215,11 +228,9 @@ RB.registerAbilities({
   'ogn-180': { effects: [{ op: 'ogn.makeTemporary' }] },
 
   // [E]: Return another friendly gear, unit, or facedown card to its owner's hand.
-  // ("or facedown card" is vacuous here: [Hidden] is unimplemented set-wide, so no card
-  // can ever be facedown, and the option can never be taken.)
   'ogn-181': {
     activated: [{ exhaustSelf: true, effects: [
-      { op: 'ogn.bounce', target: { pick: 'myUnitsAndGear', other: true } }] }],
+      { op: 'ogn.bounce', target: { pick: 'myUnitsGearOrFacedown', other: true } }] }],
   },
 
   // [Action] Look at the top 3 cards of your Main Deck. Put 1 into your hand and recycle the rest.
@@ -228,14 +239,15 @@ RB.registerAbilities({
   // When I move, discard 1, then draw 1.
   'ogn-185': {
     triggers: [{ on: 'moved', effects: [
-      { op: 'ogn.when', test: 'selfMoved', effects: [
+      { op: 'ogn.when', test: 'isSelf', effects: [
         { op: 'discard', n: 1 }, { op: 'draw', n: 1 }] }] }],
   },
 
   // When this leaves the board, draw 1 and channel 1 rune exhausted. · [C],[T]: Kill this.
   'ogn-186': {
     triggers: [{ on: 'leftBoard', effects: [
-      { op: 'draw', n: 1 }, { op: 'channel', n: 1, exhausted: true }] }],
+      { op: 'ogn.when', test: 'isSelf', effects: [
+        { op: 'draw', n: 1 }, { op: 'channel', n: 1, exhausted: true }] }] }],
     activated: [{ power: 1, domains: ['Chaos'], exhaustSelf: true,
       effects: [{ op: 'kill', target: 'self' }] }],
   },
@@ -247,23 +259,35 @@ RB.registerAbilities({
   },
 
   // Play a unit from your trash, ignoring its Energy cost.
-  'ogn-198': { effects: [{ op: 'ogn.playUnitFromTrash' }] },
+  'ogn-198': { effects: [{ op: 'playFromZone', zone: 'trash', type: 'Unit', ignoreEnergy: true }] },
 
-  'ogn-199': { unimplemented: '[Hidden] — hide this facedown at a battlefield you control and ' +
-    'play it later for [0]. There is no facedown zone, no hide action and no cost ' +
-    'replacement for playing from one, so the keyword cannot be said at all.' },
+  // [Hidden] · When you play me, you may choose a unit you control at another location.
+  // Move me to its location and it to my original location.
+  'ogn-199': {
+    keywords: ['Hidden'],
+    triggers: [{ on: 'played', effects: [
+      { op: 'may', prompt: 'Swap places with a unit you control elsewhere?',
+        effects: [{ op: 'ogn.swapPlaces' }] }] }],
+  },
 
   // ---------------------------------------------------------------- Order
-  'ogn-207': { unimplemented: 'An optional additional cost chosen as the spell is played ' +
-    '("you may spend a buff; if you do, ignore this spell\'s cost"). Cost is computed once, ' +
-    'before the action, with no step at which the player may add to or waive it.' },
+  // [Reaction] As you play this, you may spend a buff as an additional cost. If you do,
+  // ignore this spell's cost. Give a unit +3 [S] this turn.
+  'ogn-207': {
+    keywords: ['Reaction'],
+    additionalCosts: [{ id: 'glory', pays: 'spendBuff', n: 1, waivesBaseCost: true }],
+    effects: [{ op: 'ogn.mightThisTurn', n: 3, target: { pick: 'allUnits', prefer: 'mine' } }],
+  },
 
   // Each player kills one of their units.
   'ogn-209': { effects: [{ op: 'ogn.eachKillsUnit' }] },
 
-  'ogn-213': { unimplemented: '[Hidden] — hide this facedown at a battlefield you control and ' +
-    'play it later for [0]. There is no facedown zone and no hide action; the kill clause ' +
-    'below it is expressible, the keyword is not.' },
+  // [Hidden] · [Action] Kill a unit at a battlefield. Its controller draws 2.
+  'ogn-213': {
+    keywords: ['Hidden', 'Action'],
+    effects: [{ op: 'ogn.kill', ownerDraws: 2,
+      target: { pick: 'allUnits', at: 'battlefield', prefer: 'enemy' } }],
+  },
 
   // [Deathknell] — Channel 1 rune exhausted.
   'ogn-216': {
@@ -279,19 +303,23 @@ RB.registerAbilities({
       { op: 'draw', n: 1 }],
   },
 
-  'ogn-232': { unimplemented: 'While I\'m [Mighty] I have [Deflect], [Ganking] and [Shield] — a ' +
-    'conditional grant of keywords. `statics` have no condition, and [Deflect] (an ' +
-    'additional Power cost on an opponent targeting me) has no reader anywhere: spells do ' +
-    'not pay per target here.' },
+  // While I'm [Mighty], I have [Deflect], [Ganking], and [Shield].
+  // Three granted keywords under one condition. [Shield]'s +1 Might while defending is
+  // read by the Might layer in js/ops-ogn.js, so the keyword is the whole declaration.
+  'ogn-232': {
+    statics: [
+      { grant: 'Deflect', scope: 'self', includeSelf: true, when: 'mighty' },
+      { grant: 'Ganking', scope: 'self', includeSelf: true, when: 'mighty' },
+      { grant: 'Shield', scope: 'self', includeSelf: true, when: 'mighty' }],
+  },
 
   // When you play me, kill an enemy unit.
   'ogn-234': {
     triggers: [{ on: 'played', effects: [{ op: 'ogn.kill', target: { pick: 'enemyUnits' } }] }],
   },
 
-  'ogn-236': { unimplemented: 'Your [Deathknell] effects trigger an additional time — a ' +
-    'continuous modification of how often other cards\' triggers fire. Triggers are ' +
-    'dispatched by the core one per matching entry; nothing can multiply them.' },
+  // Your [Deathknell] effects trigger an additional time.
+  'ogn-236': { statics: [{ deathknellExtra: 1, scope: 'mine' }] },
 
   // ---------------------------------------------------------------- Battlefields
   // Increase the points needed to win the game by 1.
@@ -299,9 +327,15 @@ RB.registerAbilities({
     triggers: [{ on: 'beginningPhase', effects: [{ op: 'ogn.raiseVictoryScore', n: 1 }] }],
   },
 
-  'ogn-279': { unimplemented: 'A Defend trigger ("when you defend here") — the moment a unit ' +
-    'takes the Defender designation. Showdowns stamp the roles but raise no event, so there ' +
-    'is nothing to hang this on; [Shield 2] itself is sayable, the trigger is not.' },
+  // When you defend here, choose a unit. It gains [Shield 2] this combat.
+  // The chosen unit is one of the defenders standing here: [Shield] is "+X while I am a
+  // defender", so it is the only choice that does anything.
+  'ogn-279': {
+    triggers: [{ on: 'defend', effects: [
+      { op: 'ogn.when', test: 'here', effects: [
+        { op: 'ogn.grantKeyword', keyword: 'Shield', value: 2, duration: 'combat',
+          target: { pick: 'hereMine' } }] }] }],
+  },
 
   // When you hold here, draw 1.
   'ogn-280': {
@@ -335,7 +369,8 @@ RB.registerAbilities({
   // When you conquer here, ready up to 2 runes at the end of this turn.
   'ogn-289': {
     triggers: [{ on: 'conquer', effects: [
-      { op: 'ogn.when', test: 'here', effects: [{ op: 'ogn.readyRunesAtEndOfTurn', n: 2 }] }] }],
+      { op: 'ogn.when', test: 'here', effects: [
+        { op: 'delayed', on: 'endOfTurn', effects: [{ op: 'ready', what: 'runes', n: 2 }] }] }] }],
   },
 
   // At the start of each player's first Beginning Phase, that player gains 1 point.
@@ -375,9 +410,7 @@ RB.registerAbilities({
     triggers: [{ on: 'endOfTurn', mine: true, effects: [{ op: 'ready', what: 'runes', n: 2 }] }],
   },
 
-  'ogs-019': { unimplemented: 'While a friendly unit defends ALONE, it gets +2 [S] — a ' +
-    'continuous modifier with a condition. `statics` apply unconditionally within their ' +
-    'scope, and no scope means "the only unit its controller has at that battlefield, ' +
-    'while it is a defender".' },
+  // While a friendly unit defends alone, it gets +2 [S].
+  'ogs-019': { statics: [{ might: 2, scope: 'mine', when: 'defendingAlone' }] },
 
 });

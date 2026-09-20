@@ -11,8 +11,9 @@
 //    returns, so any effect written after it in the same list resolves BEFORE the answer.
 //    Where a card says "you may X, then Y" the two options are spelled out instead, so Y
 //    lands after the decision either way.
-//  * RB.staticsOn is wrapped ADDITIVELY, only to honour a `when:` key. A static with no
-//    `when` is passed through untouched, so the other packs' statics are unaffected.
+//  * NOTHING HERE WRAPS A CORE FUNCTION. The `RB.staticsOn` wrapper this file used to
+//    carry (debt D-8) is gone: the core evaluates `when` itself, and this pack's two extra
+//    predicates are registered through `RB.defineStaticWhen` like every other.
 //
 // Selection note: the core's RB.autoPick always takes the BIGGEST candidate, which is the
 // right policy for a removal spell and the wrong one for "choose a friendly unit" on a
@@ -56,6 +57,8 @@
     if (spec.role) pool = pool.filter(i => RB.obj(s, i).role === spec.role);
     if (spec.notTemporary) pool = pool.filter(i => !RB.obj(s, i).temporary);
     if (spec.notEventUnit && ctx.event) pool = pool.filter(i => i !== ctx.event.iid);
+    if (spec.notHere && ctx.event && ctx.event.bf !== undefined)
+      pool = pool.filter(i => RB.locationOf(s, i).bf !== ctx.event.bf);
     if (spec.filter === 'damaged') pool = pool.filter(i => RB.obj(s, i).damage > 0);
     if (spec.maxMight !== undefined) pool = pool.filter(i => RB.mightOf(s, i) <= spec.maxMight);
     if (!pool.length) return [];
@@ -88,6 +91,7 @@
       t.replace(/^an? /, '');
     if (spec.notTemporary) t += " that isn't Temporary";
     if (spec.notEventUnit) t = 'another ' + t.replace(/^an? /, '');
+    if (spec.notHere) t += ' at a different location';
     if (spec.at === 'battlefield') t += ' at a battlefield';
     if (spec.at === 'base') t += ' in a base';
     return t;
@@ -124,7 +128,7 @@
       s.players[go.owner].base.push(g);
     }
     o.attached = [];
-    o.damage = 0; o.buffs = 0; o.granted = []; o.exhausted = false;
+    o.damage = 0; o.buffs = 0; o.permBuffs = 0; o.granted = []; o.exhausted = false;
     o.stunned = false; o.temporary = false; o.attachedTo = null; o.movedThisTurn = 0;
     delete o.role;
     if (!o.token) s.players[o.owner].hand.push(iid);
@@ -184,6 +188,12 @@
       RB.locationOf(s, ctx.event.iid).bf === ctx.event.bf),
     eventUnitIsToken: (s, ctx, v) => !!(ctx.event && ctx.event.iid) &&
       !!RB.obj(s, ctx.event.iid).token === v,
+    fromHidden: (s, ctx) => !!ctx.fromHidden,
+    fromHand: (s, ctx) => !ctx.fromHidden,
+    eventNth: (s, ctx, v) => !!ctx.event && ctx.event.nth === v,
+    // Not the pool alone: a cost is payable if a rune could still be exhausted for it.
+    canPayEnergy: (s, ctx, v) => RB.canPay(s, ctx.p, { energy: v, power: 0, domains: [], each: false }),
+    noBattlefield: (s, ctx, v) => !s.bf.some(b => b.cardId === v),
   };
   const TEST_TEXT = {
     opponentScoreWithin: v => "an opponent's score is within " + v + ' points of the Victory Score',
@@ -196,12 +206,28 @@
     nonEmpty: v => 'there is ' + selText(v),
     eventUnitHere: () => 'it is here',
     eventUnitIsToken: v => 'it is ' + (v ? 'a token' : 'not a token'),
+    fromHidden: () => 'you played me from face down',
+    fromHand: () => 'you played me from your hand',
+    myTurn: () => "it's your turn",
+    beginningPhase: () => "it's the Beginning Phase",
+    eventIsOpponents: () => 'an opponent did it',
+    sourceAtBattlefield: () => "I'm at a battlefield",
+    eventNth: v => 'it is the ' + (v === 2 ? 'second' : v === 3 ? 'third' : v + 'th') + ' this turn',
+    canPayEnergy: v => 'you can pay ' + v + ' Energy',
+    noBattlefield: v => RB.card(v).name + ' is not on the board',
   };
+  // A test is looked up in this pack's table first, then in the CORE's shared condition
+  // table (RB.defineCondition) — so `beginningPhase`, `myTurn`, `eventIsOpponents` and the
+  // rest are the engine's single copy, not a second one living here. What this op adds
+  // over the core's `when` is the conjunction and a describer that names every condition:
+  // the core's prints only `test.kind`, which hides the other half of a compound clause.
   function testAll(s, test, ctx) {
     for (const k of Object.keys(test)) {
       const fn = TESTS[k];
-      if (!fn) throw new Error('unl cond: unknown test ' + k);
-      if (!fn(s, ctx, test[k])) return false;
+      if (fn) { if (!fn(s, ctx, test[k])) return false; continue; }
+      if (!RB.conditions[k]) throw new Error('unl cond: unknown test ' + k);
+      const arg = test[k] === true ? k : Object.assign({ kind: k }, test[k]);
+      if (!RB.testCondition(s, arg, ctx)) return false;
     }
     return true;
   }
@@ -209,7 +235,8 @@
     RB.runEffects(s, testAll(s, e.test, ctx) ? (e.effects || []) : (e.else || []), ctx);
   });
   RB.defineDescriber('cond', e => {
-    const parts = Object.keys(e.test).map(k => (TEST_TEXT[k] || (v => k + ' ' + v))(e.test[k]));
+    const parts = Object.keys(e.test).map(k => (TEST_TEXT[k] ||
+      (() => k.replace(/([A-Z])/g, ' $1').toLowerCase().trim()))(e.test[k]));
     const alt = join(e.else);
     return 'If ' + parts.join(' and ') + ', ' + lower(join(e.effects)) +
       (alt ? ' Otherwise, ' + lower(alt) : '');
@@ -230,7 +257,7 @@
       ((c.energy || 0) > P.runes.length ? recycle : keep).push(iid);
     }
     P.deck.unshift(...keep);
-    P.deck.push(...recycle);
+    P.deck.push(...recycle);        // recycle is to the BOTTOM, never a reshuffle
     RB.log(s, 'predict', { p: ctx.p, n: n, recycled: recycle.length });
   });
   RB.defineDescriber('predict', e => 'Predict ' + n_(e) + '.');
@@ -271,8 +298,13 @@
       o.token = true;
       o.exhausted = !e.ready;
       o.enteredTurn = s.turn;
-      if (e.might != null) o.buffs = e.might - (RB.card(e.cardId).might || 0);
+      // A token's SIZE is what it is, not a this-turn effect, so the override rides
+      // permBuffs — `buffs` expires in the Ending Cleanup and would shrink it.
+      if (e.might != null) o.permBuffs = e.might - (RB.card(e.cardId).might || 0);
       if (e.temporary) o.temporary = true;
+      // NOTE: o.granted is the this-turn channel and is cleared in the Ending Cleanup, so
+      // a keyword printed ON the token ("Bird tokens with [Deflect]") lasts the turn it is
+      // made. There is no permanent granted-keyword channel to write instead; flagged.
       for (const k of e.keywords || []) o.granted.push(k);
       if (e.to === 'here' && ctx.event && ctx.event.bf !== undefined) {
         s.bf[ctx.event.bf].units.push(iid);
@@ -308,23 +340,24 @@
     "Counter a spell. Return it to its owner's hand instead of putting it in their trash.");
 
   // --- stunOrReturn ---------------------------------------------------------
+  // "Stun it. If it's already stunned, return it to its owner's hand instead." Stun is a
+  // binary status, NOT an exhaustion: RB.combatMightOf is the one place that reads it, the
+  // unit still needs its full Might in damage to die, and it cannot be stunned twice —
+  // which is exactly the branch this card prints.
   RB.defineOp('stunOrReturn', (s, e, ctx) => {
     const iid = targets(s, e.target, ctx)[0];
     if (!iid) return;
     const o = RB.obj(s, iid);
     if (o.stunned) { toHand(s, iid); return; }
-    o.exhausted = true; o.stunned = true;
+    o.stunned = true;               // a status, not an exhaustion — see js/combat.js
     RB.log(s, 'stun', { iid: iid }, 'ui.invalid');
   });
   RB.defineDescriber('stunOrReturn', e => 'Stun ' + selText(e.target) +
     ". If it's already stunned, return it to its owner's hand instead.");
 
-  // --- payEnergy / spendXP --------------------------------------------------
-  RB.defineOp('payEnergy', (s, e, ctx) => {
-    s.players[ctx.p].pool.energy = Math.max(0, s.players[ctx.p].pool.energy - n_(e));
-  });
-  RB.defineDescriber('payEnergy', e => 'Pay ' + n_(e) + ' Energy.');
-
+  // --- spendXP --------------------------------------------------------------
+  // (This pack's old `payEnergy` is gone; the core's `payCost` does it properly, through
+  // the payment solver, so a rune can be exhausted for it rather than only the pool.)
   RB.defineOp('spendXP', (s, e, ctx) => {
     const P = s.players[ctx.p];
     P.xp = Math.max(0, (P.xp || 0) - n_(e));
@@ -404,9 +437,17 @@
   RB.defineOp('atBf', (s, e, ctx) => RB.runEffects(s, e.effects || [], withBf(ctx, e.bf)));
   RB.defineDescriber('atBf', e => join(e.effects));
 
-  // The battlefield card's own index — a battlefield's triggers fire with no location.
+  // "Here", for a source that knows where it is but whose trigger did not say. A
+  // battlefield's own triggers fire with no location at all; a unit's play trigger fires
+  // before any event carries one. Both answer the same question.
+  function myBattlefield(s, iid) {
+    const i = s.bf.findIndex(b => b.iid === iid);
+    if (i >= 0) return i;
+    const loc = RB.locationOf(s, iid);
+    return loc.kind === 'bf' ? loc.bf : -1;
+  }
   RB.defineOp('atThisBattlefield', (s, e, ctx) => {
-    const i = s.bf.findIndex(b => b.iid === ctx.source);
+    const i = myBattlefield(s, ctx.source);
     if (i < 0) return;
     RB.runEffects(s, e.effects || [], withBf(ctx, i));
   });
@@ -493,40 +534,152 @@
   RB.defineDescriber('playFromHand', e => 'Play a ' + (e.type || 'Unit').toLowerCase() +
     ' from your hand to your base' + (e.ignoreEnergy ? ', ignoring its Energy cost' : '') + '.');
 
-  // --- conditional statics --------------------------------------------------
-  // RB.staticsOn is wrapped, not replaced: a static with no `when` passes straight
-  // through, so the other packs' continuous modifiers are untouched. The guard mirrors the
-  // core's own reentrancy guard — a predicate that asks about might sees no statics.
-  const STATIC_WHEN = {
-    // "While a unit here is defending alone" — it is the only unit its controller has here.
-    defendingAlone: (s, iid) => {
-      const o = RB.obj(s, iid);
-      if (o.role !== 'defender') return false;
-      const loc = RB.locationOf(s, iid);
-      if (loc.kind !== 'bf') return false;
-      return RB.unitsAt(s, loc.bf, o.controller).length === 1;
+  // --- revealTopSpell -------------------------------------------------------
+  // "Reveal the top card of your Main Deck. If it's a spell, draw it." A reveal leaves the
+  // card where it is (§Reveal), so a non-spell simply stays on top.
+  RB.defineOp('revealTopSpell', (s, e, ctx) => {
+    const P = s.players[ctx.p];
+    if (!P.deck.length) return;
+    const iid = P.deck[0];
+    const isSpell = RB.cardOf(s, iid).type === 'Spell';
+    RB.log(s, 'reveal', { p: ctx.p, iid: iid, drew: isSpell });
+    if (!isSpell) return;
+    P.deck.shift();
+    P.hand.push(iid);
+    RB.log(s, 'draw', { p: ctx.p, iid: iid }, 'card.draw');
+  });
+  RB.defineDescriber('revealTopSpell', () =>
+    "Reveal the top card of your Main Deck. If it's a spell, draw it.");
+
+  // --- counterIfChoseOnlyMine -----------------------------------------------
+  // "Counter an enemy spell or ability that chooses it and no other friendly unit." The
+  // core's counterIf/`onlyMineOne` also requires the item to have chosen NOTHING else,
+  // which this card does not say — a spell that took one of mine and one of theirs is
+  // still counterable here. The unit it chose must be at a battlefield, which is where the
+  // printed card's own choice comes from.
+  RB.defineOp('counterIfChoseOnlyMine', (s, e, ctx) => {
+    const item = RB.chainTop(s);
+    if (!item || item.controller === ctx.p) return;
+    const mine = (item.targets || []).filter(i => s.objects[i] && RB.obj(s, i).controller === ctx.p);
+    if (mine.length !== 1) return;
+    if (RB.locationOf(s, mine[0]).kind !== 'bf') return;
+    RB.ops.counter(s, {}, ctx);
+  });
+  RB.defineDescriber('counterIfChoseOnlyMine', () =>
+    'Choose a friendly unit at a battlefield. Counter an enemy spell or ability that ' +
+    'chooses it and no other friendly unit.');
+
+  // --- damageEachLocation ---------------------------------------------------
+  // "Choose up to one enemy unit at each location. Deal N to them." A location is every
+  // battlefield plus the bases; taking none at a location is legal but never better, so
+  // the one taken is simply the best target there.
+  RB.defineOp('damageEachLocation', (s, e, ctx) => {
+    const foe = RB.opponentOf(ctx.p);
+    const spots = s.bf.map((b, i) => RB.unitsAt(s, i, foe)).concat([s.players[foe].base.slice()]);
+    for (const here of spots) {
+      if (!here.length) continue;
+      const best = here.slice().sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a))[0];
+      RB.obj(s, best).damage += n_(e);
+      RB.log(s, 'damage', { iid: best, n: n_(e) });
+    }
+  });
+  RB.defineDescriber('damageEachLocation', e =>
+    'Choose up to one enemy unit at each location. Deal ' + n_(e) + ' to them.');
+
+  // --- addBattlefieldAndEnter -----------------------------------------------
+  // "Add the [X] battlefield token to the board if it's not there already. If you do, I
+  // enter there." Both halves in one op because the second depends on the first.
+  RB.defineOp('addBattlefieldAndEnter', (s, e, ctx) => {
+    if (s.bf.some(b => b.cardId === e.cardId)) return;
+    RB.ops.addBattlefield(s, { cardId: e.cardId }, ctx);
+    const i = s.bf.length - 1;
+    const o = RB.obj(s, ctx.source);
+    if (!pluck(s, ctx.source)) return;
+    s.bf[i].units.push(ctx.source);
+    RB.applyContested(s, i, o.controller);
+    RB.log(s, 'move', { p: o.controller, iid: ctx.source, to: 'bf' + i }, 'unit.move');
+  });
+  RB.defineDescriber('addBattlefieldAndEnter', e =>
+    'Add the ' + RB.card(e.cardId).name + " battlefield token to the board if it's not " +
+    'there already. If you do, I enter there.');
+
+  // --- killFriendlyRecord + resurrectWithin ---------------------------------
+  // "As an additional cost, kill a friendly unit" whose COST the payoff then reads. The
+  // core's killFriendly does the gating correctly but keeps no record of what died, so
+  // this kind is the same cost that also remembers the price.
+  RB.defineExtraCost('killFriendlyRecord', {
+    available: (s, p, iid) => candidates(s, p, iid).length > 0,
+    pay: (s, p, iid) => {
+      const c = candidates(s, p, iid);
+      if (!c.length) return;
+      const victim = c[0];
+      const card = RB.cardOf(s, victim);
+      RB.obj(s, iid).unlPaidCost = { energy: card.energy || 0, power: card.power || 0 };
+      RB.kill(s, victim);
     },
-    // "While you have N or more XP" — read against the affected card's controller.
-    xpAtLeast: (s, iid, v) => (s.players[RB.obj(s, iid).controller].xp || 0) >= v,
-  };
-  let whenDepth = 0;
-  const baseStaticsOn = RB.staticsOn;
-  RB.staticsOn = function (state, iid) {
-    const all = baseStaticsOn(state, iid);
-    if (!all.some(st => st.when)) return all;
-    if (whenDepth > 0) return all.filter(st => !st.when);
-    whenDepth++;
-    try {
-      return all.filter(st => {
-        if (!st.when) return true;
-        const key = typeof st.when === 'string' ? st.when : Object.keys(st.when)[0];
-        const val = typeof st.when === 'string' ? true : st.when[key];
-        const fn = STATIC_WHEN[key];
-        if (!fn) throw new Error('unl static: unknown when ' + key);
-        return fn(state, iid, val);
-      });
-    } finally { whenDepth--; }
-  };
-  RB.unlStaticWhen = STATIC_WHEN;   // the check harness reads this
+  });
+  function candidates(s, p, iid) {
+    return RB.allUnits(s).filter(u => RB.obj(s, u).controller === p && u !== iid)
+      .sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b));   // cheapest first
+  }
+
+  RB.defineOp('resurrectWithin', (s, e, ctx) => {
+    const bound = RB.obj(s, ctx.source).unlPaidCost;
+    if (!bound) return;
+    const P = s.players[ctx.p];
+    const pool = P.trash.filter(iid => {
+      const c = RB.cardOf(s, iid);
+      return c.type === 'Unit' && (c.energy || 0) <= bound.energy && (c.power || 0) <= bound.power;
+    });
+    if (!pool.length) return;
+    pool.sort((a, b) => (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0));
+    const iid = pool[0];
+    RB.removeFrom(P.trash, iid);
+    RB.log(s, 'play', { p: ctx.p, iid: iid, card: RB.obj(s, iid).cardId, to: 'base' }, 'unit.deploy');
+    RB.resolveCard(s, { iid: iid, controller: ctx.p, to: 'base', kind: 'card', targets: [] });
+  });
+  RB.defineDescriber('resurrectWithin', () =>
+    'Play a unit from your trash that costs no more Energy and no more Power than the ' +
+    'killed unit, ignoring its cost.');
+
+  // --- banishFromHand + returnBanished --------------------------------------
+  // Ashe: banish a card out of an opponent's revealed hand, and promise it back. The
+  // promise outlives her, so which card it was is remembered on her own object — that
+  // survives her leaving the board, because objects do.
+  RB.defineOp('banishFromHand', (s, e, ctx) => {
+    const foe = RB.opponentOf(ctx.p);
+    const P = s.players[foe];
+    if (!P.hand.length) return;
+    RB.log(s, 'reveal', { p: foe, n: P.hand.length });
+    const pick = P.hand.slice().sort((a, b) =>
+      (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0))[0];
+    RB.removeFrom(P.hand, pick);
+    P.banished.push(pick);
+    RB.obj(s, ctx.source).unlBanished = pick;
+    RB.log(s, 'banish', { p: foe, iid: pick });
+  });
+  RB.defineDescriber('banishFromHand', () =>
+    'Choose an opponent. They reveal their hand. Choose a card revealed this way and banish it.');
+
+  RB.defineOp('returnBanished', (s, e, ctx) => {
+    const o = RB.obj(s, ctx.source);
+    const iid = o.unlBanished;
+    if (!iid) return;                       // already given back: the promise is spent
+    const owner = RB.obj(s, iid).owner;
+    if (!RB.removeFrom(s.players[owner].banished, iid)) { o.unlBanished = null; return; }
+    s.players[owner].hand.push(iid);
+    o.unlBanished = null;
+    RB.log(s, 'returnToHand', { p: owner, iid: iid }, 'card.draw');
+  });
+  RB.defineDescriber('returnBanished', () => 'Return it to their hand.');
+
+  // --- conditions this pack adds to the core's table ------------------------
+  // Registered, not wrapped. Both take the affected card and the static's SOURCE, which is
+  // what lets one card say something about units that are not its own.
+  RB.defineStaticWhen('enemyOfSource', (state, iid, w, src) =>
+    RB.obj(state, iid).controller !== RB.obj(state, src).controller);
+  RB.defineStaticWhen('weakerEnemyThanSource', (state, iid, w, src) =>
+    RB.obj(state, iid).controller !== RB.obj(state, src).controller &&
+    RB.mightOf(state, iid) < RB.mightOf(state, src));
 
 })(window.RB = window.RB || {});
