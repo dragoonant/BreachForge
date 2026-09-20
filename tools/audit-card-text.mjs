@@ -117,8 +117,13 @@ function audit(id) {
   //    an optional additional cost that makes the unit enter ready, so the word never
   //    appears in the prose and never should; flagging it would train the reader to
   //    ignore this check, which is worse than not having it.
+  // Scan only the card's OWN text. Reminder text exists to explain one keyword by naming
+  // others — "[Ambush] (You may play me as a [Reaction] …)" is not a card with Reaction —
+  // and a quoted token's abilities belong to the token, authored there. Both were
+  // generating findings that could never be actioned, which trains a reader to skim.
+  const own = stripReminders(printed).replace(/"[^"]*"/g, ' ');
   const gl = generated.toLowerCase();
-  const missingK = [...keywordsIn(printed)]
+  const missingK = [...keywordsIn(own)]
     .filter(k => !gl.includes(k) && !structurallyPresent(k, ab, gl));
   if (missingK.length)
     f.push({ id, kind: 'KEYWORD', detail: 'printed names ' + missingK.join(', ') });
@@ -158,6 +163,14 @@ function structurallyPresent(kw, ab, gl) {
       return (ab.additionalCosts || []).some(x => x.effects);
     case 'empower': case 'empowered':
       return !!(ab.activated || []).length;
+    case 'hunt':
+      // [Hunt N] IS "when you conquer or hold, gain N XP", authored as those triggers.
+      return (ab.triggers || []).some(t => t.on === 'conquer' || t.on === 'hold');
+    case 'level':
+      // [Level N] gates something on XP, authored as a static with an xpAtLeast condition.
+      return (ab.statics || []).some(st => st.when && JSON.stringify(st.when).includes('xp'));
+    case 'buff':
+      return gl.includes('buff') || gl.includes('might');
     default:
       return false;
   }

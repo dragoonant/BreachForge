@@ -43,6 +43,8 @@
     '. (It contributes no Might in combat this turn.)');                                           // ops.stun
   RB.defineDescriber('counter', () => 'Counter it.');                                                       // ops.counter
   RB.defineDescriber('xp', e => 'Gain ' + n(e) + ' XP.');                                                   // ops.xp
+  RB.defineDescriber('placeBuff', e => 'Buff ' + sel(e.target) +
+    ". (If it doesn't have a buff, it gets a +1 Might buff.)");                                             // ops.placeBuff
   RB.defineDescriber('counters', e => 'Put ' + n(e) + ' counter' + (n(e) === 1 ? '' : 's') +
     ' on ' + sel(e.target) + '.');                                                                          // ops.counters
   RB.defineDescriber('playFromZone', e => 'Play a ' + (e.type ? e.type.toLowerCase() : 'card') +
@@ -136,10 +138,20 @@
     }
     for (const w of ab.playAlso || []) out.push(PLAY_WHERE_TEXT[w] || ('I may be played ' + w) + '.');
     for (const k of ab.keywords || []) out.push(typeof k === 'string' ? k : k.name + (k.value ? ' ' + k.value : ''));
-    for (const t of ab.triggers || [])
+    // A trigger marked `silent` is engine bookkeeping — a counter, a watcher — and prints
+    // nothing on the card. Narrow on purpose: an EMPTY line from any other trigger is a
+    // printed clause that went missing, and it stays visible.
+    for (const t of ab.triggers || []) {
+      if (t.silent) continue;
       out.push((TRIGGER_WORDS[t.on] || t.on) + ', ' + lower(t.effects.map(line).join(' ')));
+    }
+    // The gate reads as its own sentence, the way the card prints it — "…: Draw 1. Use
+    // only if …" — not as a parenthetical. Parentheses are where reminder text lives, and
+    // the audit strips them from both sides, so a gate hidden in one made a card whose
+    // gate is most of its text read as though most of its text were missing.
     for (const a of ab.activated || [])
-      out.push(cost(a) + ': ' + a.effects.map(line).join(' '));
+      out.push(cost(a) + ': ' + a.effects.map(line).join(' ') +
+        (a.when ? ' Use only ' + whenText(a.when) + '.' : ''));
     for (const st of ab.statics || []) out.push(staticText(st));
     for (const r of ab.replaces || []) out.push(replacementText(r));
     if (ab.effects) out.push(ab.effects.map(line).join(' '));
@@ -324,7 +336,7 @@
     if (a.killSelf) bits.push('Kill me');
     let c = bits.join(', ') || 'Free';
     for (const k of Object.keys(ABILITY_NOTE)) if (a[k]) c += ' — ' + ABILITY_NOTE[k](a);
-    // A gate on an ability is part of what the card says, not an implementation detail.
-    return c + (a.when ? ' (use only ' + whenText(a.when) + ')' : '');
+    // The gate is rendered by the caller, as its own sentence after the effect.
+    return c;
   }
 })(window.RB = window.RB || {});

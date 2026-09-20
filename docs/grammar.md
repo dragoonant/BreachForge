@@ -168,6 +168,23 @@ is the same thing for an activated ability's cost, and pairs with
 `RB.defineAbilityCostModifier`. A cost the auditor renders as its raw key is a clause nobody can
 check.
 
+## Buffs
+
+A **Buff** is one thing: a counter on a unit that grants **+1 Might** *and* is the resource a
+"spend a buff" cost spends. Both halves read `obj.counters`, and a unit holds at most one — which
+is why the printed reminder is a condition rather than an addition. Place one with
+`{ op: 'placeBuff', target }`; spend one with an `additionalCosts` entry of `pays: 'spendBuff'`.
+
+Do not model a Buff as a Might modifier: a unit whose Might came from `permBuffs` cannot pay a
+buff cost, and one whose buff came from `counters` alone would grant no Might. Two fields for one
+rule is how a card ends up buffing a unit that then cannot pay for anything.
+
+## Silent triggers
+
+`{ on: '…', silent: true, effects: [ … ] }` — engine bookkeeping that prints nothing on the card,
+so the describer skips it. Narrow on purpose: an **empty** rendering from any other trigger is a
+printed clause that went missing, and `tools/audit-card-text.mjs` reports it as `DANGLING`.
+
 ## Naming an activated ability
 
 An ability's printed **name** and its **timing tags** are part of what the card says —

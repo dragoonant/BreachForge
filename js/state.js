@@ -157,7 +157,12 @@
   RB.mightOf = function (state, iid) {
     const o = RB.obj(state, iid);
     const c = RB.card(o.cardId);
-    let m = (c.might || 0) + (o.buffs || 0) + (o.permBuffs || 0);
+    // A Buff is one thing, not two. It is a counter on the unit that grants +1 Might AND
+    // is the resource a "spend a buff" cost spends — so Might and spendability must read
+    // the same field, or a card can buff a unit that then cannot pay a buff cost. That
+    // rule lived in a pack wrapper, which meant a second pack's buff granted Might it
+    // could not spend.
+    let m = (c.might || 0) + (o.buffs || 0) + (o.permBuffs || 0) + (o.counters || 0);
     for (const st of RB.staticsOn(state, iid)) m += RB.staticValue(state, iid, st.might);
     for (const g of o.attached) m += (RB.card(RB.obj(state, g).cardId).might || 0);
     return Math.max(0, m);

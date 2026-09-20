@@ -590,6 +590,18 @@
     P.xp = (P.xp || 0) + (e.n || 1);
     RB.log(s, 'xp', { p: ctx.p, xp: P.xp });
   });
+  // "Buff a unit. (If it doesn't have a buff, it gets a +1 Might buff.)" — a unit holds at
+  // most one, which is why the printed reminder is phrased as a condition rather than as
+  // an addition. One home for both halves: the Might and the spendable resource.
+  RB.defineOp('placeBuff', (s, e, ctx) => {
+    for (const iid of asList(s, e.target, ctx)) {
+      const o = RB.obj(s, iid);
+      if (o.counters) continue;
+      o.counters = 1;
+      RB.log(s, 'buff', { p: ctx.p, iid: iid });
+    }
+  });
+
   RB.defineOp('counters', (s, e, ctx) => {
     for (const iid of asList(s, e.target, ctx)) {
       const o = RB.obj(s, iid);

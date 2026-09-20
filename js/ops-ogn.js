@@ -1021,7 +1021,8 @@
     let m = baseMight(s, iid);
     const o = s.objects[iid];
     if (!o) return m;
-    m += o.counters || 0;                                    // Buff counters: +1 Might each
+    // (Buff counters are counted by the core's RB.mightOf now — a Buff is one thing, and
+    //  having it here meant a buff placed by another pack granted no Might.)
     for (const mod of o.ognMods || []) {
       if (!live(s, mod)) continue;
       m += mod.n;
