@@ -27,8 +27,10 @@
     const assignA = assign(s, sum(A), D);
     const assignD = assign(s, sum(D), A);
     RB.log(s, 'combatDamage', { bf: i, attackerMight: sum(A), defenderMight: sum(D) }, 'showdown.start');
-    for (const [iid, n] of assignA) RB.obj(s, iid).damage += n;
-    for (const [iid, n] of assignD) RB.obj(s, iid).damage += n;
+    // Combat damage goes through the same door as everything else, tagged 'combat' so a
+    // card that prevents only spell and ability damage does not accidentally stop it.
+    for (const [iid, n] of assignA) RB.dealDamage(s, iid, n, { p: sd.attacker }, 'combat');
+    for (const [iid, n] of assignD) RB.dealDamage(s, iid, n, { p: sd.defender }, 'combat');
   }
 
   // What this unit contributes to its side's combat damage. Usually its Might; a static

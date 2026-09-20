@@ -89,6 +89,47 @@ its own pool silently skips:
 3. **Deflect is charged** to the chooser.
 4. **The `chosen` trigger fires**, which several printed cards read.
 
+## Damage — the one door
+
+**`RB.dealDamage(state, iid, n, ctx, kind)`.** Every op that damages a unit calls this; an op that
+writes `obj.damage` directly bypasses every effect that sits between a source and a unit, and the
+card reading those effects plays wrong without ever looking broken. `kind` is `'effect'` for spell
+and ability damage and `'combat'` for the Combat Damage Step, because several cards care which.
+
+Statics read on the way through: `bonusDamage: 1` (effect damage only) · `preventEffectDamage`.
+`RB.defineDamageLayer(fn)` adds a pack-local layer.
+
+## Restrictions
+
+`{ op: 'restrict', what: 'play', type: 'Spell', opponent: true }` — legality is not only cost and
+timing. Checked in `legalActions`, so a restricted card is genuinely not offered; cleared with
+everything else in the Ending Cleanup. `RB.restricted(state, p, what, type)` reads it.
+`obj.noMoveToBase` restricts one destination rather than all movement.
+
+## Restricted resources
+
+`{ op: 'addRestrictedEnergy', n: 2, only: 'Spell' }` — its own bucket in `pool.tagged`, spent
+**before** general Energy so it is never wasted, and unreachable by anything it does not name. One
+untagged pool would make a restricted resource strictly better than the printed card.
+
+## X costs
+
+An `additionalCosts` entry with `x: true` and `powerEach` / `energyEach` is "pay any amount":
+every affordable amount becomes its own play action, and `ctx.xPaid` is what was paid. Ops
+`perX` and `damageX` read it.
+
+## Granted keywords carry values
+
+`obj.granted` entries may be `'Assault'` or `{ name: 'Assault', value: 2 }`, and a static may
+carry `grant` plus `grantValue`. `RB.keywordValue` SUMS every instance — a unit printed with
+Assault 1 and granted Assault 2 has Assault 3.
+
+## Statics that reach the play step
+
+`{ grantsExtra: { id, energy, power, entersReady }, tag, type }` gives a card being played an
+additional cost it does not print — "your Shurima units have Accelerate" is an option at their
+play step, not a keyword they carry.
+
 ## Replacement effects
 
 A replacement stands **in front of** an event and takes its place — the event never happens, so
@@ -151,6 +192,8 @@ or `{ pick: <selector>, n: 1, filter: 'damaged', maxMight: 3 }` for "choose a �
 `playFromZone` (play a card out of your trash or deck) `swapMight` `addBattlefield`
 `addShowdownEnergy` `delayed` `ransom` (counter it unless its controller pays) `counterIf`
 (counter only when the chain's top matches) `payCost` `buffByCounteredCost`
+`preventEffectDamage` `restrict` `replaceOn` `nameTag` (a choice over every tag printed in the
+game) `withTag` `addRestrictedEnergy` `extraTurn` `perX` `damageX`
 
 ### The chain, from an op
 

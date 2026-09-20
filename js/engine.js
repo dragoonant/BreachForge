@@ -57,7 +57,9 @@
   // and a card with them still offers the plain play unless one is mandatory.
   function extraCombinations(state, p, iid) {
     const ab = RB.cardOf(state, iid).abilities || {};
-    const all = ab.additionalCosts || [];
+    // A static may GRANT an additional cost to a card being played — "your units have
+    // Accelerate" is not a keyword the unit carries, it is an option at its play step.
+    const all = (ab.additionalCosts || []).concat(RB.grantedExtras(state, p, iid));
     if (!all.length) return [[]];
     const usable = RB.availableExtras(state, p, iid);
     const optional = all.filter(x => x.optional !== false && usable.includes(x.id)).map(x => x.id);
@@ -65,8 +67,48 @@
     for (const r of required) if (!usable.includes(r)) return [];   // cannot be paid: unplayable
     const out = [required.slice()];
     for (const id of optional) out.push(required.concat([id]));
+    // An X cost is "pay any amount": each affordable amount is its own play, because what
+    // the card does depends on how much was paid.
+    const x = all.find(c => c.x);
+    if (x) {
+      const grown = [];
+      for (const combo of out)
+        for (let n = 1; n <= RB.maxX(state, p, iid, x); n++)
+          grown.push(combo.concat(['x' + n]));
+      return out.concat(grown);
+    }
     return out;
   }
+
+  // How much X could this player pay, on top of everything else the card costs?
+  RB.maxX = function (state, p, iid, x) {
+    const base = RB.costOf(state, iid);
+    let n = 0;
+    while (n < 12) {
+      const probe = { energy: base.energy + (x.energyEach || 0) * (n + 1),
+        power: base.power + (x.powerEach || 1) * (n + 1),
+        domains: base.domains.slice(), each: false, forKind: 'card' };
+      if (!RB.canPay(state, p, probe)) break;
+      n++;
+    }
+    return n;
+  };
+
+  // Additional costs a static grants to a card being played.
+  RB.grantedExtras = function (state, p, iid) {
+    const out = [];
+    const card = RB.cardOf(state, iid);
+    for (const src of RB.allUnits(state).concat(state.players.map(P => P.legend)).filter(Boolean)) {
+      if (RB.obj(state, src).controller !== p) continue;
+      for (const st of (RB.card(RB.obj(state, src).cardId).abilities || {}).statics || []) {
+        if (!st.grantsExtra) continue;
+        if (st.tag && !(card.tags || []).includes(st.tag)) continue;
+        if (st.type && card.type !== st.type) continue;
+        out.push(st.grantsExtra);
+      }
+    }
+    return out;
+  };
 
   function timingOk(state, card, mode) {
     const kws = (card.abilities && card.abilities.keywords) || [];
@@ -113,6 +155,7 @@
       // Every combination of optional additional costs the player could choose is its own
       // action, because paying one changes both what the card costs and what it does —
       // [Accelerate] is a different play, not a decision taken afterwards.
+      if (RB.restricted(state, p, 'play', card.type)) continue;
       const dests = playDestinations(state, p, card);
       if (!dests.length) continue;
       let any = false;
@@ -188,7 +231,7 @@
     for (let i = 0; i < state.bf.length; i++) {
       for (const iid of RB.unitsAt(state, i, p)) {
         if (RB.obj(state, iid).exhausted || RB.obj(state, iid).cantMove) continue;
-        out.push({ t: 'move', iid: iid, to: 'base' });
+        if (!RB.obj(state, iid).noMoveToBase) out.push({ t: 'move', iid: iid, to: 'base' });
         if (RB.hasKeyword(state, iid, 'Ganking') || RB.bfGrantsGanking(state, i))
           for (let j = 0; j < state.bf.length; j++) if (j !== i) out.push({ t: 'move', iid: iid, to: 'bf' + j });
       }
@@ -328,8 +371,17 @@
     // Optional additional costs are chosen as the card is played and are part of its
     // total cost (§349 step 3), so they are solved and paid together with the base cost —
     // never as an effect afterwards, which would make an unpayable card castable.
-    const extras = (a.pay || []).map(id => RB.additionalCost(s, iid, id));
-    const plan = RB.planPayment(s, p, RB.totalCost(s, iid, extras));
+    const xPaid = (a.pay || []).filter(id => /^x\d+$/.test(id)).map(id => +id.slice(1))[0] || 0;
+    const extras = (a.pay || []).filter(id => !/^x\d+$/.test(id))
+      .map(id => RB.additionalCost(s, iid, id));
+    const cost = RB.totalCost(s, iid, extras);
+    if (xPaid) {
+      const x = (RB.cardOf(s, iid).abilities.additionalCosts || []).find(c => c.x);
+      cost.energy += (x.energyEach || 0) * xPaid;
+      cost.power += (x.powerEach || 1) * xPaid;
+      cost.each = false;
+    }
+    const plan = RB.planPayment(s, p, cost);
     if (!plan) throw new Error('cannot pay for ' + card.id);
     RB.pay(s, p, plan);
     for (const x of extras) RB.payExtra(s, p, iid, x);
@@ -345,7 +397,7 @@
     // Units and Gear resolve immediately on finalization and never sit on the chain
     // (rules §356); only spells and non-Add abilities linger there.
     const item = { iid: iid, controller: p, to: a.to, kind: 'card', targets: a.targets,
-      paid: (a.pay || []).slice(), cardId: card.id, energy: card.energy || 0 };
+      paid: (a.pay || []).slice(), xPaid: xPaid, cardId: card.id, energy: card.energy || 0 };
     // Relevant choices are made as the card is played (§349 step 2), so a card that
     // declares what it chooses records it on the chain item. That is what lets a counter
     // read "a spell that chose exactly one of my units" instead of countering anything.
@@ -464,6 +516,10 @@
   // and each of them is a rule the engine was missing: all damage heals, every "this
   // turn" effect expires — which is where Stun clears, not in the Awaken Phase — and both
   // players' rune pools empty.
+  // "Take a turn after this one." The turn loop hands play to the other seat; an extra
+  // turn is a queue in front of that, so the same seat comes back before the other does.
+  RB.defineExtraTurn = function (s, p) { (s.extraTurns = s.extraTurns || []).push(p); };
+
   function endTurn(s) {
     RB.log(s, 'endTurn', { p: s.active }, 'turn.end');
     RB.runTriggers(s, 'endOfTurn', { p: s.active });
@@ -478,13 +534,18 @@
       o.movedThisTurn = 0;
     }
     for (const bf of s.bf) for (const h of bf.hidden) h.revealedTo = [];
+    s.restrictions = [];
+    s.preventEffectDamage = false;
+    for (const iid of Object.keys(s.objects)) s.objects[iid].replaces = null;
     for (let q = 0; q < 2; q++) {  // 3e. Rune pools empty; unspent resources are lost
       s.players[q].pool.energy = 0;
       s.players[q].pool.any = 0;
       s.players[q].pool.showdownOnly = 0;
+      s.players[q].pool.tagged = [];
       for (const d of RB.DOMAINS) s.players[q].pool.power[d] = 0;
     }
-    startTurn(s, RB.opponentOf(s.active), false);
+    const extra = (s.extraTurns && s.extraTurns.length) ? s.extraTurns.shift() : null;
+    startTurn(s, extra === null ? RB.opponentOf(s.active) : extra, false);
   }
 
   function startTurn(s, p, isFirst) {
@@ -528,6 +589,7 @@
       s.players[q].pool.energy = 0;
       s.players[q].pool.any = 0;
       s.players[q].pool.showdownOnly = 0;
+      s.players[q].pool.tagged = [];
       for (const d of RB.DOMAINS) s.players[q].pool.power[d] = 0;
     }
     s.phase = 'main';
@@ -565,9 +627,17 @@
     const loc = RB.locationOf(s, iid);
     const o = RB.obj(s, iid);
     if (!replacing && loc.kind !== 'nowhere') {
-      for (const src of RB.allUnits(s).concat(s.players.map(P => P.legend)).filter(Boolean)) {
+      // A replacement may be PRINTED on a card or placed on one object for the turn, and
+      // the dying unit's own is asked first — "if it would die this turn, banish it
+      // instead" is about that unit, not about whoever is watching.
+      const sources = [iid].concat(
+        RB.allUnits(s).filter(u => u !== iid),
+        s.players.map(P => P.legend)).filter(Boolean);
+      for (const src of sources) {
         const ab = RB.card(RB.obj(s, src).cardId).abilities;
-        for (const r of (ab && ab.replaces) || []) {
+        const printed = (ab && ab.replaces) || [];
+        const placed = (RB.obj(s, src).replaces) || [];
+        for (const r of printed.concat(placed)) {
           if (r.event !== 'death') continue;
           const fn = RB.replacements[r.kind];
           if (!fn) throw new Error('no replacement named ' + r.kind);

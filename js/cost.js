@@ -49,16 +49,33 @@
       ready.splice(idx, 1);
     }
     let e = cost.energy;
-    // Showdown-only Energy is spent FIRST while a showdown is open, because it is lost
-    // the moment the showdown closes and ordinary Energy is not.
+    // Restricted Energy is spent FIRST, because it is the resource that expires or that
+    // nothing else can use — spending general Energy while a restricted pool sits unusable
+    // would waste it every time.
     const sdPool = state.showdown ? (P.pool.showdownOnly || 0) : 0;
     const useSd = Math.min(e, sdPool);
     plan.fromPool.showdownOnly = useSd; e -= useSd;
+    plan.fromPool.tagged = [];
+    for (let ti = 0; ti < (P.pool.tagged || []).length; ti++) {
+      const t = P.pool.tagged[ti];
+      if (!t.n || !RB.taggedApplies(t, cost)) continue;
+      const use = Math.min(e, t.n);
+      if (!use) continue;
+      plan.fromPool.tagged.push({ ix: ti, n: use });
+      e -= use;
+    }
     const useFromPool = Math.min(e, pool.energy);
     plan.fromPool.energy = useFromPool; e -= useFromPool;
     if (e > ready.length) return null;
     for (let i = 0; i < e; i++) plan.exhaust.push(ready[i].iid);
     return plan;
+  };
+
+  // Does a tagged pool apply to what is being paid for? The cost carries what it is for,
+  // set by whoever is asking, so "only to play spells" can tell a spell from an ability.
+  RB.taggedApplies = function (t, cost) {
+    if (!t.only) return true;
+    return t.only === cost.forType || t.only === cost.forKind;
   };
 
   RB.canPay = function (state, p, cost) { return !!RB.planPayment(state, p, cost); };
@@ -149,7 +166,8 @@
   RB.totalCost = function (state, iid, extras) {
     const base = RB.costOf(state, iid);
     const cost = { energy: base.energy, power: base.power,
-      domains: base.domains.slice(), each: base.each };
+      domains: base.domains.slice(), each: base.each,
+      forType: RB.cardOf(state, iid).type, forKind: 'card' };
     for (const x of extras || []) {
       cost.energy += x.energy || 0;
       if (x.power) {
@@ -160,7 +178,10 @@
       if (x.waivesBaseCost) { cost.energy = x.energy || 0; cost.power = x.power || 0; }
     }
     const o = RB.obj(state, iid);
-    for (const fn of RB.costModifiers) fn(state, o.controller, iid, cost);
+    // Modifiers see the chosen additional costs, because several cards discount those
+    // rather than the printed cost — "your Accelerate costs 1 less" is not a discount on
+    // the unit.
+    for (const fn of RB.costModifiers) fn(state, o.controller, iid, cost, extras || []);
     cost.energy = Math.max(0, cost.energy);
     cost.power = Math.max(0, cost.power);
     if (cost.power === 0) cost.each = false;
@@ -193,6 +214,7 @@
       plan.fromPool.power.length + plan.recycle.length;
     P.pool.energy -= plan.fromPool.energy;
     P.pool.showdownOnly -= (plan.fromPool.showdownOnly || 0);
+    for (const t of plan.fromPool.tagged || []) P.pool.tagged[t.ix].n -= t.n;
     for (const d of plan.fromPool.power) { if (d === 'any') P.pool.any--; else P.pool.power[d]--; }
     for (const iid of plan.exhaust) {
       RB.obj(state, iid).exhausted = true;

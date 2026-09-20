@@ -67,6 +67,22 @@
     (e.otherwise && e.otherwise.length ? ' Otherwise, ' + lower(e.otherwise.map(line).join(' ')) : ''));  // ops.when
   RB.defineDescriber('revealHidden', () =>
     "Look at your opponents' facedown cards for the rest of the turn.");                                    // ops.revealHidden
+  RB.defineDescriber('preventEffectDamage', () =>
+    'Prevent all spell and ability damage this turn.');                                                     // ops.preventEffectDamage
+  RB.defineDescriber('restrict', e => (e.opponent ? 'Its controller' : 'You') + " can't " +
+    (e.what === 'play' ? 'play ' + (e.type ? e.type.toLowerCase() + 's' : 'cards') : e.what) +
+    ' this turn.');                                                                                         // ops.restrict
+  RB.defineDescriber('replaceOn', e => 'If ' + sel(e.target) + ' would die this turn, ' +
+    (e.kind === 'banishInstead' ? 'banish it instead' : 'replace that') + '.');                             // ops.replaceOn
+  RB.defineDescriber('nameTag', e => 'Name a tag, then ' +
+    lower((e.effects || []).map(line).join(' ')));                                                          // ops.nameTag
+  RB.defineDescriber('withTag', e => lower((e.effects || []).map(line).join(' ')));                         // ops.withTag
+  RB.defineDescriber('addRestrictedEnergy', e => 'Add ' + n(e) + ' Energy, spendable only to play ' +
+    (e.only ? e.only.toLowerCase() + 's' : 'certain cards') + '.');                                         // ops.addRestrictedEnergy
+  RB.defineDescriber('extraTurn', e => 'Take a turn after this one' +
+    (e.opponent ? ', for your opponent' : '') + '.');                                                       // ops.extraTurn
+  RB.defineDescriber('perX', e => 'For each X paid, ' + lower((e.effects || []).map(line).join(' ')));      // ops.perX
+  RB.defineDescriber('damageX', e => 'Deal damage equal to X to ' + sel(e.target) + '.');                   // ops.damageX
   RB.defineDescriber('cantMove', e => sel(e.target, true) + " can't move this turn.");                     // ops.cantMove
   RB.defineDescriber('moveTokensHere', () =>
     'Move any number of your token units to this battlefield.');                                            // ops.moveTokensHere

@@ -312,6 +312,107 @@ export function run(t) {
     card.abilities = saved;
   });
 
+  // --- the damage door -------------------------------------------------------
+  t.test('all damage goes through one door, so prevention and bonuses can sit in front of it', () => {
+    const s = game();
+    const p = s.active;
+    const iid = put(s, p, 0);
+    RB.dealDamage(s, iid, 2, { p: p }, 'effect');
+    t.eq(RB.obj(s, iid).damage, 2, 'ordinary effect damage lands');
+    s.preventEffectDamage = true;
+    RB.dealDamage(s, iid, 3, { p: p }, 'effect');
+    t.eq(RB.obj(s, iid).damage, 2, 'prevented while the shield is up');
+    RB.dealDamage(s, iid, 3, { p: p }, 'combat');
+    t.eq(RB.obj(s, iid).damage, 5, 'but COMBAT damage is a different thing and still lands');
+  });
+
+  t.test('a battlefield can add bonus damage to spells against units standing on it', () => {
+    const s = game();
+    const p = s.active;
+    const iid = put(s, p, 0);
+    const bfCard = RB.card(s.bf[0].cardId);
+    const saved = bfCard.abilities;
+    bfCard.abilities = { statics: [{ bonusDamage: 1, scope: 'here' }] };
+    RB.dealDamage(s, iid, 1, { p: p }, 'effect');
+    t.eq(RB.obj(s, iid).damage, 2, 'one became two');
+    bfCard.abilities = saved;
+  });
+
+  // --- restrictions ----------------------------------------------------------
+  t.test("a play restriction removes those cards from legalActions, not just from the prompt", () => {
+    const s = game();
+    const p = s.active;
+    s.players[p].pool.energy = 99; s.players[p].pool.any = 99;
+    const spells = () => RB.legalActions(s).filter(a => a.t === 'play' &&
+      RB.cardOf(s, a.iid).type === 'Spell').length;
+    const before = spells();
+    if (!before) return;
+    RB.runEffects(s, [{ op: 'restrict', what: 'play', type: 'Spell' }], { p: p });
+    t.eq(spells(), 0, 'no spell can be played');
+    t.ok(RB.legalActions(s).some(a => a.t === 'play'), 'but other card types still can');
+  });
+
+  t.test('a restriction lasts the turn and no longer', () => {
+    let s = game();
+    const p = s.active;
+    RB.runEffects(s, [{ op: 'restrict', what: 'play', type: 'Spell' }], { p: p });
+    t.ok(RB.restricted(s, p, 'play', 'Spell'), 'in force now');
+    s = RB.apply(s, { t: 'endTurn' });
+    t.ok(!RB.restricted(s, p, 'play', 'Spell'), 'gone at end of turn');
+  });
+
+  // --- keyword values --------------------------------------------------------
+  t.test('a granted keyword carries its value, and instances sum', () => {
+    const s = game();
+    const p = s.active;
+    const iid = put(s, p, 0);
+    const base = RB.keywordValue(s, iid, 'Assault');
+    RB.obj(s, iid).granted.push({ name: 'Assault', value: 2 });
+    t.ok(RB.hasKeyword(s, iid, 'Assault'), 'the keyword is present');
+    t.eq(RB.keywordValue(s, iid, 'Assault'), base + 2, 'and so is its number');
+    RB.obj(s, iid).granted.push('Assault');
+    t.eq(RB.keywordValue(s, iid, 'Assault'), base + 2, 'a valueless instance adds nothing');
+  });
+
+  // --- tagged resources ------------------------------------------------------
+  t.test('restricted Energy pays only for what it names, and is spent before general Energy', () => {
+    const s = game();
+    const p = s.active;
+    s.players[p].runes = [];
+    s.players[p].pool.energy = 2;
+    RB.runEffects(s, [{ op: 'addRestrictedEnergy', n: 2, only: 'Spell' }], { p: p });
+    const spellCost = { energy: 2, power: 0, domains: [], each: false, forType: 'Spell' };
+    const unitCost = { energy: 4, power: 0, domains: [], each: false, forType: 'Unit' };
+    t.ok(RB.canPay(s, p, spellCost), 'a spell can use it');
+    t.ok(!RB.canPay(s, p, unitCost), 'a unit cannot reach it, so 2+2 does not buy a 4');
+    const plan = RB.planPayment(s, p, spellCost);
+    RB.pay(s, p, plan);
+    t.eq(s.players[p].pool.energy, 2, 'the general Energy was left alone');
+    t.eq(s.players[p].pool.tagged[0].n, 0, 'the restricted Energy was spent first');
+  });
+
+  // --- instance replacements and extra turns ---------------------------------
+  t.test('a replacement can be placed on one unit for the turn', () => {
+    const s = game();
+    const p = s.active;
+    const iid = put(s, p, 0);
+    RB.runEffects(s, [{ op: 'replaceOn', target: 'allUnits', kind: 'banishInstead' }],
+      { p: p, source: iid });
+    RB.kill(s, iid);
+    t.ok(!s.players[p].trash.includes(iid), 'it did not reach the trash');
+    t.ok(s.players[p].banished.includes(iid), 'it was banished instead');
+  });
+
+  t.test('an extra turn comes back to the same player before the opponent', () => {
+    let s = game();
+    const me = s.active;
+    RB.runEffects(s, [{ op: 'extraTurn' }], { p: me });
+    s = RB.apply(s, { t: 'endTurn' });
+    t.eq(s.active, me, 'I take another turn');
+    s = RB.apply(s, { t: 'endTurn' });
+    t.eq(s.active, RB.opponentOf(me), 'and then play passes as normal');
+  });
+
   // --- targeting -------------------------------------------------------------
   t.test('a human seat is ASKED to target, and the answer is what the effect uses', () => {
     let s = RB.newGame({ seed: 'ask', decks: [decks[0], decks[1]], humanSeat: 0 });

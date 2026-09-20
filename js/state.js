@@ -10,7 +10,9 @@
     return {
       deckId: deckId, hand: [], deck: [], runeDeck: [], trash: [], banished: [],
       runes: [], base: [], points: 0, legend: null, champion: null,
-      pool: { energy: 0, power: EMPTY_POWER(), any: 0, showdownOnly: 0 },
+      // Resources that may only be spent on certain things. A single untagged pool would
+      // make "Add [2], use only to play spells" strictly better than the printed card.
+      pool: { energy: 0, power: EMPTY_POWER(), any: 0, showdownOnly: 0, tagged: [] },
       scoredThisTurn: [], firstTurnDone: false,
       // Per-turn counters. Several printed cards count what you have already done this
       // turn ("your second card", "if you've played an Equipment this turn"), and a card
@@ -27,6 +29,7 @@
       exhausted: false, damage: 0, buffs: 0, permBuffs: 0, granted: [], attached: [],
       attachedTo: null, temporary: false, movedThisTurn: 0, enteredTurn: -1,
       wasMighty: false, wasReady: false, counters: 0, untargetable: false,
+      replaces: null, noMoveToBase: false, banished: false,
     };
     return iid;
   }
@@ -47,6 +50,7 @@
       // the fuzzer and AI-vs-AI all run that way, and behave exactly as before.
       humanSeat: (opts.humanSeat === undefined ? null : opts.humanSeat),
       chosen: {}, pendingItem: null, collecting: null,
+      restrictions: [], preventEffectDamage: false, extraTurns: [],
       firstPlayer: 0,
     };
 
@@ -289,16 +293,33 @@
   RB.MIGHTY_AT = 5;
   RB.isMighty = function (state, iid) { return RB.mightOf(state, iid) >= RB.MIGHTY_AT; };
 
-  RB.hasKeyword = function (state, iid, kw) {
+  // A granted keyword may carry a value: "[Assault 2] this turn" is a different card from
+  // "[Assault] this turn", and a grant channel that only holds a name quietly loses the
+  // number. Entries may be a bare name or { name, value }, wherever they come from.
+  const kwName = k => (typeof k === 'string' ? k : k.name);
+  const kwVal = k => (typeof k === 'string' ? 0 : (k.value || 0));
+
+  RB.grantedOn = function (state, iid) {
     const o = RB.obj(state, iid);
-    const c = RB.card(o.cardId);
-    if ((o.granted || []).includes(kw)) return true;
-    if (c.abilities && c.abilities.keywords && c.abilities.keywords.some(k => k === kw || k.name === kw)) return true;
-    return RB.staticsOn(state, iid).some(st => st.grant === kw);
+    const out = (o.granted || []).slice();
+    for (const st of RB.staticsOn(state, iid))
+      if (st.grant) out.push(st.grantValue != null ? { name: st.grant, value: st.grantValue } : st.grant);
+    return out;
   };
+  RB.hasKeyword = function (state, iid, kw) {
+    const c = RB.card(RB.obj(state, iid).cardId);
+    if ((c.abilities && c.abilities.keywords || []).some(k => kwName(k) === kw)) return true;
+    return RB.grantedOn(state, iid).some(k => kwName(k) === kw);
+  };
+  // The value of a keyword is the SUM of every instance — a unit printed with Assault 1
+  // and granted Assault 2 has Assault 3, the way Deflect already stacks.
   RB.keywordValue = function (state, iid, kw) {
-    const c = RB.cardOf(state, iid);
-    const k = c.abilities && c.abilities.keywords && c.abilities.keywords.find(x => x.name === kw);
-    return k ? (k.value || 0) : 0;
+    const c = RB.card(RB.obj(state, iid).cardId);
+    let n = 0, found = false;
+    for (const k of (c.abilities && c.abilities.keywords) || [])
+      if (kwName(k) === kw) { n += kwVal(k); found = true; }
+    for (const k of RB.grantedOn(state, iid))
+      if (kwName(k) === kw) { n += kwVal(k); found = true; }
+    return found ? n : 0;
   };
 })(window.RB = window.RB || {});

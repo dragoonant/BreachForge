@@ -26,7 +26,7 @@
     const card = RB.cardOf(s, iid);
     const ab = card.abilities || {};
     const ctx = { p: p, source: iid, to: item.to, targets: item.targets || [],
-      fromHidden: !!item.fromHidden, paid: item.paid || [] };
+      fromHidden: !!item.fromHidden, paid: item.paid || [], xPaid: item.xPaid || 0 };
 
     // An additional cost may change how the card enters or add its own clause —
     // [Accelerate] is "pay more and I enter ready", which is a property of the play, not
@@ -184,7 +184,35 @@
   const asList = (s, sel, ctx) => RB.select(s, sel, ctx);
 
   RB.defineOp('draw', (s, e, ctx) => { for (let i = 0; i < (e.n || 1); i++) RB.draw(s, e.opponent ? RB.opponentOf(ctx.p) : ctx.p); });
-  RB.defineOp('damage', (s, e, ctx) => { for (const iid of asList(s, e.target, ctx)) RB.obj(s, iid).damage += e.n || 1; });
+  // THE ONE DOOR FOR DAMAGE. Every op that damages a unit calls this, so the effects that
+  // sit between a source and a unit — "prevent all spell and ability damage this turn",
+  // "spells deal 1 bonus damage to units here" — have somewhere to live. A op that writes
+  // `obj.damage` directly bypasses all of them, and the card that reads them plays wrong
+  // without ever looking broken.
+  //
+  // `kind` is 'effect' for spell and ability damage and 'combat' for the combat damage
+  // step, because several cards care which.
+  RB.damageLayers = [];
+  RB.defineDamageLayer = function (fn) { RB.damageLayers.push(fn); };
+
+  RB.dealDamage = function (s, iid, n, ctx, kind) {
+    const info = { iid: iid, n: n, kind: kind || 'effect',
+      p: ctx && ctx.p, source: ctx && ctx.source };
+    for (const fn of RB.damageLayers) fn(s, info);
+    for (const st of RB.staticsOn(s, iid)) {
+      if (st.bonusDamage && info.kind === 'effect') info.n += st.bonusDamage;
+      if (st.preventEffectDamage && info.kind === 'effect') info.n = 0;
+    }
+    if (s.preventEffectDamage && info.kind === 'effect') info.n = 0;
+    if (info.n <= 0) { RB.log(s, 'damagePrevented', { iid: iid }); return 0; }
+    RB.obj(s, iid).damage += info.n;
+    return info.n;
+  };
+
+  RB.defineOp('damage', (s, e, ctx) => {
+    for (const iid of asList(s, e.target, ctx)) RB.dealDamage(s, iid, e.n || 1, ctx);
+  });
+  RB.defineOp('preventEffectDamage', (s) => { s.preventEffectDamage = true; });
   RB.defineOp('kill', (s, e, ctx) => { for (const iid of asList(s, e.target, ctx)) RB.kill(s, iid); });
   // `buffs` is the THIS-TURN channel and expires in the Ending Cleanup; `permBuffs`
   // survives. A printed "+2 Might this turn" and a printed "+1 Might" are different cards.
@@ -234,6 +262,65 @@
     RB.log(s, 'token', { p: ctx.p, iid: iid, card: e.cardId }, 'unit.deploy');
   });
   RB.defineOp('nothing', () => {});
+  RB.defineOp('extraTurn', (s, e, ctx) => {
+    RB.defineExtraTurn(s, e.opponent ? RB.opponentOf(ctx.p) : ctx.p);
+    RB.log(s, 'extraTurn', { p: ctx.p });
+  });
+  // "Pay any amount of X to do that much." ctx.xPaid is how much was actually paid.
+  RB.defineOp('perX', (s, e, ctx) => {
+    for (let i = 0; i < (ctx.xPaid || 0); i++) RB.runEffects(s, e.effects || [], ctx);
+  });
+  RB.defineOp('damageX', (s, e, ctx) => {
+    for (const iid of asList(s, e.target, ctx)) RB.dealDamage(s, iid, ctx.xPaid || 0, ctx);
+  });
+
+  // Restrictions a card places on a player for the turn. Legality is not only cost and
+  // timing — "its controller can't play spells this turn" is a rule about the player, and
+  // a card that cannot say it is either dropped or, worse, authored as something weaker.
+  RB.defineOp('restrict', (s, e, ctx) => {
+    const p = e.opponent ? RB.opponentOf(ctx.p) : ctx.p;
+    s.restrictions = s.restrictions || [];
+    s.restrictions.push({ p: p, what: e.what, type: e.type || null });
+    RB.log(s, 'restrict', { p: p, what: e.what, type: e.type || null });
+  });
+  RB.restricted = function (s, p, what, type) {
+    return (s.restrictions || []).some(r =>
+      r.p === p && r.what === what && (!r.type || r.type === type));
+  };
+
+  // A replacement placed on ONE object for the turn, rather than printed on a card.
+  RB.defineOp('replaceOn', (s, e, ctx) => {
+    for (const iid of asList(s, e.target, ctx)) {
+      const o = RB.obj(s, iid);
+      o.replaces = o.replaces || [];
+      o.replaces.push({ event: e.event || 'death', kind: e.kind, byP: ctx.p });
+      RB.log(s, 'replaceOn', { iid: iid, kind: e.kind });
+    }
+  });
+  RB.defineReplacement('banishInstead', (s, e) => {
+    const o = RB.obj(s, e.dying);
+    o.damage = 0; o.banished = true;
+    const loc = RB.locationOf(s, e.dying);
+    if (loc.kind === 'bf') RB.removeFrom(s.bf[loc.bf].units, e.dying);
+    else if (loc.kind === 'base') RB.removeFrom(s.players[loc.p].base, e.dying);
+    s.players[o.owner].banished.push(e.dying);
+    RB.log(s, 'banish', { iid: e.dying, p: o.controller });
+    return true;
+  });
+
+  // "Name a tag." A choice whose options are computed rather than printed on the card.
+  RB.defineOp('nameTag', (s, e, ctx) => {
+    const tags = new Set();
+    for (const c of RB.allCards()) for (const t of c.tags || []) tags.add(t);
+    const options = [...tags].sort();
+    s.queue.push({ kind: 'choose', who: ctx.p, source: ctx.source,
+      options: options,
+      ctx: { p: ctx.p, source: ctx.source, event: ctx.event },
+      onAnswer: options.map(t => [{ op: 'withTag', tag: t, effects: e.effects }]) });
+  });
+  RB.defineOp('withTag', (s, e, ctx) => {
+    RB.runEffects(s, e.effects || [], Object.assign({}, ctx, { namedTag: e.tag }));
+  });
 
   // A guarded clause. The predicate table is a hook, so a pack adds a test rather than
   // wrapping anything; an unknown test throws, which is how a missing condition becomes
@@ -365,6 +452,17 @@
       units: [], gear: [], hidden: [], contestedBy: null,
       showdownStaged: false, combatStaged: false, token: true });
     RB.log(s, 'addBattlefield', { p: ctx.p, card: e.cardId });
+  });
+
+  // "Add [N], use only to <something>." Its own bucket, because one untagged pool makes
+  // a restricted resource strictly better than the printed card.
+  RB.defineOp('addRestrictedEnergy', (s, e, ctx) => {
+    const P = s.players[ctx.p];
+    P.pool.tagged = P.pool.tagged || [];
+    const found = P.pool.tagged.find(t => t.only === e.only);
+    if (found) found.n += (e.n || 1);
+    else P.pool.tagged.push({ n: e.n || 1, only: e.only });
+    RB.log(s, 'addRestricted', { p: ctx.p, n: e.n || 1, only: e.only });
   });
 
   RB.defineOp('addShowdownEnergy', (s, e, ctx) => {
