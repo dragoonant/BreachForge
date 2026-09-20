@@ -10,7 +10,7 @@
   };
 
   let seed = String(Math.floor(Math.random() * 100000));
-  let myDeck = null, theirDeck = null, difficulty = 'normal';
+  let myDeck = null, theirDeck = null, difficulty = 'competition';
 
   RB.initScreens = function () {
     const decks = RB.playableDecks();

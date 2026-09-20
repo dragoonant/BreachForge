@@ -9,7 +9,7 @@
   U.picks = [];          // running selection while answering a targeting prompt
   U.state = null;
   U.me = 0;
-  U.difficulty = 'normal';
+  U.difficulty = 'competition';
 
   // A standard move carries a SET of units (rule 144.4); every other action names one card
   // in `iid`. Until the board offers multi-select, the human's affordances bind only the
@@ -20,7 +20,7 @@
 
   RB.startGame = function (state, me, difficulty) {
     state.humanSeat = me;                 // from here the engine asks this seat to choose
-    U.state = state; U.me = me; U.difficulty = difficulty || 'normal'; U.sel = null;
+    U.state = state; U.me = me; U.difficulty = difficulty || 'competition'; U.sel = null;
     RB.recordStart(state);
     RB.showScreen('game');
     RB.audio.music('battle');

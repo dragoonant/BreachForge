@@ -59,7 +59,7 @@ export function run(t) {
     const bad = [];
     for (let n = 0; n < 400 && !RB.isTerminal(s); n++) {
       const acts = RB.legalActions(s);
-      const a = RB.aiChoose(s, 'normal');
+      const a = RB.aiChoose(s, 'hard');
       if (!acts.some(x => JSON.stringify(x) === JSON.stringify(a)))
         bad.push('illegal AI action at ' + s.phase + ': ' + JSON.stringify(a));
       s = RB.apply(s, a);
@@ -76,7 +76,7 @@ export function run(t) {
       let s = RB.newGame({ seed: 'vs' + g, decks: [decks[g % 10], decks[(g + 5) % 10]] });
       let steps = 0;
       while (!RB.isTerminal(s) && steps < 4000) {
-        s = RB.apply(s, RB.aiChoose(s, RB.whoActs(s) === 0 ? 'normal' : 'random'));
+        s = RB.apply(s, RB.aiChoose(s, RB.whoActs(s) === 0 ? 'hard' : 'random'));
         steps++;
       }
       if (s.winner !== null) { played++; if (s.winner === 0) wins++; }
