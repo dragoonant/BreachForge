@@ -14,13 +14,18 @@
     // board asks about every card on it.
     U.actable = U.actableSet(state);
     const q = state.queue[0];
-    document.getElementById('game').classList.toggle('choosing',
-      !!(q && q.kind === 'target' && q.who === me));
+    const choosing = !!(q && q.kind === 'target' && q.who === me);
+    document.getElementById('game').classList.toggle('choosing', choosing);
+    // The log drawer covers the right of the board. While the player is being asked to
+    // click a battlefield it stands aside, and it comes straight back afterwards.
+    RB.syncLogDrawer(choosing);
     paintScores(state, me);
+    paintThemHand(state, me);
     paintSide($('#side-them'), state, RB.opponentOf(me), false);
     paintSide($('#side-me'), state, me, true);
     paintBattlefields(state, me);
     paintHand(state, me);
+    RB.paintChain(state, me);
     RB.paintLog(state, me);
     RB.paintPrompt(state, me);
     void U;
@@ -62,7 +67,8 @@
     const lg = el('btn', 'button');
     lg.style.cssText = 'padding:.2rem .6rem;font-size:.7rem';
     lg.textContent = 'Log';
-    lg.onclick = () => { $('#log').classList.toggle('open'); RB.audio.play('ui.click'); };
+    // The same one piece of state the pull tab toggles; the drawer is not DOM state.
+    lg.onclick = () => { RB.toggleLog(); RB.audio.play('ui.click'); };
     btns.appendChild(lg);
     // The black box. "That card did something weird" becomes a file with a seed, two deck
     // ids and every action taken — one run of tools/replay-report.mjs instead of a
@@ -117,13 +123,6 @@
     rz.innerHTML = '<div class="lbl" title="Runes on board · Main deck · Trash">' +
       P.runes.length + 'R · ' + P.deck.length + 'D · ' + P.trash.length + 'T</div>';
     paintZone(rz, mine ? 'runes-mine' : 'runes-theirs');
-    if (!mine) {
-      const th = el('', 'div'); th.id = 'them-hand'; th.style.paddingTop = '.85rem';
-      for (let i = 0; i < P.hand.length; i++) {
-        const b = el('card card-tiny card-back'); th.appendChild(b);
-      }
-      rz.appendChild(th);
-    }
     const rr = el('runes');
     for (const iid of P.runes) {
       const r = el('rune' + (RB.obj(state, iid).exhausted ? ' ex' : ''));
@@ -148,6 +147,34 @@
     rr.appendChild(pool);
     rz.appendChild(rr);
     root.appendChild(rz);
+  }
+
+  // The opponent's hand, across the table from yours: one back per card, fanned, with the
+  // count in words beside it. It lived inside the rune zone under a -0.7rem overlap and a
+  // playtester never found it — the count IS the information, and a row of five backs is
+  // read at a glance in a way the numeral alone is not.
+  //
+  // NOTHING here names a card. No id, no data- attribute, no tooltip: the opponent's hand
+  // is hidden information and the DOM is readable by anyone with devtools.
+  function paintThemHand(state, me) {
+    const box = $('#them-hand');
+    box.innerHTML = '';
+    const n = state.players[RB.opponentOf(me)].hand.length;
+    const fan = el('th-fan');
+    // Past ten backs the fan is a smear and the numeral carries the rest.
+    const drawn = Math.min(n, 10);
+    for (let i = 0; i < drawn; i++) {
+      const b = el('card card-tiny card-back');
+      // A slight rotation across the fan (±6°) reads as cards held rather than stacked.
+      const t = drawn === 1 ? 0 : (i / (drawn - 1)) * 2 - 1;
+      b.style.transform = 'rotate(' + (t * 6).toFixed(1) + 'deg)';
+      if (i) b.style.marginLeft = (drawn > 6 ? '-1.05rem' : '-0.6rem');
+      fan.appendChild(b);
+    }
+    box.appendChild(fan);
+    const lbl = el('th-count');
+    lbl.textContent = 'HAND ' + n;
+    box.appendChild(lbl);
   }
 
   // Paint a board area with its own image, behind a scrim. Same two knobs as the

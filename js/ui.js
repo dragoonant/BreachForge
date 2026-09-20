@@ -10,6 +10,63 @@
   U.state = null;
   U.me = 0;
   U.difficulty = 'competition';
+  // Card names reach innerHTML in several places here, and item 2 builds a data- attribute
+  // out of one. js/render.js has had its own esc() all along; this file did not.
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  // --- the log drawer -------------------------------------------------------
+  // Two states, not three. Closed is a pull tab on the right edge and the board gets its
+  // full width back; open is a full-height panel slid in over it. The topbar Log button
+  // and the tab toggle the same one piece of state, which lives here and not in the DOM,
+  // because RB.paintBoard rebuilds the board on every action — #log survives only because
+  // it sits outside the rebuilt subtree.
+  const LOG_KEY = 'bf.logOpen';
+  function storedLogOpen() {
+    try { return localStorage.getItem(LOG_KEY) === '1'; } catch (e) { return false; }
+  }
+  function storeLogOpen(v) {
+    try { localStorage.setItem(LOG_KEY, v ? '1' : '0'); } catch (e) { void e; }
+  }
+  U.logOpen = storedLogOpen();     // the player's preference, remembered across games
+  U.logForced = false;             // stood aside for a prompt — not the player closing it
+
+  RB.setLogOpen = function (open) { U.logOpen = !!open; storeLogOpen(U.logOpen); applyLog(); };
+  RB.toggleLog = function () { RB.setLogOpen(!U.logOpen); };
+  // An overlay may cover cards; it may NOT cover the cards you are being asked to click.
+  // The board borrows the drawer while a targeting prompt is open and gives it straight
+  // back — the stored preference is never touched, so the player's choice survives.
+  RB.syncLogDrawer = function (choosing) { U.logForced = !!choosing; applyLog(); };
+  function applyLog() {
+    const open = U.logOpen && !U.logForced;
+    $('#log').classList.toggle('open', open);
+    $('#logtab').classList.toggle('open', open);
+  }
+
+  // Bound ONCE, at startup, by delegation: RB.paintLog replaces #log's innerHTML on every
+  // repaint, so a listener per entry would be rebound and leaked a few hundred times a
+  // game. #log itself is never rebuilt.
+  RB.initLogHover = function () {
+    const box = $('#log');
+    box.addEventListener('mouseover', ev => {
+      const t = ev.target.closest('.cardref');
+      if (t) RB.showPreview(t, RB.card(t.dataset.def));
+    });
+    box.addEventListener('mouseout', ev => {
+      if (ev.target.closest('.cardref')) RB.hidePreview();
+    });
+    // Touch has no hover. A tap on a name opens the preview and the next tap anywhere
+    // closes it, which is the whole gesture — the game is on the web now.
+    box.addEventListener('click', ev => {
+      const t = ev.target.closest('.cardref');
+      if (!t) return;
+      ev.stopPropagation();
+      RB.showPreview(t, RB.card(t.dataset.def));
+    });
+    document.addEventListener('click', () => RB.hidePreview());
+    $('#logtab').addEventListener('click', () => { RB.audio.play('ui.click'); RB.toggleLog(); });
+    applyLog();
+  };
 
   // A standard move carries a SET of units (rule 144.4); every other action names one card
   // in `iid`. Until the board offers multi-select, the human's affordances bind only the
@@ -21,6 +78,7 @@
   RB.startGame = function (state, me, difficulty) {
     state.humanSeat = me;                 // from here the engine asks this seat to choose
     U.state = state; U.me = me; U.difficulty = difficulty || 'competition'; U.sel = null;
+    RB.resetChainView();
     RB.recordStart(state);
     RB.showScreen('game');
     RB.audio.music('battle');
@@ -58,13 +116,23 @@
   // the opponent acts on a 420ms beat and a card played off-screen is a card the player
   // never saw.
   function soundFor(after, before) {
+    // The chain viewer rides the same walk. An item leaving the chain is the one moment
+    // the whole feature exists to show, and it happens INSIDE an apply — by the time the
+    // board repaints, state.chain has already forgotten it. The item itself is read from
+    // the chain as it stood before the action, never rebuilt from the log entry.
+    const went = [];
     for (let i = before.log.length; i < after.log.length; i++) {
       const e = after.log[i];
+      if (e.kind === 'resolve' || e.kind === 'counter') {
+        const it = before.chain.find(x => x.iid === e.data.iid);
+        if (it) went.push(it);
+      }
       if (e.kind === 'play' && e.data.p !== U.me) RB.spotlight(after, e.data.iid);
       if (!e.sound) continue;
       if (e.kind === 'score') RB.audio.play('point.score', { points: e.data.points, mine: e.data.p === U.me });
       else RB.audio.play(e.sound);
     }
+    if (went.length) U.chainWent = went;
   }
 
   // Spotlight: the card the opponent just played, shown large for a beat. It is a
@@ -202,7 +270,9 @@
   RB.paintPrompt = function (state, me) {
     const p = $('#prompt');
     p.innerHTML = '';
-    const say = t => { const d = RB.el(''); d.innerHTML = t; p.appendChild(d); };
+    // A block says its piece on its own line: the may/choose prompt is three lines now,
+    // and the buttons drop below it rather than being squeezed off the right edge.
+    const say = (t, cls) => { const d = RB.el(cls || ''); d.innerHTML = t; p.appendChild(d); };
     const btn = (label, fn, cls) => {
       const b = RB.el('btn' + (cls ? ' ' + cls : ''), 'button');
       b.style.cssText = 'padding:.28rem .9rem;font-size:.76rem';
@@ -238,13 +308,20 @@
       return;
     }
 
-    // A card-driven choice names the card and shows its printed text, so a "may" reads as a
-    // question about a card rather than a bare yes/no.
+    // A card-driven choice names the card, shows its printed text, AND asks the question —
+    // all three, because each answers a different thing. The name says what is talking,
+    // the printed clause says why it is talking NOW (the trigger on the face IS the
+    // reason), and the question says what saying yes costs and buys. Supplying a prompt
+    // used to SUPPRESS the printed text, which is how "Grand Duelist — Pay exhaust me?"
+    // reached a playtest with no way to find out what it meant.
     const q = state.queue[0];
     if (q && (q.kind === 'may' || q.kind === 'choose')) {
       const src = q.source ? RB.cardOf(state, q.source) : null;
-      say((src ? '<b>' + src.name + '</b> — ' : '') +
-        '<span style="color:#cfe6ff">' + (q.prompt || (src ? RB.iconHTML(RB.printedText(src.id)) : 'Choose.')) + '</span>');
+      const printed = src ? RB.printedText(src.id) : '';
+      say((src ? '<div class="promptcard">' + esc(src.name) + '</div>' : '') +
+        (printed ? '<div class="promptwhy">' + RB.iconHTML(esc(printed)) + '</div>' : '') +
+        '<div class="promptq">' + RB.iconHTML(esc(q.prompt || 'Choose.')) + '</div>',
+        'promptblock');
       if (q.kind === 'may') {
         btn('Yes', () => RB.commit({ t: 'choose', ix: 0 }), 'primary');
         btn('No', () => RB.commit({ t: 'choose', ix: 1 }));
@@ -265,7 +342,13 @@
       return;
     }
     if (state.chain.length) {
-      say('A card is on the chain. Respond, or pass to let it resolve.');
+      // Name the thing. "A card is on the chain" was true and useless; the viewer between
+      // the battlefields shows the rest of the stack and the order it resolves in.
+      const top = RB.chainTop(state);
+      say('<b>' + esc(RB.card(top.cardId).name) + '</b>' +
+        (top.kind === 'ability' ? "'s ability is" : ' is') + ' on the chain — ' +
+        (state.chain.length > 1 ? state.chain.length + ' items, first to resolve. ' : '') +
+        'Respond, or pass to let it resolve.');
       btn('Pass', () => RB.commit({ t: 'pass' }), 'primary');
       return;
     }
@@ -318,50 +401,133 @@
   };
   RB.hidePreview = function () { $('#preview').classList.add('hidden'); previewEl = null; };
 
+  // --- the chain ------------------------------------------------------------
+  // U.chainView MIRRORS state.chain. It is set from the live chain and is allowed to
+  // LINGER for a beat after the engine's chain empties — long enough to watch the last
+  // item leave. It is never built from the log: state.chain is the door (docs/grammar.md,
+  // ground rule 0.3). Delaying a view of the door is fine; reconstructing it from a second
+  // source is not, because one of the two homes is always subtly wrong.
+  //
+  // The lingering is not decoration. When both players pass, doPass resolves the whole
+  // chain INSIDE one RB.apply, and the UI only paints between actions — so without a
+  // delay a chain that is built and emptied in one action is never seen at all.
+  let chainTimer = null;
+  RB.resetChainView = function () {
+    clearTimeout(chainTimer); chainTimer = null;
+    U.chainView = null; U.chainWent = null;
+  };
+
+  RB.paintChain = function (state, me) {
+    const box = $('#chain');
+    if (state.chain.length) {
+      clearTimeout(chainTimer); chainTimer = null;
+      U.chainView = state.chain.slice();
+    } else if (U.chainView && !chainTimer) {
+      chainTimer = setTimeout(() => {
+        chainTimer = null; U.chainView = null; U.chainWent = null;
+        if (U.state) RB.paintChain(U.state, U.me);
+      }, 900);
+    }
+    // The item that just resolved is shown for one more paint, marked, in the slot it left
+    // from — otherwise a card is on the chain and then simply is not. soundFor collected it
+    // from the pre-action chain.
+    const went = U.chainWent || [];
+    U.chainWent = null;
+    // The lingering view still HOLDS the item that just left — chainView is only replaced
+    // while the engine's chain is non-empty. Merging by identity rather than appending is
+    // the difference between one entry marked `went` and the same card drawn twice.
+    const items = (U.chainView || []).slice();
+    for (const it of went) if (items.indexOf(it) < 0) items.push(it);
+    box.innerHTML = '';
+    if (!items.length) { box.classList.add('hidden'); return; }
+    const head = RB.el('chain-head');
+    head.textContent = 'THE CHAIN — resolves left to right';
+    box.appendChild(head);
+    const row = RB.el('chain-row');
+    // ⚠ THE CHAIN IS LIFO: chain[length-1] resolves FIRST. Reversed so the leftmost entry
+    // is the next one to resolve, which is the single thing this viewer exists to say.
+    // Un-reverse this and it becomes confidently wrong. Do not "simplify" it away.
+    items.slice().reverse().forEach((it, i) => {
+      const card = RB.card(it.cardId);
+      const mine = it.controller === me;
+      const e = RB.el('chain-item ' + (mine ? 'ctrl-me' : 'ctrl-them') +
+        (went.indexOf(it) >= 0 ? ' went' : ''));
+      const n = RB.el('chain-n'); n.textContent = (i + 1) + '.';
+      e.appendChild(n);
+      e.appendChild(RB.renderCard(card, { size: 'board' }));
+      // An ABILITY is not its card. A player who sees Grand Duelist on the chain will
+      // reasonably think Grand Duelist was played, so the entry says which it is.
+      if (it.kind === 'ability') {
+        const b = RB.el('chain-abil'); b.textContent = 'ABILITY'; e.appendChild(b);
+      }
+      const cap = RB.el('chain-cap');
+      cap.textContent = (mine ? 'yours' : 'theirs') + ' · ' +
+        (it.kind === 'ability' ? 'ability' : String(card.type).toLowerCase());
+      e.appendChild(cap);
+      // The container takes no clicks — it sits over the battlefields. The entries opt
+      // back in for the pointer alone, so hovering one reads the card.
+      e.addEventListener('mouseenter', () => RB.showPreview(e, card));
+      e.addEventListener('mouseleave', RB.hidePreview);
+      row.appendChild(e);
+    });
+    box.appendChild(row);
+    box.classList.remove('hidden');
+  };
+
   // --- log ------------------------------------------------------------------
   RB.paintLog = function (state, me) {
     const box = $('#log');
-    const nm = iid => RB.cardOf(state, iid).name;
+    // Every name in the log is a doorway to the card. The attribute carries the
+    // DEFINITION id, never the instance: the log outlives the objects it names — an
+    // instance can be in the trash or gone entirely, while RB.card(id) answers for a
+    // registered card forever.
+    const ref = id => '<b class="cardref" data-def="' + esc(id) + '">' +
+      esc(RB.card(id).name) + '</b>';
+    const nm = iid => ref(RB.obj(state, iid).cardId);
+    const bfnm = i => ref(state.bf[i].cardId);
     const you = p => (p === me ? 'You' : 'They');
     const lines = [];
-    for (const e of state.log.slice(-60)) {
+    // A drawer can show a whole game. The old cap was tuned for a six-line strip.
+    for (const e of state.log.slice(-400)) {
       const d = e.data || {};
       let t = null, cls = '';
       switch (e.kind) {
         case 'turnStart': t = '— ' + (d.p === me ? 'Your turn' : 'Their turn') + ' ' + d.turn + ' —'; break;
-        case 'play': t = you(d.p) + ' played <b>' + nm(d.iid) + '</b>'; break;
+        case 'play': t = you(d.p) + ' played ' + nm(d.iid); break;
         // A standard move carries a set; an ability that relocates a unit logs a single
         // `iid`. Both read as one sentence, and the destination is named because a group
         // arriving somewhere is the sentence that explains the showdown on the next line.
         case 'move': {
-          const names = (d.iids || [d.iid]).map(i => '<b>' + nm(i) + '</b>');
+          const names = (d.iids || [d.iid]).map(nm);
           const list = names.length === 1 ? names[0]
             : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
           t = you(d.p) + ' moved ' + list + ' to ' +
             (d.to === 'base' ? (d.p === me ? 'your base' : 'their base')
-                             : '<b>' + RB.card(state.bf[+d.to.slice(2)].cardId).name + '</b>');
+                             : bfnm(+d.to.slice(2)));
           break;
         }
-        case 'showdownOpen': t = 'Showdown at <b>' + RB.card(state.bf[d.bf].cardId).name + '</b>'; break;
+        case 'showdownOpen': t = 'Showdown at ' + bfnm(d.bf); break;
         case 'combatDamage': t = 'Might ' + d.attackerMight + ' vs ' + d.defenderMight; break;
-        case 'die': t = '<b>' + nm(d.iid) + '</b> was destroyed'; break;
-        case 'conquer': t = you(d.p) + ' conquered <b>' + RB.card(state.bf[d.bf].cardId).name + '</b>'; break;
+        case 'die': t = nm(d.iid) + ' was destroyed'; break;
+        case 'conquer': t = you(d.p) + ' conquered ' + bfnm(d.bf); break;
         case 'score': cls = ' score'; t = you(d.p) + ' scored — ' + d.points + ' point' + (d.points === 1 ? '' : 's') +
           (d.how === 'hold' ? ' (hold)' : d.how === 'conquer' ? ' (conquer)'
             : d.how === 'burnOut' ? ' (they burned out)' : ''); break;
         case 'scoreDenied': t = you(d.p) + ' could not take the winning point by conquest — drew instead'; break;
         case 'burnOut': t = you(d.p) + ' ran out of cards — trash recycled, and a point conceded'; break;
-        case 'hide': t = you(d.p) + ' hid a card face down at <b>' + RB.card(state.bf[d.bf].cardId).name + '</b>'; break;
+        case 'hide': t = you(d.p) + ' hid a card face down at ' + bfnm(d.bf); break;
         case 'hiddenLost': t = you(d.p) + ' lost a facedown card with the battlefield'; break;
-        case 'deflectPaid': t = you(d.p) + ' paid Deflect to choose <b>' + nm(d.iid) + '</b>'; break;
+        case 'deflectPaid': t = you(d.p) + ' paid Deflect to choose ' + nm(d.iid); break;
         case 'gameOver': t = '<b>' + (d.winner === me ? 'You win.' : 'You lose.') + '</b>'; break;
         default: t = null;
       }
       if (t) lines.push('<div class="e' + (d.p === me ? ' mine' : '') + cls + (e.via ? ' via' : '') + '">' + t + '</div>');
     }
-    // Collapsed, only the tail is visible; the CSS mask fades the cut so it reads as a
-    // battle line rather than a clipped panel.
+    // A player scrolled back to read what happened must not be yanked to the bottom by the
+    // opponent's next action. In a six-line strip nobody noticed; in a full-height drawer
+    // it is the difference between a log you can read and one you cannot.
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 24;
     box.innerHTML = lines.join('');
-    box.scrollTop = box.scrollHeight;
+    if (atBottom) box.scrollTop = box.scrollHeight;
   };
 })(window.RB = window.RB || {});

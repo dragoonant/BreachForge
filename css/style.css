@@ -117,7 +117,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .sp.on{background:var(--accent);box-shadow:0 0 7px var(--accent);border-color:var(--accent)}
 .sp.on.them{background:#e0563b;box-shadow:0 0 7px #e0563b;border-color:#e0563b}
 .sp.win{outline:1px solid #fff}
-#boardwrap{position:relative;display:grid;grid-template-rows:1fr auto 1fr;gap:.4rem;padding:.4rem .6rem;
+#boardwrap{position:relative;display:grid;grid-template-rows:auto 1fr auto 1fr;gap:.4rem;padding:.4rem .6rem;
   overflow:hidden;min-width:0}
 .side{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:.5rem;align-items:center;
   min-height:0;min-width:0}
@@ -154,26 +154,48 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 #hand .card-hand{transition:transform .14s ease,margin .14s ease;transform-origin:50% 100%;cursor:grab}
 #hand .card-hand:hover{transform:translateY(-1.1rem) scale(1.06);z-index:20}
 #hand .card-hand.unplayable{filter:grayscale(.55) brightness(.72)}
+/* A may/choose prompt is three lines now — the card, its printed clause, and the question
+   — so the box wraps and the buttons drop to their own line rather than being squeezed
+   off the right edge at 1280x800. */
 #prompt{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--chrome-bottom) - 1.1rem);z-index:40;
-  display:flex;align-items:center;gap:.7rem;padding:.4rem .9rem;border-radius:.5rem;
+  display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:.5rem .7rem;
+  padding:.45rem .9rem;border-radius:.5rem;
   background:rgba(8,12,20,.92);border:1px solid var(--edge);backdrop-filter:blur(6px);
-  font-size:.8rem;max-width:56rem;pointer-events:auto}
+  font-size:.8rem;max-width:min(62rem,94vw);pointer-events:auto}
+.promptblock{flex:1 1 100%;text-align:center;line-height:1.4}
+.promptcard{font-weight:650;color:#fff;letter-spacing:.02em}
+/* Why am I being asked this RIGHT NOW? The card's own trigger clause is the answer, for
+   free — small and grey, because it is context and not the question. */
+.promptwhy{font-size:.72rem;color:#8ea2be;margin:.1rem 0 .18rem;white-space:pre-wrap}
+.promptq{color:#cfe6ff}
 #preview{position:fixed;z-index:100;pointer-events:none;display:flex;gap:.7rem;align-items:flex-start}
-/* Collapsed, the log is a battle line: the last few entries, short enough that it never
-   covers a battlefield. The Log button expands it. An overlay may cover cards; it may not
-   cover the cards you are being asked to click. */
-#log{position:absolute;right:.7rem;top:.5rem;width:15rem;max-height:6.4rem;overflow:hidden;z-index:30;
-  font-size:.7rem;line-height:1.4;background:rgba(6,9,16,.55);border:1px solid rgba(255,255,255,.06);
-  border-radius:.45rem;padding:.35rem .55rem;backdrop-filter:blur(3px);
-  -webkit-mask-image:linear-gradient(to bottom,transparent,#000 28%);
-  mask-image:linear-gradient(to bottom,transparent,#000 28%)}
-#log.open{max-height:62vh;overflow:auto;background:rgba(6,9,16,.93);
-  border-color:var(--edge);-webkit-mask-image:none;mask-image:none}
+/* The log is a DRAWER, not a strip. Closed, it is entirely off the right edge and the
+   board has its full width back — only the pull tab remains. Open, it slides in over the
+   board at full height. An overlay may cover cards; it may not cover the cards you are
+   being asked to click, so RB.syncLogDrawer stands it aside during a targeting prompt. */
+#log{position:absolute;right:0;top:0;bottom:0;width:19rem;max-width:56vw;overflow:auto;z-index:30;
+  font-size:.72rem;line-height:1.45;background:rgba(6,9,16,.94);
+  border-left:1px solid var(--edge);border-radius:.45rem 0 0 .45rem;
+  padding:.5rem .7rem;backdrop-filter:blur(6px);overscroll-behavior:contain;
+  transform:translateX(100%);transition:transform .22s ease;
+  box-shadow:-14px 0 34px rgba(0,0,0,.45)}
+#log.open{transform:translateX(0)}
+/* The way back in. The topbar button is small and a player who closed the drawer needs an
+   obvious handle; this is that handle, and it rides the drawer's edge as it slides. */
+#logtab{position:absolute;right:0;top:50%;z-index:31;width:1.6rem;padding:.9rem 0;
+  transform:translateY(-50%);transition:transform .22s ease;
+  background:rgba(6,9,16,.9);border:1px solid var(--edge);border-right:0;
+  border-radius:.4rem 0 0 .4rem;color:#9fb0cc;letter-spacing:.22em;font-size:.6rem}
+#logtab span{display:block;writing-mode:vertical-rl;transform:rotate(180deg)}
+#logtab:hover{color:var(--ink);border-color:rgba(160,220,255,.45)}
+#logtab.open{transform:translateY(-50%) translateX(-19rem)}
 #log .e{color:#a9bad4;padding:.06rem 0}
 #log .e.mine{color:#cfe6ff}
 #log .e.via{color:#7d8ea8;padding-left:.7rem}
 #log .e b{color:#fff;font-weight:600}
 #log .e.score{color:#8ff0c0}
+/* An affordance nobody can see is not an affordance: a hoverable name says so. */
+.cardref{border-bottom:1px dotted rgba(200,225,255,.55);cursor:help}
 .overlay{position:absolute;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;
   background:rgba(4,7,13,.82);backdrop-filter:blur(3px)}
 .panel{background:var(--panel);border:1px solid var(--edge);border-radius:.7rem;padding:1.4rem 1.8rem;
@@ -185,10 +207,13 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 #hand .card-hand.toss{outline:2px solid #ff8a6a;outline-offset:2px;transform:translateY(-1.1rem)}
 
-/* The opponent's hand is card backs, fanned tight — the count matters, the cards don't. */
-#them-hand{display:flex;gap:-.4rem;justify-content:flex-end;align-items:flex-start}
-#them-hand .card-tiny{margin-left:-.7rem;box-shadow:0 2px 6px rgba(0,0,0,.6)}
-#them-hand .card-tiny:first-child{margin-left:0}
+/* The opponent's hand, at the top of the board where it physically belongs — across the
+   table from yours. Card backs only: the count is the information and the identities are
+   not ours to show. */
+#them-hand{display:flex;gap:.6rem;justify-content:center;align-items:center;min-height:2.6rem}
+.th-fan{display:flex;align-items:center}
+.th-fan .card-tiny{transform-origin:50% 100%;box-shadow:0 2px 6px rgba(0,0,0,.6)}
+.th-count{font-size:.6rem;letter-spacing:.14em;color:#8195b3;white-space:nowrap}
 
 /* Deck-picker tile: art only, at a size where the champion is actually recognisable. */
 .decktile .tile-art{width:5.4rem;flex:0 0 auto}
@@ -228,6 +253,32 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   filter:drop-shadow(0 18px 40px rgba(0,0,0,.7))}
 #spotlight.in{opacity:1;transform:translate(-50%,-50%) scale(1)}
 #spotlight .card-preview{width:clamp(13rem,19vw,17rem);min-height:0}
+
+/* The chain, between the battlefields. An absolutely-positioned overlay rather than a
+   flex child of #bfrow: the battlefield count is DATA (a card can add a third), and a
+   sibling injected into that row would shove the board around when it did.
+   pointer-events:none on the container matters — it sits over the battlefields and must
+   never eat a click meant for one; the entries opt back in so a hover can read the card. */
+#chain{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:45;
+  display:flex;flex-direction:column;gap:.3rem;align-items:center;padding:.45rem .7rem .55rem;
+  border-radius:.6rem;background:rgba(6,9,16,.93);border:1px solid #ffca63;
+  box-shadow:0 10px 34px rgba(0,0,0,.6);pointer-events:none;max-width:92%}
+.chain-head{font-size:.58rem;letter-spacing:.16em;text-transform:uppercase;color:#ffca63;
+  white-space:nowrap}
+.chain-row{display:flex;gap:.45rem;align-items:flex-start;max-width:100%;overflow:hidden}
+.chain-item{position:relative;display:flex;flex-direction:column;align-items:center;gap:.12rem;
+  padding:.22rem .24rem;border-radius:.4rem;border:1px solid transparent;pointer-events:auto}
+.chain-item.ctrl-me{border-color:var(--accent);background:rgba(111,211,232,.10)}
+.chain-item.ctrl-them{border-color:#e0563b;background:rgba(224,86,59,.10)}
+.chain-n{font-size:.6rem;font-weight:800;color:#ffca63;letter-spacing:.06em}
+.chain-cap{font-size:.56rem;letter-spacing:.08em;text-transform:uppercase;color:#9fb0cc}
+/* A player who sees Grand Duelist on the chain will reasonably think Grand Duelist was
+   PLAYED. It wasn't; its ability was. Say so on the entry. */
+.chain-abil{position:absolute;left:.24rem;right:.24rem;top:45%;text-align:center;
+  font-size:.5rem;font-weight:800;letter-spacing:.1em;color:#0b0f18;background:#ffca63;
+  border-radius:.2rem;padding:.04rem 0}
+/* The item that just left, held for one paint so a resolution is something you can see. */
+.chain-item.went{opacity:.45;filter:saturate(.4)}
 
 /* A facedown card at a battlefield: public that it exists, private what it is. */
 .hidden-mark{box-shadow:0 0 0 1px rgba(255,202,99,.55),0 2px 8px rgba(0,0,0,.6);cursor:help}

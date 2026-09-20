@@ -1,7 +1,38 @@
 # Handoff — UI pass: log drawer, card hovers, clearer prompts, chain viewer, opponent hand
 
-Written 2026-09-20 by the session that built and deployed the game. **Nothing in this
-document has been implemented.** It exists so the next chat can start cutting code in its
+Written 2026-09-20 by the session that built and deployed the game.
+
+> **STATUS — implemented 2026-09-20.** All five items are in and were checked in a browser
+> on the real code path. What landed, and where:
+>
+> 1. **Drawer** — `#log` / `#logtab` in `index.html`, the drawer CSS in `css/style.css`,
+>    `RB.setLogOpen` / `RB.toggleLog` / `RB.syncLogDrawer` in `js/ui.js`. Preference in
+>    `localStorage` under `bf.logOpen`; `paintBoard` stands it aside while `.choosing` is
+>    set and gives it straight back. Autoscroll is now conditional on `atBottom`; the cap
+>    is `-400`.
+> 2. **Log hovers** — `paintLog`'s `nm`/`bfnm` emit `<b class="cardref" data-def=…>`
+>    carrying the DEFINITION id; `RB.initLogHover()` (called from `js/main.js`) binds
+>    mouseover/mouseout/click on `#log` once, by delegation. Battlefield names included.
+> 3. **Prompts** — `RB.promptFromSentence` / `RB.promptFromEffect` in `js/text.js` are the
+>    one door; `sfd.mayPay`, the core `may`, and `ogn.saveBuffedForCost` all call it, and
+>    an AUTHORED prompt goes through it too so the self-pronouns get named (that fixed
+>    unl-141's "my battlefield"). `paintPrompt` now shows the printed clause AND the
+>    question. Grand Duelist reads "Exhaust Grand Duelist to channel 1 rune exhausted?".
+>    The sweep over all 35 may-shaped prompts found no other bad one. No `because` field
+>    was added — printed text covered every case, as predicted.
+> 4. **Chain viewer** — `#chain` + `RB.paintChain` / `RB.resetChainView` in `js/ui.js`,
+>    painted from `paintBoard`; `soundFor` collects what left the chain from the
+>    PRE-action chain. Order verified end to end against the engine: a two-item chain
+>    rendered `1. En Garde, 2. Charm` and the log resolved them in that same order.
+> 5. **Opponent's hand** — `paintThemHand` in `js/board.js`, its own row at the top of
+>    `#boardwrap`. Fan caps at 10 backs with the numeral carrying the rest; no id, no
+>    `data-` attribute and no tooltip on any back.
+>
+> Section 7 was respected: no drag-and-drop, no animation layer, nothing from D-4/D-7/D-8/
+> D-10. The deck/trash/rune label in the top strip was left alone — it was a nice-to-have,
+> not the request.
+
+It exists so the next chat can start cutting code in its
 first minute instead of re-reading 9,800 lines of engine.
 
 The requests came from the first real human playtest. That matters: every one of them is a

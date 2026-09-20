@@ -11,6 +11,9 @@
         'Validation failed:\n\n' + registered.join('\n') + '</pre>';
       throw new Error(registered.length + ' validation problems');
     }
+    // Bound once: #log survives every repaint, and a hover listener per log entry would
+    // be rebound and leaked a few hundred times a game.
+    RB.initLogHover();
     RB.initScreens();
   });
 })(window.RB = window.RB || {});
