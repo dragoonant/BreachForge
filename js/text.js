@@ -286,13 +286,21 @@
     return out;
   }
 
+  // An ability's cost may carry a clause of its own — "this ability costs 1 less for each
+  // friendly unit with Temporary" belongs to the cost, not to the effect. The mirror of
+  // defineExtraCostNote, for the mirror layer (RB.defineAbilityCostModifier).
+  const ABILITY_NOTE = {};
+  RB.defineAbilityCostNote = function (flag, fn) {
+    ABILITY_NOTE[flag] = typeof fn === 'function' ? fn : () => fn;
+  };
   function cost(a) {
     const bits = [];
     if (a.energy) bits.push(a.energy + ' Energy');
     if (a.power) bits.push(a.power + ' Power');
     if (a.exhaustSelf) bits.push('Exhaust me');
     if (a.killSelf) bits.push('Kill me');
-    const c = bits.join(', ') || 'Free';
+    let c = bits.join(', ') || 'Free';
+    for (const k of Object.keys(ABILITY_NOTE)) if (a[k]) c += ' — ' + ABILITY_NOTE[k](a);
     // A gate on an ability is part of what the card says, not an implementation detail.
     return c + (a.when ? ' (use only ' + whenText(a.when) + ')' : '');
   }

@@ -163,8 +163,10 @@ also what a restricted resource pool reads.
 
 `RB.defineExtraCostText(payKind, fn)` gives prose to a `pays` kind your pack defined, and
 `RB.defineExtraCostNote(flag, fn)` adds a clause the cost itself carries — "and I cost 1 less for
-each Energy it costs" belongs to the cost, not to the card. A cost the auditor renders as its raw
-key is a clause nobody can check.
+each Energy it costs" belongs to the cost, not to the card. `RB.defineAbilityCostNote(flag, fn)`
+is the same thing for an activated ability's cost, and pairs with
+`RB.defineAbilityCostModifier`. A cost the auditor renders as its raw key is a clause nobody can
+check.
 
 ## Gates on activated abilities
 
