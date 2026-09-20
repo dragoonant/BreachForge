@@ -90,7 +90,16 @@ or `{ pick: <selector>, n: 1, filter: 'damaged', maxMight: 3 }` for "choose a â€
 `draw` `damage` `kill` `buff` `grant` `ready` `exhaust` `channel` `addEnergy` `addPower`
 `gainPoint` `discard` `recycleRune` `heal` `token` `stun` `counter` `xp` `counters` `nothing`
 `playFromZone` (play a card out of your trash or deck) `swapMight` `addBattlefield`
-`addShowdownEnergy` `delayed`
+`addShowdownEnergy` `delayed` `ransom` (counter it unless its controller pays) `counterIf`
+(counter only when the chain's top matches) `payCost` `buffByCounteredCost`
+
+### The chain, from an op
+
+`RB.chainTop(state)` is the item being responded to. It carries `controller`, `cardId`,
+`energy` (its printed Energy cost) and `targets` â€” what it chose. A card that chooses at play
+time declares it with `chooses: <selector>` at the top of its ability data; that is what lets a
+counter read "a spell that chose exactly one of my units and no other" instead of countering
+anything at all.
 
 Each takes `n` (default 1), most take `target`, `draw`/`discard` take `opponent: true`.
 

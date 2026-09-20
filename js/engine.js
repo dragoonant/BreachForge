@@ -310,6 +310,11 @@
     // (rules §356); only spells and non-Add abilities linger there.
     const item = { iid: iid, controller: p, to: a.to, kind: 'card', targets: a.targets,
       paid: (a.pay || []).slice(), cardId: card.id, energy: card.energy || 0 };
+    // Relevant choices are made as the card is played (§349 step 2), so a card that
+    // declares what it chooses records it on the chain item. That is what lets a counter
+    // read "a spell that chose exactly one of my units" instead of countering anything.
+    if (card.abilities && card.abilities.chooses)
+      item.targets = RB.select(s, card.abilities.chooses, { p: p, source: iid });
     if (card.type === 'Unit' || card.type === 'Gear') { RB.resolveCard(s, item); return; }
     s.chain.push(item);
     s.priority = RB.opponentOf(p);

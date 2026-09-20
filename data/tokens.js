@@ -19,6 +19,11 @@ RB.tokenData = [
   { id: 'tok-sprite', name: 'Sprite', nameId: 'sprite', type: 'Unit',
     domain: 'Chaos', domains: ['Chaos'], tags: ['Token'], energy: 0, power: 0, might: 1,
     rarity: 'Token', set: 'Token', artist: null },
+  // A battlefield token. Baron Nashor adds one to the game, so the board is not always
+  // the two battlefields the mode deals out.
+  { id: 'tok-baron-pit', name: 'Baron Pit', nameId: 'baron-pit', type: 'Battlefield',
+    domain: 'Colorless', domains: [], tags: ['Token'], energy: null, power: null, might: null,
+    rarity: 'Token', set: 'Token', artist: null },
   { id: 'tok-mech', name: 'Mech', nameId: 'mech', type: 'Unit',
     domain: 'Body', domains: ['Body'], tags: ['Mech', 'Token'], energy: 0, power: 0, might: 3,
     rarity: 'Token', set: 'Token', artist: null },
@@ -37,4 +42,5 @@ RB.tokenAbilities = {
   'tok-bird': { vanilla: true },
   'tok-sprite': { vanilla: true },
   'tok-mech': { vanilla: true },
+  'tok-baron-pit': { vanilla: true },
 };

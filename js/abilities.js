@@ -287,6 +287,51 @@
       RB.log(s, 'stun', { iid: iid }, 'ui.invalid');
     }
   });
+  // "Counter it unless its controller pays X." The ransom is a real window: the other
+  // player is asked, and paying is a legal answer. Countering them outright is a strictly
+  // better card than the printed one.
+  RB.defineOp('ransom', (s, e, ctx) => {
+    const item = s.chain[s.chain.length - 1];
+    if (!item) return;
+    const victim = item.controller;
+    const cost = { energy: e.energy || 0, power: e.power || 0,
+      domains: e.domains || RB.DOMAINS.slice(), each: false };
+    if (!RB.canPay(s, victim, cost)) { RB.ops.counter(s, {}, ctx); return; }
+    s.queue.push({
+      kind: 'may', who: victim, source: ctx.source,
+      prompt: 'Pay ' + (e.energy || 0) + ' Energy' + (e.power ? ' and ' + e.power + ' Power' : '') +
+        ' to stop your card being countered?',
+      ctx: { p: victim, source: ctx.source },
+      onAnswer: [[{ op: 'payCost', energy: e.energy || 0, power: e.power || 0 }],
+                 [{ op: 'counter' }]],
+    });
+  });
+  RB.defineOp('payCost', (s, e, ctx) => {
+    const cost = { energy: e.energy || 0, power: e.power || 0,
+      domains: e.domains || RB.DOMAINS.slice(), each: false };
+    const plan = RB.planPayment(s, ctx.p, cost);
+    if (plan) RB.pay(s, ctx.p, plan);
+  });
+
+  // Does the chain's top item match what this card is allowed to counter? Read by the
+  // conditional counters, whose whole text is the condition.
+  RB.chainTop = function (s) { return s.chain[s.chain.length - 1] || null; };
+  RB.defineOp('counterIf', (s, e, ctx) => {
+    const item = RB.chainTop(s);
+    if (!item) return;
+    const targets = item.targets || [];
+    if (e.chose === 'onlyMineOne') {
+      const mine = targets.filter(i => s.objects[i] && RB.obj(s, i).controller === ctx.p);
+      if (mine.length !== 1 || targets.length !== mine.length) return;
+    }
+    if (e.maxEnergy != null && (item.energy || 0) > e.maxEnergy) return;
+    RB.ops.counter(s, {}, ctx);
+    if (e.then) RB.runEffects(s, e.then, Object.assign({}, ctx, { counteredEnergy: item.energy || 0 }));
+  });
+  RB.defineOp('buffByCounteredCost', (s, e, ctx) => {
+    for (const iid of asList(s, e.target, ctx)) RB.obj(s, iid).buffs += (ctx.counteredEnergy || 0);
+  });
+
   RB.defineOp('counter', (s, e, ctx) => {
     // Remove the top card of the chain without resolving it. The chain is LIFO, so "the
     // spell being responded to" is always its head.

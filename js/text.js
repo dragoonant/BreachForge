@@ -50,6 +50,16 @@
   RB.defineDescriber('addBattlefield', () => 'Add a battlefield to the game.');                             // ops.addBattlefield
   RB.defineDescriber('addShowdownEnergy', e => 'Add ' + n(e) +
     ' Energy, spendable only during showdowns.');                                                           // ops.addShowdownEnergy
+  RB.defineDescriber('ransom', e => 'Counter it unless its controller pays ' +
+    (e.energy || 0) + ' Energy' + (e.power ? ' and ' + e.power + ' Power' : '') + '.');                     // ops.ransom
+  RB.defineDescriber('payCost', e => 'Pay ' + (e.energy || 0) + ' Energy' +
+    (e.power ? ' and ' + e.power + ' Power' : '') + '.');                                                   // ops.payCost
+  RB.defineDescriber('counterIf', e => 'Counter it' +
+    (e.chose === 'onlyMineOne' ? ' if it chose exactly one unit you control, and no other' : '') +
+    (e.maxEnergy != null ? ' if its Energy cost is ' + e.maxEnergy + ' or less' : '') + '.' +
+    (e.then ? ' ' + e.then.map(line).join(' ') : ''));                                                      // ops.counterIf
+  RB.defineDescriber('buffByCounteredCost', e => sel(e.target, true) +
+    " gets +Might equal to that card's Energy cost.");                                                      // ops.buffByCounteredCost
   RB.defineDescriber('delayed', e => 'Later, ' + trigger(e.on) + ', ' +
     lower(e.effects.map(line).join(' ')));                                                                  // ops.delayed
   function trigger(on) { return (TRIGGER_WORDS[on] || on).replace(/^When /, 'when ').replace(/^At /, 'at '); }
