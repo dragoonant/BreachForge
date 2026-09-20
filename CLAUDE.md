@@ -51,8 +51,34 @@ Read before touching anything: `CARD-GAME-LESSONS.md`, `CARD-GAME-LESSONS-2.md`,
     rule, not the current behaviour. Every engine fix reports having reverted the fix and watched
     the test fail.
 11. **Commit messages describe the mechanism, by id.** The history should read as a bug diary.
-12. **One agent per working copy.** Slice bulk authoring by disjoint id ranges *with disjoint
-    files*. Never measure against a tree someone else is fixing.
+12. **One agent per WORKTREE.** Never two agents in one checkout — give each its own:
+
+    ```
+    git worktree add ../BreachForge-<task>
+    ```
+
+    Own index, own HEAD, shared history and object store. Put it outside the OneDrive folder
+    so it does not sync, and give its dev server its own port: `.claude/launch.json` names
+    8777 and two servers cannot both hold it.
+
+    A checkout has ONE index and ONE HEAD, and both are *shared mutable state*. In a single
+    afternoon of two agents in one tree: `git add <file>` staged the whole file including the
+    other agent's half-finished hunk and shipped a commit that threw on load; `git commit
+    --amend` committed whatever they had just staged, swallowing five of their files; and
+    `git reset` after their commit landed orphaned it off the branch entirely. Each was a
+    different mechanism and each looked fine at the time.
+
+    If you are ever forced to share a tree: build the commit in an isolated `GIT_INDEX_FILE`
+    so the shared index cannot leak into it, and move the branch with
+    `git update-ref <branch> <new> <expected-old>`, which refuses when someone else has moved
+    it — `git reset` has no such guard and will silently discard their commit.
+
+    **And gate the COMMIT, not the working tree.** Slice bulk authoring by disjoint id ranges
+    *with disjoint files*, and never measure against a tree someone else is fixing: a working
+    copy showed 81 tests green while the commit built from it, checked out alone in
+    `git worktree add --detach <sha>`, was 65 of 77 and dead on the first `legalActions`. The
+    green came from someone else's uncommitted engine. Rule 9 is about the browser; this is
+    the same lesson about the index.
 13. **Every declared asset carries the hash of its own contents.** After changing ANY file
     `index.html` loads — engine, data pack, stylesheet — run:
 
