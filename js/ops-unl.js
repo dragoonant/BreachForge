@@ -54,8 +54,10 @@
 
   // A pick spec: { pick:<selector>, n:1, at:'battlefield'|'base', role:'attacker',
   //                notTemporary:true, notEventUnit:true, notSelf:true, exhausted:true,
-  //                filter:'damaged', maxMight:N, notHere:true,
+  //                filter:'damaged', maxMight:N, notHere:true, tag:'<Tag>',
   //                n:'all' (every match, not one), low:true, prefer:'enemy'|'mine' }
+  // `tag` may be built at resolution time rather than printed in the data — The List names
+  // its tag as it is played, and the ability that reads it is a pool like any other.
   function targets(s, spec, ctx) {
     if (!spec || typeof spec === 'string') return base(s, spec, ctx);
     let pool = base(s, spec.pick, ctx);
@@ -68,6 +70,8 @@
     if (spec.exhausted) pool = pool.filter(i => RB.obj(s, i).exhausted);
     if (spec.notHere && ctx.event && ctx.event.bf !== undefined)
       pool = pool.filter(i => RB.locationOf(s, i).bf !== ctx.event.bf);
+    if (spec.tag) pool = pool.filter(i =>
+      (RB.card(RB.obj(s, i).cardId).tags || []).includes(spec.tag));
     if (spec.filter === 'damaged') pool = pool.filter(i => RB.obj(s, i).damage > 0);
     if (spec.maxMight !== undefined) pool = pool.filter(i => RB.mightOf(s, i) <= spec.maxMight);
     if (!pool.length) return [];
@@ -114,6 +118,7 @@
       return a;
     }
     let t = NAMES[spec.pick] || String(spec.pick);
+    if (spec.tag) t += ' with the ' + spec.tag + ' tag';
     if (spec.role) t = 'an ' + (spec.role === 'attacker' ? 'attacking' : 'defending') + ' ' +
       t.replace(/^an? /, '');
     if (spec.notTemporary) t += " that isn't Temporary";
@@ -652,9 +657,12 @@
       // under its own tag, or they would share an answer.
       const taken = RB.offerChoice(s, ordered, 1, ctx, 'eachLocation' + ix,
         'Choose an enemy unit to damage');
+      // THE ONE DOOR: a direct write to obj.damage skips "prevent all spell and ability
+      // damage this turn" and "spells deal 1 bonus damage here", and the card reading
+      // either plays wrong without ever looking broken.
       for (const iid of taken) {
-        RB.obj(s, iid).damage += n_(e);
-        RB.log(s, 'damage', { iid: iid, n: n_(e) });
+        const n = RB.dealDamage(s, iid, n_(e), ctx, 'effect');
+        if (n) RB.log(s, 'damage', { iid: iid, n: n });
       }
     });
   });
@@ -782,13 +790,15 @@
   RB.defineOp('damageHereSplit', (s, e, ctx) => {
     const chosen = targets(s, { pick: 'hereEnemy', prompt: e.prompt }, ctx)[0];
     if (!chosen) return;
-    RB.obj(s, chosen).damage += n_(e);
-    RB.log(s, 'damage', { iid: chosen, n: n_(e) });
+    // Both halves go through the one door, so a prevention or a bonus-damage static sees
+    // the splash exactly as it sees the main hit.
+    const hit = RB.dealDamage(s, chosen, n_(e), ctx, 'effect');
+    if (hit) RB.log(s, 'damage', { iid: chosen, n: hit });
     if (!e.others) return;
     for (const iid of base(s, 'hereEnemy', ctx)) {
       if (iid === chosen) continue;
-      RB.obj(s, iid).damage += e.others;
-      RB.log(s, 'damage', { iid: iid, n: e.others });
+      const n = RB.dealDamage(s, iid, e.others, ctx, 'effect');
+      if (n) RB.log(s, 'damage', { iid: iid, n: n });
     }
   });
   RB.defineDescriber('damageHereSplit', e =>
@@ -822,8 +832,10 @@
   RB.defineOp('damageWatch', (s, e, ctx) => {
     const iid = targets(s, e.target, ctx)[0];
     if (!iid) return;
-    RB.obj(s, iid).damage += n_(e);
-    RB.log(s, 'damage', { iid: iid, n: n_(e) });
+    const n = RB.dealDamage(s, iid, n_(e), ctx, 'effect');   // the one door
+    if (n) RB.log(s, 'damage', { iid: iid, n: n });
+    // The promise is made whether or not the damage landed: "when it dies this turn" does
+    // not depend on this card's damage being what kills it.
     watch(s, ctx, iid, 'died', 'died', e.then);
   });
   RB.defineDescriber('damageWatch', e => 'Deal ' + n_(e) + ' to ' + selText(e.target) +
@@ -995,6 +1007,139 @@
     },
   });
 
+  // --- damageReplacingDeath -------------------------------------------------
+  // "Deal N to a unit at a battlefield. If it would die this turn, banish it instead."
+  // One op because the two halves have to land on the SAME unit: two clauses each going
+  // through the door under their own tag would be two questions, and a Smite that damaged
+  // one unit and protected another is not the printed card.
+  //
+  // The replacement is placed BEFORE the damage. Deaths are swept in the cleanup that
+  // follows this resolution, so either order works today — but the card's promise is about
+  // the unit, not about this damage, and placing it first keeps that true if the sweep
+  // ever moves earlier.
+  RB.defineOp('damageReplacingDeath', (s, e, ctx) => {
+    const iid = targets(s, e.target, ctx)[0];
+    if (!iid) return;
+    const o = RB.obj(s, iid);
+    o.replaces = o.replaces || [];        // minted null, and cleared in the Ending Cleanup
+    o.replaces.push({ event: e.event || 'death', kind: e.kind, byP: ctx.p });
+    RB.log(s, 'replaceOn', { iid: iid, kind: e.kind });
+    const n = RB.dealDamage(s, iid, n_(e), ctx, 'effect');     // the one door
+    if (n) RB.log(s, 'damage', { iid: iid, n: n });
+  });
+  const REPLACE_TEXT = { banishInstead: 'banish it instead' };
+  RB.defineDescriber('damageReplacingDeath', e => 'Deal ' + n_(e) + ' to ' +
+    selText(e.target) + '. If it would die this turn, ' +
+    (REPLACE_TEXT[e.kind] || e.kind) + '.');
+
+  // --- cantMoveToBase -------------------------------------------------------
+  // "I can't move to base." A restriction on ONE destination, which is exactly what
+  // o.noMoveToBase is: moveActions offers every other move and withholds only that one.
+  // The flag is not swept by the Ending Cleanup (unlike o.cantMove), so a printed,
+  // permanent restriction is written once — on the play that put the card on the board.
+  // Every route into play resolves through RB.resolveCard, so every route runs it.
+  RB.defineOp('cantMoveToBase', (s, e, ctx) => {
+    for (const iid of targets(s, e.target || 'self', ctx)) {
+      RB.obj(s, iid).noMoveToBase = true;
+      RB.log(s, 'noMoveToBase', { iid: iid, p: RB.obj(s, iid).controller });
+    }
+  });
+  // "It", not "I": cardText lower-cases the first letter of a trigger's clause, and the
+  // core's own `cantMove` describer names a self target the same way for the same reason.
+  RB.defineDescriber('cantMoveToBase', e => (e.target
+    ? selText(e.target).replace(/^./, c => c.toUpperCase()) : 'It') + " can't move to base.");
+
+  // --- the named tag --------------------------------------------------------
+  // "As you play this, name a tag … [T]: Give a unit with the named tag -2 Might."
+  // The core's `nameTag` computes the option list from every tag printed in the game and
+  // hands the answer down as ctx.namedTag; it lives for that one resolution, so a card
+  // whose ability reads the tag for the rest of the game has to keep it. It is kept on
+  // the naming card's own object, which is where it belongs — two copies of The List name
+  // two different tags.
+  RB.defineOp('rememberNamedTag', (s, e, ctx) => {
+    RB.obj(s, ctx.source).unlNamedTag = ctx.namedTag || null;
+    RB.log(s, 'nameTag', { p: ctx.p, iid: ctx.source, tag: ctx.namedTag || null });
+  });
+  RB.defineDescriber('rememberNamedTag', () => 'Remember it.');
+
+  RB.defineOp('debuffNamedTag', (s, e, ctx) => {
+    const tag = RB.obj(s, ctx.source).unlNamedTag;
+    if (!tag) return;                    // nothing was named: the ability has no subject
+    // "A unit" is any unit, mine included; the pool is built as printed and only the ORDER
+    // says which one a card that harms what it chooses should reach for first.
+    for (const iid of targets(s, { pick: 'allUnits', tag: tag, prefer: 'enemy',
+      prompt: 'Choose a unit with the named tag' }, ctx))
+      RB.obj(s, iid).buffs -= n_(e);
+  });
+  RB.defineDescriber('debuffNamedTag', e =>
+    'Give a unit with the named tag -' + n_(e) + ' Might this turn.');
+
+  // --- counterSpellRestricting ----------------------------------------------
+  // "Counter a spell. Its controller can't play spells this turn." ITS controller, not
+  // the opponent: countering your own spell in response to something is legal, and
+  // `restrict` with opponent:true would then gag the wrong player. The core op does the
+  // restricting — it is handed a context whose player IS the victim, so there is still
+  // exactly one place that writes s.restrictions.
+  RB.defineOp('counterSpellRestricting', (s, e, ctx) => {
+    const item = RB.chainTop(s);
+    if (!item || item.kind !== 'card') return;          // an ability is not a spell
+    if (RB.cardOf(s, item.iid).type !== 'Spell') return;
+    const victim = item.controller;
+    RB.ops.counter(s, {}, ctx);
+    RB.runEffects(s, [{ op: 'restrict', what: 'play', type: e.type || 'Spell' }],
+      Object.assign({}, ctx, { p: victim }));
+  });
+  RB.defineDescriber('counterSpellRestricting', e => 'Counter a spell. Its controller ' +
+    "can't play " + (e.type || 'Spell').toLowerCase() + 's this turn.');
+
+  // --- defenderKillsHere ----------------------------------------------------
+  // "When I attack, the defender must kill one of their units here." Which of their units
+  // is THEIR choice, and this engine can only ask the one seat that is resolving — the
+  // same wall `eachPlayerKills` meets. It takes their cheapest, which is what they would
+  // pick, and is never a choice of mine: nothing is chosen, so no Deflect is tolled and
+  // no `chosen` trigger fires.
+  RB.defineOp('defenderKillsHere', (s, e, ctx) => {
+    const bf = ctx.event && ctx.event.bf;
+    if (bf === undefined || bf === null) return;
+    const pool = RB.unitsAt(s, bf, RB.opponentOf(ctx.p))
+      .slice().sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b));
+    if (!pool.length) return;
+    RB.kill(s, pool[0]);
+  });
+  RB.defineDescriber('defenderKillsHere', () =>
+    'The defender must kill one of their units here.');
+
+  // --- a discount computed from what the additional cost killed -------------
+  // "You may kill a friendly unit as an additional cost to play me. If you do, I cost [1]
+  // less for each Energy it costs and [Y] less for each Power it costs."
+  //
+  // A cost modifier now sees the chosen additional costs, so the discount has somewhere to
+  // live. The catch is that it runs BEFORE the cost is paid, so it cannot read what died —
+  // it has to name the same victim the payment will. It asks the pool the core's
+  // `killFriendly` asks, in the same order (every unit this player controls but the card
+  // being played, cheapest Might first), so the two cannot disagree.
+  //
+  // It touches only a cost that opted in with `discountsByKilled`, so no other card in any
+  // pack changes price.
+  function wouldKill(s, p, iid, x) {
+    return RB.allUnits(s)
+      .filter(u => RB.obj(s, u).controller === p && u !== iid)
+      .filter(u => (!x.mighty || RB.isMighty(s, u)) &&
+        (!x.tag || (RB.card(RB.obj(s, u).cardId).tags || []).includes(x.tag)))
+      .sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b))[0] || null;
+  }
+  RB.unlWouldKill = wouldKill;           // the check harness reads this
+  RB.defineCostModifier((s, p, iid, cost, extras) => {
+    for (const x of extras || []) {
+      if (!x.discountsByKilled) continue;
+      const victim = wouldKill(s, p, iid, x);
+      if (!victim) continue;
+      const c = RB.cardOf(s, victim);
+      cost.energy -= c.energy || 0;
+      cost.power -= c.power || 0;        // RB.totalCost clamps both at zero
+    }
+  });
+
   // --- conditions this pack adds to the core's table ------------------------
   // Registered, not wrapped. Both take the affected card and the static's SOURCE, which is
   // what lets one card say something about units that are not its own.
@@ -1003,8 +1148,6 @@
   RB.defineStaticWhen('weakerEnemyThanSource', (state, iid, w, src) =>
     RB.obj(state, iid).controller !== RB.obj(state, src).controller &&
     RB.mightOf(state, iid) < RB.mightOf(state, src));
-  // …and the prose for each, so the auditor names the condition instead of reading back a
-  // camelCase identifier. A condition nobody can read is a clause nobody can check.
   RB.defineStaticWhen('isToken', (state, iid) => !!RB.obj(state, iid).token);
   RB.defineStaticWhen('isTemporary', (state, iid) => !!RB.obj(state, iid).temporary);
   // "+1 Might for each of your units with Temporary at my battlefield." Reads no Might, so
@@ -1016,7 +1159,27 @@
     return state.bf[loc.bf].units
       .filter(i => RB.obj(state, i).controller === o.controller && RB.obj(state, i).temporary).length;
   });
+  // "This ability costs [1] less for each friendly unit with [Temporary]." An ability's
+  // cost is built inline in legalActions and doActivate, with no modifier hook to register
+  // into and no core function this pack will wrap — so the discount is expressed where an
+  // ability's cost CAN be varied: one entry per price, each gated on the count that makes
+  // that price the right one. The gates are mutually exclusive, so exactly one of them is
+  // ever offered, at exactly the printed cost. Four is the last band because the printed
+  // cost is [4] and a cost never goes below nothing.
+  RB.defineCondition('friendlyTemporary', (s, ctx, a) => {
+    const k = RB.allUnits(s).filter(i =>
+      RB.obj(s, i).controller === ctx.p && RB.obj(s, i).temporary).length;
+    return a.exact ? k === (a.n || 0) : k >= (a.n || 0);
+  });
+
+  // …and the prose for each, so the auditor names the condition instead of reading back a
+  // camelCase identifier. A condition nobody can read is a clause nobody can check.
   if (RB.defineWhenText) {
+    RB.defineWhenText('friendlyTemporary', a => a.exact
+      ? (a.n ? 'while you control exactly ' + a.n + ' unit' + (a.n === 1 ? '' : 's') +
+          ' with Temporary'
+        : 'while you control no units with Temporary')
+      : 'while you control ' + (a.n || 0) + ' or more units with Temporary');
     RB.defineWhenText('enemyOfSource', () => 'for enemy units');
     RB.defineWhenText('weakerEnemyThanSource', () => 'for enemy units with less Might than me');
     RB.defineWhenText('isToken', () => 'while they are tokens');

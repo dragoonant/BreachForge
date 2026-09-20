@@ -425,24 +425,28 @@
     },
 
     // Third clause: "Friendly units played from anywhere other than a player's hand have
-    // [Accelerate]." A static may grant an additional cost now (`grantsExtra`), but it
-    // cannot say this one. Two things are missing, and each alone is the wrong card:
-    //   * The grant is never OFFERED. RB.availableExtras and RB.additionalCost read only the
-    //     `additionalCosts` printed on the card being played, so a granted id is filtered
-    //     out of every combination in legalActions and would throw if one were chosen.
-    //   * `grantsExtra` filters on tag and type and knows nothing of the ZONE a card is
-    //     played from — which is this clause's whole content. The plays it names (trash,
-    //     face down, banished) never reach the additional-cost step at all, while the hand
-    //     plays it excludes are exactly the ones that do: wiring it up as printed would
-    //     grant Accelerate to the inverse of the units that should have it.
+    // [Accelerate]." A granted additional cost is offered and paid correctly now — but only
+    // while it is UNSCOPED, and this clause is the complement of one zone, so it must be
+    // scoped. `fromZone` names one zone, so "anywhere other than a hand" is the two zones
+    // that are not a hand, and neither can carry it today (driven, not read off the source):
+    //   * `fromZone: 'champion'` THROWS inside RB.legalActions. extraCombinations offers the
+    //     granted id with the zone in hand, then RB.additionalCost re-resolves that id with
+    //     no zone and skips every zone-scoped grant — "<card> has no additional cost
+    //     accelerate" — every time the action list is built with a champion waiting.
+    //   * `fromZone: 'hidden'` is never offered: the facedown branch of playableFrom does
+    //     not go through extraCombinations at all, and doPlayHidden ignores `a.pay`.
+    // Unscoped would work, and is the inverse of the printed card: it would hand Accelerate
+    // to the hand plays this clause excludes. (Plays driven by an effect — out of a trash,
+    // a deck or banishment — have no additional-cost step for any card, printed or granted.)
     'sfd-029': {
       unimplemented: 'Third clause grants [Accelerate] — an optional ADDITIONAL COST — to ' +
-        'friendly units played from anywhere but a hand. A static can grant an extra cost ' +
-        '(`grantsExtra`), but RB.availableExtras and RB.additionalCost still read only the ' +
-        'costs printed on the card being played, so a granted one is never offered; and ' +
-        'the grant carries no zone filter, while plays from the trash, from face down and ' +
-        'from banishment never consult additional costs — so it would land on the hand ' +
-        'plays the clause excludes and on nothing else.',
+        'friendly units played from anywhere but a hand, which is the complement of one ' +
+        'zone. A grant with no `fromZone` is offered and paid correctly, but it reaches the ' +
+        'hand plays the clause excludes; and of the two zones that are not a hand, a ' +
+        "`fromZone: 'champion'` grant throws in RB.legalActions (RB.additionalCost " +
+        're-resolves the granted id without a zone and skips it), while a ' +
+        "`fromZone: 'hidden'` grant is never offered (the facedown play path does not go " +
+        'through extraCombinations). Either choice is a crash or the wrong card.',
     },
 
     // "[Action] [Repeat] [1][C] Deal 1 to up to three units at the same location."

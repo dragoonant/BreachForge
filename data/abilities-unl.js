@@ -601,7 +601,15 @@ RB.registerAbilities({
     }] }],
   },
 
-  'unl-007': { unimplemented: '"If it would die this turn, banish it instead" is a replacement on one unit for one turn. RB.kill only scans permanents in play for a card-level `replaces`, so a spell cannot leave one behind on the unit it damaged.' },
+  // Smite — [Action]; damage and a replacement placed on the unit it hit. RB.kill asks a
+  // dying unit's OWN replacements first, so the promise sits on that unit rather than on
+  // Smite, which is already in the trash by the time the unit dies. One op, because both
+  // halves must land on the same unit — see js/ops-unl.js.
+  'unl-007': {
+    keywords: ['Action'],
+    effects: [{ op: 'damageReplacingDeath', n: 3, kind: 'banishInstead',
+      target: { pick: 'allUnits', at: 'battlefield' } }],
+  },
 
   // Pyke (Fury) — [Hidden] [Ganking]; an optional Fury Power buys the ready-and-grow.
   'unl-028': {
@@ -727,7 +735,13 @@ RB.registerAbilities({
     }] }],
   },
 
-  'unl-111': { unimplemented: '"I can\'t move to base" is a restriction on ONE destination. moveActions gates on `exhausted` and `cantMove`, both all-or-nothing, and cantMove would also stop it being played out of the base — a blanket where the card is narrow.' },
+  // Determined Sentry — "I can't move to base." A restriction on one destination, not on
+  // moving, so it is o.noMoveToBase and not o.cantMove. The flag survives the Ending
+  // Cleanup, so the play trigger writes it once and it holds for as long as she is on the
+  // board; every way a card reaches the board resolves through RB.resolveCard.
+  'unl-111': {
+    triggers: [{ on: 'played', effects: [{ op: 'cantMoveToBase' }] }],
+  },
 
   // Irresistible Faefolk — a pull on arrival, and a real "you may".
   'unl-112': {
@@ -775,7 +789,16 @@ RB.registerAbilities({
     ] }],
   },
 
-  'unl-138': { unimplemented: '"Name a tag" is a free choice from all 64 tags printed in the game. A choose step takes a fixed option list, and narrowing it to the tags in play at that moment would narrow a choice that governs the ability for the rest of the game.' },
+  // The List — the tag is named as it is played, from every tag printed in the game (the
+  // core's `nameTag` computes that list), and it governs the ability for the rest of the
+  // game, so it is kept on this gear's own object rather than in the resolution that
+  // named it. [T] with no Energy is `exhaustSelf` alone.
+  'unl-138': {
+    triggers: [{ on: 'played', effects: [
+      { op: 'nameTag', effects: [{ op: 'rememberNamedTag' }] },
+    ] }],
+    activated: [{ exhaustSelf: true, effects: [{ op: 'debuffNamedTag', n: 2 }] }],
+  },
 
   // Kha'Zix — [Ambush]; `mine` keeps the attack trigger to the attacking side and the
   // defend trigger to the defending one, and `here` to the battlefield in question.
@@ -816,7 +839,16 @@ RB.registerAbilities({
     triggers: [{ on: 'played', effects: [{ op: 'eachPlayerKills', exceptIfPaid: 'xp3' }] }],
   },
 
-  'unl-170': { unimplemented: 'Its additional cost DISCOUNTS the card by the killed unit\'s own Energy and Power. An additional cost contributes only fixed numbers to RB.totalCost, and RB.costModifiers cannot see which extras were chosen, so the discount cannot be computed from what died.' },
+  // Atakhan — an optional sacrifice that pays for itself. `discountsByKilled` is read by
+  // this pack's cost modifier, which now sees the chosen additional costs: it names the
+  // same unit the core's killFriendly will kill and takes that unit's own Energy and Power
+  // off the price. Optional, so the plain 10-Energy play is still offered.
+  'unl-170': {
+    keywords: ['Ganking'],
+    additionalCosts: [{ id: 'devour', pays: 'killFriendly', discountsByKilled: true }],
+    triggers: [{ on: 'attack', mine: true, here: true,
+      effects: [{ op: 'defenderKillsHere' }] }],
+  },
 
   // The Ruination — nothing is chosen, so nothing tolls Deflect.
   'unl-180': { effects: [{ op: 'kill', target: 'allUnits' }] },
@@ -834,7 +866,14 @@ RB.registerAbilities({
     effects: [{ op: 'blinkUnit', target: { pick: 'myUnits' } }],
   },
 
-  'unl-190': { unimplemented: '"Its controller can\'t play spells this turn" is a play restriction, and legality in this engine is whatever RB.legalActions offers. There is no shared restriction table to register into, and this pack does not wrap core functions.' },
+  // Lilting Lullaby — [Reaction]; the counter and the gag are one op because the gag is
+  // aimed at the countered spell's OWN controller, which is only read off the chain item
+  // before it is popped. `restrict` is checked in legalActions, so the gagged player is
+  // genuinely not offered a spell rather than merely discouraged from one.
+  'unl-190': {
+    keywords: ['Reaction'],
+    effects: [{ op: 'counterSpellRestricting', type: 'Spell' }],
+  },
 
   // Void Assault — two moves, each to a location of your choosing; the second is asked
   // after the first is answered.
@@ -865,7 +904,29 @@ RB.registerAbilities({
     ] }] }],
   },
 
-  'unl-230': { unimplemented: 'Its ability costs [1] less for each friendly unit with Temporary. RB.costModifiers is the hook for a CARD\'s total cost; an activated ability\'s cost is built inline in legalActions and doActivate with no modifier hook, so the discount has nowhere to live.' },
+  // Bashful Bloom — a legend, and so in a public zone all game. "[4], [T]: … This ability
+  // costs [1] less for each friendly unit with Temporary."
+  //
+  // An activated ability's cost is built inline in legalActions and doActivate, with no
+  // cost-modifier hook, and this pack wraps nothing. So the discount is authored where an
+  // ability's cost CAN vary: one entry per price, each gated on the count of friendly
+  // Temporary units that makes that price the right one. The gates are mutually exclusive
+  // — exactly one entry is legal at a time, at exactly the printed cost — and four is the
+  // last band because [4] minus four is nothing and a cost goes no lower.
+  'unl-230': {
+    activated: [
+      { energy: 4, exhaustSelf: true, when: { kind: 'friendlyTemporary', n: 0, exact: true },
+        effects: [{ op: 'keywordToken', cardId: 'tok-sprite', might: 3, ready: true, temporary: true }] },
+      { energy: 3, exhaustSelf: true, when: { kind: 'friendlyTemporary', n: 1, exact: true },
+        effects: [{ op: 'keywordToken', cardId: 'tok-sprite', might: 3, ready: true, temporary: true }] },
+      { energy: 2, exhaustSelf: true, when: { kind: 'friendlyTemporary', n: 2, exact: true },
+        effects: [{ op: 'keywordToken', cardId: 'tok-sprite', might: 3, ready: true, temporary: true }] },
+      { energy: 1, exhaustSelf: true, when: { kind: 'friendlyTemporary', n: 3, exact: true },
+        effects: [{ op: 'keywordToken', cardId: 'tok-sprite', might: 3, ready: true, temporary: true }] },
+      { exhaustSelf: true, when: { kind: 'friendlyTemporary', n: 4 },
+        effects: [{ op: 'keywordToken', cardId: 'tok-sprite', might: 3, ready: true, temporary: true }] },
+    ],
+  },
 
   // Voidreaver — XP on winning a combat, and two abilities gated on spending it. The gate
   // is checked in legalActions, so neither is offered without the XP to pay.

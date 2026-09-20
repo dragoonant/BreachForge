@@ -120,11 +120,17 @@
       out.push('I cost ' + Math.abs(ab.costModifier.energy || 0) + ' Energy ' +
         ((ab.costModifier.energy || 0) < 0 ? 'less' : 'more') +
         (ab.costModifier.when ? ' ' + whenText(ab.costModifier.when) : '') + '.');
-    for (const x of ab.additionalCosts || [])
-      out.push((x.optional === false ? 'As an additional cost, ' : 'You may pay ') +
-        extraCost(x) + (x.optional === false ? '' : ' as an additional cost') +
+    for (const x of ab.additionalCosts || []) {
+      const what = extraCost(x);
+      // "You may pay kill a friendly unit" is not English. A resource surcharge is PAID;
+      // a sacrifice is something you DO.
+      const verb = /^\d/.test(what) ? 'pay ' : '';
+      out.push((x.optional === false
+        ? 'As an additional cost, ' + what
+        : 'You may ' + verb + what + ' as an additional cost') +
         (x.entersReady ? '; if you do, I enter ready' : '') +
         (x.waivesBaseCost ? '; if you do, ignore my cost' : '') + '.');
+    }
     for (const w of ab.playAlso || []) out.push(PLAY_WHERE_TEXT[w] || ('I may be played ' + w) + '.');
     for (const k of ab.keywords || []) out.push(typeof k === 'string' ? k : k.name + (k.value ? ' ' + k.value : ''));
     for (const t of ab.triggers || [])
@@ -245,15 +251,35 @@
     whereIAmAttacking: "I can be played to a battlefield you're attacking.",
     whereIControl: 'I can be played to a battlefield you control.',
   };
+  // The prose for a `pays` kind is a hook, because a pack may define its own kinds and a
+  // cost the auditor renders as its raw key is a clause nobody can check.
+  const EXTRA_TEXT = {
+    killFriendly: x => 'kill a friendly ' + (x.mighty ? 'Mighty ' : '') + 'unit',
+    discard: x => 'discard ' + (x.n || 1),
+    spendBuff: x => 'spend ' + (x.n || 1) + ' buff',
+    recycleFromTrash: x => 'recycle ' + (x.n || 1) + ' from your trash',
+  };
+  RB.defineExtraCostText = function (kind, fn) {
+    EXTRA_TEXT[kind] = typeof fn === 'function' ? fn : () => fn;
+  };
+  // An additional cost may also carry a clause of its own — "and I cost 1 less for each
+  // Energy it costs" belongs to the cost, not to the card, and had nowhere to render.
+  const EXTRA_NOTE = {};
+  RB.defineExtraCostNote = function (flag, fn) {
+    EXTRA_NOTE[flag] = typeof fn === 'function' ? fn : () => fn;
+  };
   function extraCost(x) {
     const bits = [];
     if (x.energy) bits.push(x.energy + ' Energy');
     if (x.power) bits.push(x.power + ' Power');
-    if (x.pays === 'killFriendly') bits.push('kill a friendly ' + (x.mighty ? 'Mighty ' : '') + 'unit');
-    if (x.pays === 'discard') bits.push('discard ' + (x.n || 1));
-    if (x.pays === 'spendBuff') bits.push('spend ' + (x.n || 1) + ' buff');
-    if (x.pays === 'recycleFromTrash') bits.push('recycle ' + (x.n || 1) + ' from your trash');
-    return bits.join(' and ') || 'nothing';
+    if (x.pays) {
+      const fn = EXTRA_TEXT[x.pays];
+      bits.push(fn ? fn(x) : x.pays.replace(/([A-Z])/g, ' $1').toLowerCase().trim());
+    }
+    if (x.x) bits.push('any amount of Power');
+    let out = bits.join(' and ') || 'nothing';
+    for (const k of Object.keys(EXTRA_NOTE)) if (x[k]) out += ' — ' + EXTRA_NOTE[k](x);
+    return out;
   }
 
   function cost(a) {

@@ -31,7 +31,7 @@
     // An additional cost may change how the card enters or add its own clause —
     // [Accelerate] is "pay more and I enter ready", which is a property of the play, not
     // an effect that happens to it afterwards.
-    const extras = (item.paid || []).map(id => RB.additionalCost(s, iid, id));
+    const extras = (item.paid || []).map(id => RB.additionalCost(s, iid, id, item.fromZone || 'hand'));
     const entersReady = extras.some(x => x.entersReady);
 
     if (card.type === 'Unit') {

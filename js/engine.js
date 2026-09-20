@@ -134,7 +134,8 @@
     if (P.champion && mode === 'main') {
       const card = RB.cardOf(state, P.champion);
       for (const pick of extraCombinations(state, p, P.champion, 'champion')) {
-        const cost = RB.totalCost(state, P.champion, pick.map(id => RB.additionalCost(state, P.champion, id)));
+        const cost = RB.totalCost(state, P.champion,
+          pick.map(id => RB.additionalCost(state, P.champion, id, 'champion')));
         if (!RB.canPay(state, p, cost)) continue;
         for (const dest of playDestinations(state, p, card))
           out.push(pick.length
@@ -150,8 +151,23 @@
         if (h.owner !== p || state.bf[i].controller !== p) continue;
         if (h.turnHidden >= state.turn) continue;             // not until the next turn
         const card = RB.cardOf(state, h.iid);
-        for (const dest of playDestinations(state, p, card))
-          out.push({ t: 'play', iid: h.iid, to: dest, from: 'hidden', bf: i });
+        const dests = playDestinations(state, p, card);
+        // A facedown play takes additional costs like any other. It ignores the card's
+        // BASE cost, not the costs a player chooses to add on top of it.
+        for (const pick of extraCombinations(state, p, h.iid, 'hidden')) {
+          if (pick.length) {
+            const extra = { energy: 0, power: 0, domains: RB.DOMAINS.slice(), each: false, forKind: 'card' };
+            for (const id of pick) {
+              const x = RB.additionalCost(state, h.iid, id, 'hidden');
+              extra.energy += x.energy || 0; extra.power += x.power || 0;
+            }
+            if (!RB.canPay(state, p, extra)) continue;
+          }
+          for (const dest of dests)
+            out.push(pick.length
+              ? { t: 'play', iid: h.iid, to: dest, from: 'hidden', bf: i, pay: pick }
+              : { t: 'play', iid: h.iid, to: dest, from: 'hidden', bf: i });
+        }
       }
     }
     for (const iid of P.hand) {
@@ -166,7 +182,8 @@
       if (!dests.length) continue;
       let any = false;
       for (const pick of extraCombinations(state, p, iid, 'hand')) {
-        const cost = RB.totalCost(state, iid, pick.map(id => RB.additionalCost(state, iid, id)));
+        const cost = RB.totalCost(state, iid,
+          pick.map(id => RB.additionalCost(state, iid, id, 'hand')));
         if (!RB.canPay(state, p, cost)) continue;
         any = true;
         for (const dest of dests)
@@ -189,7 +206,7 @@
         // Equipment this turn" is a gate: without it the ability is either offered and
         // fizzles for full price, or the clause is dropped — both the wrong card.
         if (a.when && !RB.testCondition(state, a.when, { p: p, source: iid })) return;
-        const cost = { energy: a.energy || 0, power: a.power || 0, domains: a.domains || [], each: false };
+        const cost = RB.abilityCost(state, iid, a);
         if (!RB.canPay(state, p, cost)) return;
         out.push({ t: 'activate', iid: iid, ix: ix });
       });
@@ -377,9 +394,10 @@
     // Optional additional costs are chosen as the card is played and are part of its
     // total cost (§349 step 3), so they are solved and paid together with the base cost —
     // never as an effect afterwards, which would make an unpayable card castable.
+    const zone = a.from || 'hand';
     const xPaid = (a.pay || []).filter(id => /^x\d+$/.test(id)).map(id => +id.slice(1))[0] || 0;
     const extras = (a.pay || []).filter(id => !/^x\d+$/.test(id))
-      .map(id => RB.additionalCost(s, iid, id));
+      .map(id => RB.additionalCost(s, iid, id, zone));
     const cost = RB.totalCost(s, iid, extras);
     if (xPaid) {
       const x = (RB.cardOf(s, iid).abilities.additionalCosts || []).find(c => c.x);
@@ -403,7 +421,8 @@
     // Units and Gear resolve immediately on finalization and never sit on the chain
     // (rules §356); only spells and non-Add abilities linger there.
     const item = { iid: iid, controller: p, to: a.to, kind: 'card', targets: a.targets,
-      paid: (a.pay || []).slice(), xPaid: xPaid, cardId: card.id, energy: card.energy || 0 };
+      paid: (a.pay || []).slice(), fromZone: zone, xPaid: xPaid,
+      cardId: card.id, energy: card.energy || 0 };
     // Relevant choices are made as the card is played (§349 step 2), so a card that
     // declares what it chooses records it on the chain item. That is what lets a counter
     // read "a spell that chose exactly one of my units" instead of countering anything.
@@ -429,8 +448,20 @@
       nth: P.playedThisTurn.length }, soundFor(card));
     RB.runTriggers(s, 'cardPlayed', { p: p, iid: a.iid, nth: P.playedThisTurn.length,
       type: card.type, fromHidden: true });
+    // A facedown play ignores the BASE cost; additional costs the player chose still get
+    // paid, which is why they were offered.
+    const extras = (a.pay || []).map(id => RB.additionalCost(s, a.iid, id, 'hidden'));
+    if (extras.length) {
+      const cost = { energy: 0, power: 0, domains: RB.DOMAINS.slice(), each: false, forKind: 'card' };
+      for (const x of extras) { cost.energy += x.energy || 0; cost.power += x.power || 0; }
+      const plan = RB.planPayment(s, p, cost);
+      if (!plan) throw new Error('cannot pay the additional cost on a facedown play');
+      RB.pay(s, p, plan);
+      for (const x of extras) RB.payExtra(s, p, a.iid, x);
+    }
     const item = { iid: a.iid, controller: p, to: a.to, kind: 'card', fromHidden: true,
-      cardId: card.id, energy: card.energy || 0, paid: [] };
+      cardId: card.id, energy: card.energy || 0,
+      paid: (a.pay || []).slice(), fromZone: 'hidden' };
     if (card.type === 'Unit' || card.type === 'Gear') { RB.resolveCard(s, item); return; }
     s.chain.push(item);
     s.priority = RB.opponentOf(p);
@@ -474,7 +505,7 @@
 
   function doActivate(s, p, a) {
     const ab = RB.cardOf(s, a.iid).abilities.activated[a.ix];
-    const cost = { energy: ab.energy || 0, power: ab.power || 0, domains: ab.domains || [], each: false };
+    const cost = RB.abilityCost(s, a.iid, ab);
     const plan = RB.planPayment(s, p, cost);
     if (!plan) throw new Error('cannot pay activated ability');
     RB.pay(s, p, plan);

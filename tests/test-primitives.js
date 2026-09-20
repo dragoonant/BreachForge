@@ -442,6 +442,52 @@ export function run(t) {
     // A grant scoped to one zone must not reach a play from another.
     gc.abilities = { statics: [{ grantsExtra: extra, tag: tag, fromZone: 'hidden' }] };
     t.eq(plays().length, before, 'a hand play never sees a grant scoped to facedown plays');
+
+    // …and it must WORK on the zone it IS scoped to. Asserting only the negative is what
+    // let a zone-scoped grant throw while the action list was being built: the id was
+    // offered with the zone and then re-resolved without it, so a board carrying the
+    // granting card could not enumerate its actions at all.
+    gc.abilities = { statics: [{ grantsExtra: extra, tag: tag, fromZone: 'hand' }] };
+    let scoped;
+    try { scoped = plays(); }
+    catch (e) { throw new Error('legalActions threw on a zone-scoped grant: ' + e.message); }
+    t.ok(scoped.some(a => a.pay && a.pay.includes('granted-acc')),
+      'the grant is offered on the zone it names');
+    const applied = RB.apply(s, scoped.find(a => a.pay && a.pay.includes('granted-acc')));
+    t.ok(!RB.obj(applied, iid).exhausted, 'and applying it still works');
+    gc.abilities = saved;
+  });
+
+  t.test('a facedown play ignores the base cost but still takes additional costs', () => {
+    const s = game();
+    const p = s.active;
+    const hidCard = RB.allCards().find(c => c.type === 'Unit' &&
+      !(c.abilities && c.abilities.additionalCosts) && (c.energy || 0) >= 3);
+    if (!hidCard) return;
+    const iid = RB.mint(s, hidCard.id, p);
+    s.bf[0].units.push(put(s, p, 0));
+    s.bf[0].controller = p;
+    s.bf[0].hidden.push({ iid: iid, owner: p, turnHidden: s.turn - 1 });
+    s.players[p].runes = []; s.players[p].pool.energy = 0; s.players[p].pool.any = 0;
+
+    let acts = RB.legalActions(s).filter(a => a.from === 'hidden' && a.iid === iid);
+    t.ok(acts.length > 0, 'playable for free with no resources at all — the base cost is ignored');
+    t.ok(acts.every(a => !a.pay), 'and with nothing to add');
+
+    // Grant it an additional cost it cannot afford, then one it can.
+    const gc = RB.card(RB.obj(s, s.bf[0].units[0]).cardId);
+    const saved = gc.abilities;
+    if (gc.id === hidCard.id) { gc.abilities = saved; return; }
+    gc.abilities = { statics: [{ grantsExtra: { id: 'acc', energy: 2, entersReady: true },
+      type: 'Unit', fromZone: 'hidden' }] };
+    acts = RB.legalActions(s).filter(a => a.from === 'hidden' && a.iid === iid);
+    t.ok(acts.every(a => !a.pay), 'an unaffordable addition is not offered');
+    s.players[p].pool.energy = 5;
+    acts = RB.legalActions(s).filter(a => a.from === 'hidden' && a.iid === iid);
+    t.ok(acts.some(a => a.pay && a.pay.includes('acc')), 'an affordable one is');
+    const after = RB.apply(s, acts.find(a => a.pay));
+    t.eq(after.players[p].pool.energy, 3, 'and it was actually paid');
+    t.ok(!RB.obj(after, iid).exhausted, 'and it did what it said');
     gc.abilities = saved;
   });
 

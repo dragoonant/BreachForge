@@ -90,12 +90,18 @@
   // ("your Shurima units have Accelerate"). Both lookups had to read only the printed
   // list, which meant a granted cost was computed, then filtered straight back out and
   // never offered — the card that grants it looked authored and did nothing.
-  RB.additionalCost = function (state, iid, id) {
+  // `fromZone` MUST be threaded here. A grant scoped to a zone is offered with the zone
+  // and then re-resolved by id, and a lookup without the zone silently drops it — which
+  // threw while the ACTION LIST was being built, so a board with the granting card on it
+  // could not enumerate its actions at all. A zone-scoped grant is the only kind several
+  // printed cards can use, so this path is not an edge case.
+  RB.additionalCost = function (state, iid, id, fromZone) {
     const ab = RB.cardOf(state, iid).abilities || {};
     const all = (ab.additionalCosts || []).concat(
-      RB.grantedExtras(state, RB.obj(state, iid).controller, iid));
+      RB.grantedExtras(state, RB.obj(state, iid).controller, iid, fromZone));
     const x = all.find(c => c.id === id);
-    if (!x) throw new Error(RB.cardOf(state, iid).id + ' has no additional cost ' + id);
+    if (!x) throw new Error(RB.cardOf(state, iid).id + ' has no additional cost ' + id +
+      (fromZone ? ' from ' + fromZone : ' (no zone given — the caller must thread it)'));
     return x;
   };
   RB.extraAvailable = Object.create(null);
@@ -169,6 +175,23 @@
   // here, so "I cost [2] less" and "ignore this spell's cost" have one home.
   RB.costModifiers = [];
   RB.defineCostModifier = function (fn) { RB.costModifiers.push(fn); };
+
+  // An activated ability's cost, through the SAME modifier layer a card's cost goes
+  // through. It was built inline in two places, so "my ability costs 1 less for each …"
+  // had nowhere to apply and had to be faked as several gated copies of the ability.
+  RB.abilityCostModifiers = [];
+  RB.defineAbilityCostModifier = function (fn) { RB.abilityCostModifiers.push(fn); };
+
+  RB.abilityCost = function (state, iid, ab) {
+    const cost = { energy: ab.energy || 0, power: ab.power || 0,
+      domains: ab.domains || [], each: false,
+      forType: RB.cardOf(state, iid).type, forKind: 'ability' };
+    const p = RB.obj(state, iid).controller;
+    for (const fn of RB.abilityCostModifiers) fn(state, p, iid, ab, cost);
+    cost.energy = Math.max(0, cost.energy);
+    cost.power = Math.max(0, cost.power);
+    return cost;
+  };
 
   RB.totalCost = function (state, iid, extras) {
     const base = RB.costOf(state, iid);

@@ -144,6 +144,28 @@ replaces: [{ event: 'death', kind: 'dieInstead' }]   // "if a friendly unit woul
 The first replacement that applies consumes the event, and a replacement's own kill is never
 itself replaced. Add kinds with `RB.defineReplacement`.
 
+## Costs that vary
+
+Two modifier layers, one per kind of cost, and **both are hooks — never wrap the cost functions**:
+
+- `RB.defineCostModifier(fn)` → `fn(state, p, iid, cost, extras)` runs inside `RB.totalCost`,
+  which prices **playing a card**. It receives the additional costs the player chose, because
+  several cards discount *those* rather than the printed cost.
+- `RB.defineAbilityCostModifier(fn)` → `fn(state, p, iid, ab, cost)` runs inside
+  `RB.abilityCost`, which prices **activating an ability**. Without it, "my ability costs 1 less
+  for each …" has to be faked as several copies of the ability gated on a count — mechanically
+  exact, but the auditor reads five lines where the card prints one.
+
+`cost.forType` and `cost.forKind` (`'card'` / `'ability'`) say what is being paid for, which is
+also what a restricted resource pool reads.
+
+## Describing your own costs
+
+`RB.defineExtraCostText(payKind, fn)` gives prose to a `pays` kind your pack defined, and
+`RB.defineExtraCostNote(flag, fn)` adds a clause the cost itself carries — "and I cost 1 less for
+each Energy it costs" belongs to the cost, not to the card. A cost the auditor renders as its raw
+key is a clause nobody can check.
+
 ## Gates on activated abilities
 
 An ability's legality is not only its cost. `{ energy, power, exhaustSelf, killSelf, when }` —
