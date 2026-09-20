@@ -24,13 +24,24 @@ repository, through `tools/import-cards.mjs`; the raw dump stays in the gitignor
 **Official artwork URLs are present in that dump and are deliberately unused.** No official image
 is in this repository or is fetched by the game. Every image the game draws is this project's own
 — either the procedural painting in `js/procart.js` or a render generated from original prose
-prompts (`tools/art-prompts.json`, `docs/ART-PROMPT-RULES.md`).
+prompts (`tools/art-prompts.json`, `docs/ART-PROMPT-RULES.md`). That covers all 264 registered
+cards plus the four painted board areas; nothing falls back.
 
 ## Decklists
 
 **`riftbound.one/decklists`**, read **2026-09-19**: 381 tournament decklists with legend, event,
-placement and card list. Ten were selected — one per legend, each a first-place finish — giving a
-163-card union. Fetched once with a browser user agent; the dump lives in `scratch/`.
+placement and card list. Fetched once with a browser user agent; the dump lives in `scratch/`.
+
+**Twenty decks selected, one per legend, all legends distinct.** The first ten are each a
+first-place finish; of the second ten, nine are firsts and one (Kha'Zix) is a second, because that
+legend has no first-place list in the data. Together they cover all six domains and give a
+256-card union — the two waves share 87 cards, so the second ten added only 79.
+
+Two things the source does **not** record, both reconstructed and both logged as deviations: the
+rune deck is frequently partial or absent (D-3, affecting seventeen of twenty decks), and the
+Chosen Champion is often missing entirely (D-11, eleven of twenty). The rune reconstruction is
+determined by the legend's domains and is not a judgement call; **the champion reconstruction is**
+— which champion a player ran is a real deckbuilding decision, and the entry says so.
 
 Sites checked and rejected: `riftdecks.com` and `api.riftmana.com` both return Cloudflare 403 to
 every client available here, including a real browser.
