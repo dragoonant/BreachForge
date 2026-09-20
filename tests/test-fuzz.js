@@ -27,6 +27,33 @@ export function run(t) {
     t.eq(failures.length, 0, failures.slice(0, 5).join(' | '));
   });
 
+  t.test('a game with a human seat survives a full soak of targeting restarts', () => {
+    // The restartable resolution is the riskiest thing in the engine: every card that
+    // asks a question re-runs its whole resolution from the top. This asserts that a
+    // game where every such question is actually raised still terminates, never offers
+    // zero actions, and never leaves a question un-answerable.
+    const games = t.full ? 40 : 12;
+    let asked = 0;
+    const failures = [];
+    for (let g = 0; g < games; g++) {
+      try {
+        let s = RB.newGame({ seed: 'hs' + g, decks: [decks[g % decks.length],
+          decks[(g * 5 + 2) % decks.length]], humanSeat: 0 });
+        let n = 0;
+        while (!RB.isTerminal(s) && n < 4000) {
+          if (s.queue[0] && s.queue[0].kind === 'target') asked++;
+          const acts = RB.legalActions(s);
+          if (!acts.length) { failures.push('g' + g + ': zero legal actions in ' + s.phase); break; }
+          s = RB.apply(s, acts[RB.peekInt(s, acts.length, n)]);
+          n++;
+        }
+        if (!RB.isTerminal(s) && n >= 4000) failures.push('g' + g + ': no termination');
+      } catch (e) { failures.push('g' + g + ': ' + e.message.split('\n')[0]); }
+    }
+    t.eq(failures.length, 0, failures.slice(0, 4).join(' | '));
+    t.ok(asked > 0, 'the soak actually exercised targeting — it raised ' + asked + ' questions');
+  });
+
   t.test('the AI produces a legal action in every position it is asked about', () => {
     let s = RB.newGame({ seed: 'ai1', decks: [decks[0], decks[4]] });
     const bad = [];
