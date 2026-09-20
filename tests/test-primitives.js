@@ -312,6 +312,60 @@ export function run(t) {
     card.abilities = saved;
   });
 
+  // --- timing (rules 315.4, 316.5) -------------------------------------------
+  t.test('Action and Reaction timing: who may play what, and when', () => {
+    const s = game();
+    const me = s.active, them = RB.opponentOf(me);
+    const pick = kw => RB.allCards().find(c => c.abilities &&
+      (c.abilities.keywords || []).some(k => k === kw || k.name === kw));
+    const plain = RB.allCards().find(c => c.type === 'Spell' && c.abilities &&
+      !(c.abilities.keywords || []).some(k => ['Action', 'Reaction'].includes(k.name || k)));
+    const action = pick('Action'), reaction = pick('Reaction');
+    if (!action || !reaction || !plain) return;
+
+    const give = (state, p, card) => {
+      const iid = RB.mint(state, card.id, p);
+      state.players[p].hand.push(iid);
+      state.players[p].pool.energy = 99; state.players[p].pool.any = 99;
+      return iid;
+    };
+    // legalActions offers ONE play per distinct card in hand, not per copy, so the test
+    // asks whether the CARD is offered rather than whether one particular copy is — the
+    // opening hand may already hold another copy of the same card.
+    // legalActions offers ONE play per distinct card in a player's hand, not per copy, so
+    // the test asks whether THAT PLAYER is offered that card — the opening hand may hold
+    // another copy, and the opponent may hold one too.
+    const offered = (state, iid) => {
+      const o = RB.obj(state, iid);
+      return RB.legalActions(state).some(a => a.t === 'play' &&
+        RB.obj(state, a.iid).cardId === o.cardId &&
+        RB.obj(state, a.iid).controller === o.controller);
+    };
+
+    // Neutral Open State: only the turn player acts at all (316.5).
+    const a1 = give(s, me, plain);
+    const a2 = give(s, them, reaction);
+    t.ok(offered(s, a1), 'the turn player may play an ordinary card in their main phase');
+    t.ok(!offered(s, a2), 'the other player is offered nothing at all outside a showdown or a chain');
+
+    // Showdown Open State: Action and Reaction only, for whoever holds priority (315.4).
+    const sd = RB.clone(s);
+    sd.showdown = { bf: 0, attacker: me, defender: them, combat: false };
+    sd.priority = me; sd.focus = me;
+    const b1 = give(sd, me, plain), b2 = give(sd, me, action), b3 = give(sd, me, reaction);
+    t.ok(!offered(sd, b1), 'an ordinary card cannot be played during a showdown');
+    t.ok(offered(sd, b2), 'an Action can');
+    t.ok(offered(sd, b3), 'and so can a Reaction');
+
+    // Closed state: a chain is resolving, so only Reactions.
+    const ch = RB.clone(s);
+    ch.chain.push({ iid: a1, controller: me, kind: 'card' });
+    ch.priority = them;
+    const c1 = give(ch, them, action), c2 = give(ch, them, reaction);
+    t.ok(!offered(ch, c1), 'an Action cannot be played into a resolving chain');
+    t.ok(offered(ch, c2), 'a Reaction can');
+  });
+
   // --- replacement effects ---------------------------------------------------
   t.test('a replacement effect stands in front of a death and takes its place', () => {
     const s = game();
