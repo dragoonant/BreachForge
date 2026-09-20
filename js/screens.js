@@ -33,6 +33,13 @@
     const decks = RB.playableDecks();
     const grid = $('#deckgrid');
     grid.innerHTML = '';
+    // The blurb counts what is actually on offer — a number written into the page goes
+    // stale the first time the registry grows.
+    const marked = decks.filter(d => RB.deckPartials(d).length).length;
+    $('#deckblurb').innerHTML = decks.length + ' tournament-winning lists, one per legend. ' +
+      "Your rival's deck is drawn from the seed." +
+      (marked ? ' <span class="partialbadge">' + marked +
+        ' still have cards that are not fully implemented — those cards are marked.</span>' : '');
     for (const d of decks) {
       const t = RB.el('decktile' + (d === myDeck ? ' sel' : ''));
       const legend = RB.card(d.legend);

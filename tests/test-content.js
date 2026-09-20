@@ -79,7 +79,9 @@ export function run(t) {
       t.ok(!seen.has(d.legend), 'duplicate legend ' + d.legend);
       seen.add(d.legend);
     }
-    t.eq(seen.size, 10);
+    // Assert the PROPERTY, not the current count — the deck registry grows.
+    t.eq(seen.size, RB.deckData.length, 'one legend per deck, all distinct');
+    t.ok(RB.deckData.length >= 10, 'and there are at least ten decks to choose from');
   });
 
   t.test('the defects gate hides any deck containing a defective id', () => {

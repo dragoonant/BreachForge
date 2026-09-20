@@ -77,13 +77,16 @@
   //
   // A card that plays WRONG — as opposed to incompletely — still goes in data/defects.js
   // and still takes its decks out of circulation.
-  RB.isPartial = function (id) {
-    const c = byId[id];
-    return !!(c && c.abilities && c.abilities.unimplemented);
-  };
+  // A card with NO ability data at all is partial too, and must say so. During an
+  // authoring wave the pool grows before the packs do, and an unauthored card that
+  // rendered clean would be exactly the unmarked partial card this whole mechanism
+  // exists to prevent.
+  RB.isPartial = function (id) { return RB.partialReason(id) !== null; };
   RB.partialReason = function (id) {
     const c = byId[id];
-    return (c && c.abilities && c.abilities.unimplemented) || null;
+    if (!c || c.type === 'Rune') return null;
+    if (!c.abilities) return 'not yet authored — this card plays as its printed body only';
+    return c.abilities.unimplemented || null;
   };
   RB.deckPartials = function (d) {
     const ids = [d.legend, ...d.runes.map(e => e.id), ...d.battlefields.map(e => e.id), ...d.main.map(e => e.id)];
