@@ -101,6 +101,37 @@ export function run(t) {
     t.ok(after.players[me].points >= 1, 'and the conquer scored');
   });
 
+  t.test('a unit is played to your base unless it has Ambush or a card says otherwise', () => {
+    const s = game();
+    const plain = RB.allCards().find(c => c.type === 'Unit' &&
+      !(c.abilities && (c.abilities.playTo || (c.abilities.keywords || [])
+        .some(k => k === 'Ambush' || k.name === 'Ambush'))));
+    const iid = RB.mint(s, plain.id, s.active);
+    s.players[s.active].hand.push(iid);
+    const dests = RB.legalActions(s).filter(a => a.t === 'play' && a.iid === iid).map(a => a.to);
+    if (!dests.length) return;                      // unaffordable this turn
+    t.eq(dests, ['base'], 'a plain unit offers only the base');
+  });
+
+  t.test('Ambush offers a battlefield where you already control units, and still the base', () => {
+    const s = game();
+    const amb = RB.allCards().find(c => c.type === 'Unit' && c.abilities &&
+      (c.abilities.keywords || []).some(k => k === 'Ambush' || k.name === 'Ambush'));
+    if (!amb) return;
+    const p = s.active;
+    const iid = RB.mint(s, amb.id, p);
+    s.players[p].hand.push(iid);
+    s.players[p].pool.energy = 99;
+    s.players[p].pool.any = 99;
+    const before = RB.legalActions(s).filter(a => a.t === 'play' && a.iid === iid).map(a => a.to);
+    t.eq(before, ['base'], 'with no units out, only the base');
+    const friend = RB.mint(s, amb.id, p);
+    s.bf[0].units.push(friend);
+    const after = RB.legalActions(s).filter(a => a.t === 'play' && a.iid === iid).map(a => a.to);
+    t.ok(after.includes('bf0') && after.includes('base') && !after.includes('bf1'),
+      'bf0 opens up, bf1 does not: ' + after.join(','));
+  });
+
   t.test('a player may score each battlefield at most once per turn', () => {
     const s = game();
     const p = s.active;

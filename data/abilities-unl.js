@@ -11,10 +11,10 @@
 //    `[Hunt 2]` is precisely a conquer/hold trigger that adds XP. Declaring either as a
 //    bare keyword would leave it inert, which is the defect this file exists to avoid.
 //    Each expansion says so at the card.
-//  * OPTIONALITY IS NEVER APPROXIMATED. A printed "you may" is `may`; a printed choice
-//    whose *both* branches do something is `choose`, because js/ops-sfd.js overrides the
-//    core `may` with a version that has no `otherwise` branch and this file will not
-//    redefine another pack's op to get one back.
+//  * OPTIONALITY IS NEVER APPROXIMATED. A printed "you may" is `may`, and declining is a
+//    legal answer. A decision whose *both* branches act is `choose` instead: `may` queues
+//    its step and returns, so anything written after it in the same list would resolve
+//    before the player answered.
 RB.registerAbilities({
 
   // Inferna — [Ambush] [Assault 2]
@@ -90,10 +90,10 @@ RB.registerAbilities({
     triggers: [
       { on: 'played', effects: [
         { op: 'giveTemporary', target: 'self' },
-        { op: 'token', cardId: 'tok-sprite', might: 3, ready: true, temporary: true },
+        { op: 'keywordToken', cardId: 'tok-sprite', might: 3, ready: true, temporary: true },
       ] },
       { on: 'deathknell', effects: [
-        { op: 'token', cardId: 'tok-sprite', might: 3, ready: true, temporary: true },
+        { op: 'keywordToken', cardId: 'tok-sprite', might: 3, ready: true, temporary: true },
       ] },
     ],
   },
@@ -259,7 +259,7 @@ RB.registerAbilities({
         effects: [{
           op: 'choose',
           options: [
-            { label: 'Reveal a unit from the top 3 and draw it',
+            { label: 'Reveal a unit from the top 3, draw it, recycle the rest',
               effects: [{ op: 'digUnit', n: 3, take: true }] },
             { label: 'Recycle all three', effects: [{ op: 'digUnit', n: 3, take: false }] },
           ],
@@ -295,12 +295,12 @@ RB.registerAbilities({
       effects: [{
         op: 'choose',
         options: [
-          { label: 'Move an enemy unit there first',
+          { label: 'Move an enemy unit there, then give enemy units there -2 Might this turn',
             effects: [
               { op: 'moveUnit', target: { pick: 'enemyUnits' }, to: 'here' },
               { op: 'debuff', n: 2, target: 'hereEnemy' },
             ] },
-          { label: 'Move no one',
+          { label: 'Move no one; give enemy units there -2 Might this turn',
             effects: [{ op: 'debuff', n: 2, target: 'hereEnemy' }] },
         ],
       }],

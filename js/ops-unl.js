@@ -3,14 +3,14 @@
 //
 // Three house rules, all of them about not stepping on the other packs:
 //
-//  * NOTHING HERE REDEFINES AN OP ANOTHER FILE OWNS. js/ops-unl.js loads last, so a
-//    name collision would silently replace another set's handler. `attach` is already
-//    taken by js/ops-sfd.js, so the Equip ability here is `equipSelf`; `may` and `choose`
-//    are the core's and are used, never redefined.
-//  * NO CARD HERE DEPENDS ON `may`'s `otherwise` BRANCH, because js/ops-sfd.js overrides
-//    the core `may` with a version that has none. Where both branches of a decision do
-//    something, the card uses `choose` with two labelled options instead — same decision,
-//    no dependency on whose `may` won the load order.
+//  * NOTHING HERE REDEFINES AN OP ANOTHER FILE OWNS. js/ops-unl.js loads last, so a name
+//    collision would silently replace another set's handler, and `may`, `choose`, `stun`,
+//    `counter` and `xp` are the core's. The Equip ability is `equipSelf` rather than
+//    `attach` for the same reason.
+//  * A DECISION WHOSE BOTH BRANCHES ACT USES `choose`, NOT `may`. `may` queues a step and
+//    returns, so any effect written after it in the same list resolves BEFORE the answer.
+//    Where a card says "you may X, then Y" the two options are spelled out instead, so Y
+//    lands after the decision either way.
 //  * RB.staticsOn is wrapped ADDITIVELY, only to honour a `when:` key. A static with no
 //    `when` is passed through untouched, so the other packs' statics are unaffected.
 //
@@ -254,9 +254,12 @@
     } else s.players[ctx.p].base.push(iid);
     RB.log(s, 'token', { p: ctx.p, iid: iid, card: o.cardId }, 'unit.deploy');
   });
-  RB.defineDescriber('copyToken', e =>
-    'Play a' + (e.ready ? ' ready' : 'n exhausted') + ' token copy of ' + selText(e.target) +
-    (e.to === 'here' ? ' there' : ' to your base') + (e.temporary ? ', Temporary' : '') + '.');
+  RB.defineDescriber('copyToken', e => {
+    const of = selText(e.target);
+    const where = e.to === 'here' ? (/ there$/.test(of) ? '' : ' there') : ' to your base';
+    return 'Play a' + (e.ready ? ' ready' : 'n exhausted') + ' token copy of ' + of +
+      where + (e.temporary ? ', with Temporary' : '') + '.';
+  });
 
   // --- keywordToken ---------------------------------------------------------
   // The core token op makes one token and grants nothing; this makes N of them and hands
@@ -278,11 +281,15 @@
       RB.log(s, 'token', { p: ctx.p, iid: iid, card: e.cardId }, 'unit.deploy');
     }
   });
+  const COUNT = ['no', 'a', 'two', 'three', 'four', 'five', 'six'];
   RB.defineDescriber('keywordToken', e => {
     const c = RB.card(e.cardId);
-    return 'Play ' + n_(e) + ' ' + (e.might != null ? e.might : c.might) + ' Might ' + c.name +
-      ' unit token' + (n_(e) === 1 ? '' : 's') +
+    const k = n_(e);
+    return 'Play ' + (COUNT[k] || k) + ' ' + (e.ready ? 'ready ' : '') +
+      (e.might != null ? e.might : c.might) + ' Might ' + c.name +
+      ' unit token' + (k === 1 ? '' : 's') +
       ((e.keywords || []).length ? ' with ' + e.keywords.join(' and ') : '') +
+      (e.temporary ? ' with Temporary' : '') +
       (e.to === 'here' ? ' there' : ' to your base') + '.';
   });
 

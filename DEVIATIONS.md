@@ -60,3 +60,25 @@ the player zoomed in to read it. Presentation only; deliberate.
 Cards appear and disappear between renders. The structured log already carries everything an
 animation layer would need.
 Owner: unassigned.
+
+**D-8 — Ability packs wrap core functions instead of extending a hook table.**
+`js/ops-ogn.js`, `js/ops-sfd.js` and `js/ops-unl.js` each wrap `RB.kill`, `RB.apply`,
+`RB.score`, `RB.autoPick` and/or `RB.cardText` to add set-local behaviour. Each wrapper reads
+only its own prefixed state fields, so three of them compose rather than double-firing, and the
+suite covers it — but it is three copies of a hook the core should own, and the next pack makes
+it four. The lessons' rule is "new vocabulary goes into extension files wired through hook
+tables, never by editing the core"; wrapping the core is the other failure of that rule.
+*Fix:* name the extension points the packs actually needed — a leaves-the-board event, a might
+layer, an end-of-turn flush, a play restriction — and give each one a hook table.
+Owner: unassigned.
+
+**D-9 — Forty-seven cards are partial, and say so.**
+A card whose printed clause the grammar cannot yet express plays as its printed body and is
+marked: an amber `!` on its face with the missing clause in the tooltip, the clause spelled out
+at preview size, and a count on its deck's picker tile. The earlier projects in this series hid
+every deck containing such a card; here that would hide all ten. `data/defects.js` is unchanged
+and still hides decks containing a card that plays *wrong* rather than incompletely.
+*Fix:* the five recurring blockers, in order of cards unblocked — Hidden/facedown cards; a
+spell-played event; a defend event; optional additional costs at play time (Accelerate); and
+conditions on continuous modifiers.
+Owner: unassigned.

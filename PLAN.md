@@ -1,29 +1,45 @@
 # BreachForge — plan and status
 
-## Status — 2026-09-19, overnight build
+## Status — 2026-09-20, end of the overnight build
 
-**What plays right now:** a complete 1v1 game, start to finish, against an AI. Title screen →
-deck picker (ten tournament-winning lists, one per legend) → mulligan → turns → victory or
-defeat. Two battlefields, the two-currency economy, standard moves, contested battlefields,
-showdowns, combat, conquer and hold scoring, and the winning-point restriction. Verified in a
-browser on the real code path, not only in the suite.
+**What plays:** a complete 1v1 game, start to finish, against an AI, with generated art on every
+card and sound on every event. Title → deck picker (ten tournament-winning lists, one per legend,
+each with a readable decklist) → mulligan → turns → victory or defeat. Two battlefields, the
+two-currency economy, standard moves, contested battlefields, showdowns, combat with lethal-first
+damage assignment and the attacker recall, conquer and hold scoring, and the winning-point
+restriction. Verified by driving a full game to a win through the real click handlers in a
+browser, not only in the suite.
 
-**Numbers:** 166 cards registered across 10 decks · 25 tests · engine ~1,400 lines · AI beats
-random play 21 of 24 games · 30 random games terminate with no dead state.
+| | |
+|---|---|
+| Cards registered | 166 across 10 decks — **116 play fully as printed**, 3 have no printed ability, **47 are marked partial** |
+| Effect grammar | 86 ops, 86 describers (1:1 — every op can be audited against printed text) |
+| Tests | 30, green, ~9s including 200 fuzzed games and 40 AI games |
+| Art | 166 generated renders, 15 MB, plus a procedural painter for anything missing |
+| Audio | 27 sound tags (15 ElevenLabs one-shots, 12 synthesized) + 4 CC0 music tracks, 5.4 MB |
+| AI | one-ply evaluator, beats random play 21/24 |
 
-**What the previous version of this section got wrong:** nothing yet — this is the first.
+**What the previous version of this section got wrong:** it said the ability packs were "being
+authored" and listed targeting as the largest gap. The packs landed; targeting is still the
+largest gap, and the partial-card count is the number that now matters most.
 
 ### Known gaps, in the order they matter
 
-1. **Card abilities are being authored** (three packs, by set). Until a pack lands, its cards are
-   vanilla bodies: a unit's might works, its printed ability does not. `data/defects.js` plus
-   load-time validation is the gate that keeps a half-authored card out of circulation.
-2. **Targeting does not ask the player** (D-2). A "choose a unit" clause auto-picks. This is the
-   largest interface gap and the three targeting UIs are specified but unbuilt.
-3. **Generated card art** is running; `js/procart.js` paints every card until a render exists,
-   and `art/manifest.js` is the switch, so a partial run is safe.
+1. **47 of 166 cards are partial** — they play as their printed body, and say so with an amber
+   `!` on the card face, the missing clause in the tooltip, and a count on the deck-picker tile.
+   The recurring reasons, which is where the next session's leverage is: **Hidden/facedown cards**
+   (D-5, no engine support at all), **a spell-played event** and **a defend event** (several cards
+   each, both cheap to add), **Accelerate and other optional additional costs at play time** (no
+   cost hook), and **conditional continuous modifiers** ("while defending alone") — the statics
+   layer carries fixed numbers with no condition.
+2. **Targeting does not ask the player** (D-2). A "choose a unit" clause auto-picks the highest
+   might. `may` and `choose` DO ask; a target does not. This is the largest interface gap.
+3. **Three ability packs wrap core functions** (`RB.kill`, `RB.apply`, `RB.score`, `RB.autoPick`,
+   `RB.cardText`) from their own ops files, each reading only its own prefixed data so they
+   compose rather than double-fire. It works and it is tested, but it is three copies of a hook
+   the core should own. Debt, logged as D-8.
 4. **Focus is not separated from Priority** (D-4).
-5. **No animation layer** (D-7). The structured log already carries what one would need.
+5. **No animation layer** (D-7).
 
 ### Deliberate scope decisions
 

@@ -94,11 +94,19 @@
 
   function playDestinations(state, p, card) {
     if (card.type === 'Unit') {
-      const d = ['base'];
-      // Units are played to your base unless an ability says otherwise. Rule 1495.
-      if (card.abilities && card.abilities.playTo === 'battlefield')
-        return state.bf.map((_, i) => 'bf' + i);
-      return d;
+      // A unit is played to your base. It cannot be played straight to a battlefield
+      // unless something says so — [Ambush] is "I may be played to a battlefield where
+      // you control Units" (§811-adjacent), and a card may force a battlefield outright.
+      const ab = card.abilities || {};
+      const kw = n => (ab.keywords || []).some(k => k === n || k.name === n);
+      if (ab.playTo === 'battlefield') return state.bf.map((_, i) => 'bf' + i);
+      const out = ['base'];
+      if (ab.playTo === 'any')
+        for (let i = 0; i < state.bf.length; i++) out.push('bf' + i);
+      else if (kw('Ambush'))
+        for (let i = 0; i < state.bf.length; i++)
+          if (RB.unitsAt(state, i, p).length) out.push('bf' + i);
+      return out;
     }
     if (card.type === 'Gear') {
       const targets = [];
