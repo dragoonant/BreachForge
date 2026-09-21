@@ -105,6 +105,22 @@
     lz.appendChild(lrow);
     root.appendChild(lz);
 
+    // The main deck and the trash, as piles rather than two numbers on the rune label.
+    // What each one is allowed to SHOW when clicked is decided in js/piles.js, and the
+    // two are not the same: the trash is public to both seats, the deck is yours only and
+    // never in draw order.
+    //
+    // Beside the legend, NOT at the far right of the row: the log drawer covers the right
+    // of the board (it already clips the rune zone), so piles placed last were behind it
+    // whenever the drawer was open — rendered, and invisible.
+    const pz = el('zone piles');
+    pz.innerHTML = '<div class="lbl">Piles</div>';
+    const prow = el('zonerow');
+    prow.appendChild(RB.pileFace(state, p, 'deck', mine));
+    prow.appendChild(RB.pileFace(state, p, 'trash', mine));
+    pz.appendChild(prow);
+    root.appendChild(pz);
+
     const bz = el('zone base');
     bz.dataset.drop = mine ? 'base' : '';
     bz.innerHTML = '<div class="lbl">Base · ' + P.base.length + '</div>';
