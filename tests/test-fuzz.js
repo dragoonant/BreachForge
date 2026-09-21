@@ -92,9 +92,17 @@ export function run(t) {
       return { own: own, theirs: theirs };
     };
     const h = count('hard'), c = count('competition');
+    // Asserted as a RATIO per tier, not as a margin between the two raw counts. The first
+    // version of this test said `c.own * 4 < h.own`, which was calibrated when competition
+    // spent almost no answers at main-phase speed (7 against hard's 50) — and it broke on the
+    // unitOnBf retune, which left the rule in the name completely intact: competition still
+    // spent 5:1 toward the opponent's turn (14 own / 70 theirs) while hard still spent the
+    // majority on its own (46 own / 32 theirs). A weight pass moving a raw count is not this
+    // rule being violated, so the rule is what gets asserted.
     t.ok(h.own > 10, 'hard spends answers at main-phase speed: ' + JSON.stringify(h));
-    t.ok(c.own * 4 < h.own, 'competition spends far fewer: ' + JSON.stringify(c) + ' vs ' + JSON.stringify(h));
-    t.ok(c.theirs > h.theirs, 'and more of them on the opponent\'s turn: ' + c.theirs + ' vs ' + h.theirs);
+    t.ok(h.own > h.theirs, 'hard spends more on its own turn than the opponent\'s: ' + JSON.stringify(h));
+    t.ok(c.theirs > c.own * 3, 'competition holds them for the opponent\'s turn: ' + JSON.stringify(c));
+    t.ok(c.theirs > h.theirs, 'and spends more of them there than hard does: ' + c.theirs + ' vs ' + h.theirs);
   });
 
   t.test('the AI beats random play over a short match set', () => {

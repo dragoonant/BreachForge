@@ -19,11 +19,21 @@
   RB.WEIGHTS = {
     hard: {
       bfHeld: 9, bfSafety: 5, safetyScale: 5, reserveWeight: 0.55,
-      unitOnBf: 1.6, unitInBase: 1.0, unitFlat: 1.5,
+      // 1.2, not the 1.6 this shipped with. A unit standing on a battlefield is doing work,
+      // but 1.6x a unit in the base overpriced the standing and the AI over-committed forward.
+      // 1.2 is an interior peak rather than the edge of a sweep: 0.9 measures WORSE (57% of
+      // 119) and 2.6/4.5 are flat. Swept with endTurnBar below; the table is in the commit.
+      unitOnBf: 1.2, unitInBase: 1.0, unitFlat: 1.5,
+      // 2.2 is where it was and where it stays — it is worse in BOTH directions (4.0 -> 43%,
+      // 1.2 -> 38% of ~50 decisive), which is what a well-tuned weight looks like from below.
       hand: 2.2, rune: 1.1, energy: 0.15,
       held: 0,              // option value of a card kept for the opponent's turn
       sandbag: 0,           // what it costs to spend an answer at main-phase speed
-      endTurnBar: 6, passBar: 4,
+      // 16, not 6. At 6 the AI ended its turn with the turn still in it; the whole reach of
+      // this knob is endTurn -> move (14 of 14 flips in a probe), so raising it buys moves it
+      // was declining to make. 20 ties 16 (61% vs 61%), so 16 is the low end of a plateau
+      // rather than a peak, and 3 measures at exactly 50%.
+      endTurnBar: 16, passBar: 4,
     },
   };
   // competition is hard, plus one thing hard is forbidden to think about: what the card in
