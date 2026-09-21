@@ -92,9 +92,74 @@ export function run(t) {
       return { own: own, theirs: theirs };
     };
     const h = count('hard'), c = count('competition');
+    // Asserted as a RATIO per tier, not as a margin between the two raw counts. The first
+    // version of this test said `c.own * 4 < h.own`, which was calibrated when competition
+    // spent almost no answers at main-phase speed (7 against hard's 50) — and it broke on the
+    // unitOnBf retune, which left the rule in the name completely intact: competition still
+    // spent 5:1 toward the opponent's turn (14 own / 70 theirs) while hard still spent the
+    // majority on its own (46 own / 32 theirs). A weight pass moving a raw count is not this
+    // rule being violated, so the rule is what gets asserted.
     t.ok(h.own > 10, 'hard spends answers at main-phase speed: ' + JSON.stringify(h));
-    t.ok(c.own * 4 < h.own, 'competition spends far fewer: ' + JSON.stringify(c) + ' vs ' + JSON.stringify(h));
-    t.ok(c.theirs > h.theirs, 'and more of them on the opponent\'s turn: ' + c.theirs + ' vs ' + h.theirs);
+    t.ok(h.own > h.theirs, 'hard spends more on its own turn than the opponent\'s: ' + JSON.stringify(h));
+    t.ok(c.theirs > c.own * 3, 'competition holds them for the opponent\'s turn: ' + JSON.stringify(c));
+    t.ok(c.theirs > h.theirs, 'and spends more of them there than hard does: ' + c.theirs + ' vs ' + h.theirs);
+  });
+
+  t.test('competition acts on a hand it was SHOWN, and on nothing it was not', () => {
+    // The restraint, not the strength. A tier that simply reads s.players[them].hand also
+    // wins more and would sail through any test that only measured winning, so the first
+    // half here is the half that matters: with nothing revealed, competition's choice must
+    // be identical to a tier that is structurally unable to look. Only then is the second
+    // half — that a legitimate reveal changes the choice — evidence of playing rather than
+    // peeking.
+    RB.WEIGHTS['t:blind'] = Object.assign({}, RB.WEIGHTS.competition, { sandbagKnown: 0 });
+    let decisions = 0, differedBlind = 0, revealed = 0, differedAfterReveal = 0;
+    let blindDecisions = 0, inGameReveal = 0, differedOnRealReveal = 0;
+    for (let g = 0; g < 6; g++) {
+      let st = RB.newGame({ seed: 'seen' + g, decks: [decks[g % 10], decks[(g * 7 + 3) % 10]] });
+      for (let n = 0; n < 500 && !RB.isTerminal(st); n++) {
+        const me = RB.whoActs(st);
+        const acts = RB.legalActions(st);
+        if (acts.length > 1) {
+          decisions++;
+          const seeing = JSON.stringify(RB.aiChoose(st, 'competition'));
+          const blind = JSON.stringify(RB.aiChoose(st, 't:blind'));
+          // While this seat has been shown nothing, it must have nothing to act on and must
+          // choose exactly what a tier that cannot look chooses. Some of these games DO
+          // contain a real reveal (Ashe reads a hand to banish from it), and after one fires
+          // the two tiers are allowed to diverge — that divergence is the feature, and it is
+          // counted separately below rather than asserted away.
+          if (!st.players[me].seen.length) {
+            t.ok(RB.knownHeld(st, me) === null, 'knows nothing before being shown anything');
+            if (seeing !== blind) differedBlind++;
+            blindDecisions++;
+          } else {
+            inGameReveal++;
+            if (seeing !== blind) differedOnRealReveal++;
+          }
+
+          // Now show this seat their hand — legitimately, through the same door the card
+          // uses — on a copy, and ask again.
+          const shown = JSON.parse(JSON.stringify(st));
+          RB.remember(shown, me, shown.players[RB.opponentOf(me)].hand);
+          const known = RB.knownHeld(shown, me);
+          t.ok(known !== null && known.length === shown.players[RB.opponentOf(me)].hand.length,
+            'a reveal is recorded as the whole hand');
+          revealed++;
+          if (JSON.stringify(RB.aiChoose(shown, 'competition')) !== seeing) differedAfterReveal++;
+        }
+        st = RB.apply(st, RB.aiChoose(st, 'competition'));
+      }
+    }
+    t.ok(decisions > 200, 'enough decisions to mean something: ' + decisions);
+    t.ok(blindDecisions > 200, 'most of them with nothing revealed: ' + blindDecisions);
+    t.ok(differedBlind === 0,
+      'with nothing revealed it chooses exactly what a tier that cannot look chooses, ' +
+      'over ' + blindDecisions + ' decisions (differed ' + differedBlind + ')');
+    t.ok(inGameReveal > 0,
+      'and a reveal really does fire in these games: ' + inGameReveal + ' decisions after one');
+    t.ok(differedAfterReveal > 0,
+      'and a legitimate reveal changes what it does: ' + differedAfterReveal + ' of ' + revealed);
   });
 
   t.test('the AI beats random play over a short match set', () => {

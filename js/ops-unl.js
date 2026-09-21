@@ -743,6 +743,11 @@
   // revealHidden, and the two are printed as separate sentences for that reason.
   RB.defineOp('revealHand', (s, e, ctx) => {
     const foe = RB.opponentOf(ctx.p);
+    // The reveal moves no card, but it is the moment this seat legitimately learns what is
+    // in there, and that is worth recording: a planner that reads s.players[foe].hand
+    // directly is cheating, one that reads what it was SHOWN is playing. Recorded per
+    // instance so it expires on its own — see `seen` in js/state.js.
+    RB.remember(s, ctx.p, s.players[foe].hand);
     RB.log(s, 'reveal', { p: foe, to: ctx.p, n: s.players[foe].hand.length });
   });
   RB.defineDescriber('revealHand', () => 'Choose an opponent. They reveal their hand.');
@@ -755,6 +760,7 @@
     const foe = RB.opponentOf(ctx.p);
     const P = s.players[foe];
     if (!P.hand.length) return;
+    RB.remember(s, ctx.p, P.hand);   // Ashe reads the hand to pick from it: she has seen it
     RB.log(s, 'reveal', { p: foe, n: P.hand.length });
     const pick = P.hand.slice().sort((a, b) =>
       (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0))[0];

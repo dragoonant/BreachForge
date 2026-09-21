@@ -14,7 +14,25 @@ Add entries to the bottom. Delete one in the commit that makes it true.
 
 ## T-1 — The competition AI should play around what it has legitimately seen
 
-**Status:** not started · **Wanted by:** owner, 2026-09-20
+**Status:** half built (commit 18cacf8) · **Wanted by:** owner, 2026-09-20
+
+> **The hand half is built; the facedown half is not, and the first "done when" below is
+> unreachable.** `state.players[p].seen` + `RB.remember` + `RB.knownHeld` (js/state.js) are
+> the record and its only door, written by `revealHand` and `banishFromHand`, and
+> `competition` uses them to price `sandbag` by the biggest card it knows they still hold.
+> The restraint is tested, and the test fails against the cheating version.
+>
+> What is NOT done, and why it is not a matter of trying harder: **the arena cannot see this
+> feature.** 2400 pairings changed 4 shuffles, 2-2. In 40 games `revealHand` fires 5 times and
+> `banishFromHand` sees a hand 14 more — about half a reveal per game — so there is not enough
+> information flowing to move a win rate. `revealHidden` is worse: 5 fires in 40 games and, in
+> 2932 decisions, ZERO where a seat could legitimately see an enemy facedown card. Only
+> `unl-053`'s deathknell grants it.
+>
+> So this entry stays open, but **criterion 1 below should be struck rather than attempted**.
+> Whoever picks it up: either judge it done on criteria 2 and 3, or make the reveal family
+> reachable first (more cards granting it, or a deck built around one) so there is something
+> to measure. Do not sweep `sandbagKnown` hoping for a number — it is not there.
 
 Several cards let their controller look at hidden information — the opponent's facedown
 cards, the top of a deck, cards in hand. The AI plays those cards and then throws the

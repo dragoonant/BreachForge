@@ -18,6 +18,12 @@
       // turn ("your second card", "if you've played an Equipment this turn"), and a card
       // cannot count something nobody records. Reset in startTurn, one place.
       playedThisTurn: [], drawsThisTurn: 0, xp: 0, turnFlags: {},
+      // Instance ids of the OPPONENT's cards this seat has legitimately been shown. A card
+      // that reveals a hand writes here and nothing else does, so "what this seat knows"
+      // is a thing the engine records rather than a thing a planner helps itself to from
+      // the full state it is handed. Expiry needs no clock: a fact is only usable while the
+      // instance is still in their hand, and a card drawn after the reveal was never added.
+      seen: [],
     };
   }
 
@@ -172,6 +178,28 @@
     const i = arr.indexOf(iid);
     if (i >= 0) arr.splice(i, 1);
     return i >= 0;
+  };
+
+  // --- what a seat has legitimately been shown -------------------------------
+  // The ONE way anything is written to `seen`, so the list of cards that may legitimately
+  // teach a player something is the list of callers of this function. Ids only: the cards
+  // stay in their owner's hand and nothing about them is copied anywhere.
+  RB.remember = function (state, p, iids) {
+    const seen = state.players[p].seen;
+    for (const iid of iids) if (!seen.includes(iid)) seen.push(iid);
+  };
+
+  // What `p` is certain the opponent is STILL holding. Intersecting what it was shown with
+  // the live hand is the whole of the expiry: a card played, discarded or banished since
+  // the reveal drops out by itself, and a card drawn after it was never in `seen` to begin
+  // with — so this can never report a card nobody showed them. Returns null, not [], when
+  // the seat has been shown nothing, because "I know they hold no such card" and "I have
+  // never looked" are different facts and only the first is worth acting on.
+  RB.knownHeld = function (state, p) {
+    const seen = state.players[p].seen;
+    if (!seen.length) return null;
+    const hand = state.players[RB.opponentOf(p)].hand;
+    return hand.filter(iid => seen.includes(iid));
   };
 
   // --- derived predicates: one home each ------------------------------------
