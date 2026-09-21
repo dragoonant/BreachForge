@@ -519,8 +519,15 @@
   def('discardChosen', (s, e, ctx) => {
     const who = e.opponent ? RB.opponentOf(ctx.p) : ctx.p;
     const P = s.players[who];
+    // Ordered best-first, and that ordering is ALL the ordering is: it decides what a seat
+    // that is never asked takes. The chooser is ctx.p — the player who played this, not
+    // the player whose hand it is. The printed line is "Choose a card from it", addressed
+    // to the caster, and asking the victim would be the wrong seat entirely.
     const pool = P.hand.slice().sort((a, b) => (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0));
-    for (const iid of pool.slice(0, num(e, 'n', 1))) {
+    // quiet: a card in hand is not an object on the board, so Deflect and the "when you
+    // choose" trigger have nothing to fire on. RB.offerChoice's own comment says so.
+    for (const iid of RB.offerChoice(s, pool, num(e, 'n', 1), ctx, 'discardChosen',
+                                     'Choose a card for them to discard', { quiet: true })) {
       RB.removeFrom(P.hand, iid);
       P.trash.push(iid);
       RB.log(s, 'discard', { p: who, iid: iid });
@@ -532,12 +539,21 @@
   def('recycleFromHand', (s, e, ctx) => {
     const who = e.opponent ? RB.opponentOf(ctx.p) : ctx.p;
     const P = s.players[who];
+    // Sabotage (ogn-156) is the card here: "Choose an opponent. They reveal their hand.
+    // Choose a non-unit card from it, and recycle that card." Three printed verbs, and the
+    // middle one is a decision the CASTER makes. Taking the biggest non-unit silently was
+    // the whole of it for a while, which reads to a player as the spell doing nothing.
     const pool = P.hand.filter(i => e.filter !== 'nonUnit' || RB.cardOf(s, i).type !== 'Unit')
       .sort((a, b) => (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0));
-    if (!pool.length) return;
-    RB.removeFrom(P.hand, pool[0]);
-    P.deck.push(pool[0]);                                    // recycle: the bottom of their deck
-    RB.log(s, 'recycle', { p: who, iid: pool[0], n: 1 });
+    // quiet, for the same reason discardChosen is: a card in hand is not an object on the
+    // board, so Deflect and the `chosen` trigger have nothing to fire on.
+    const got = RB.offerChoice(s, pool, 1, ctx, 'recycleFromHand',
+      'Choose a ' + (e.filter === 'nonUnit' ? 'non-unit ' : '') + 'card to recycle',
+      { quiet: true });
+    if (!got.length) return;
+    RB.removeFrom(P.hand, got[0]);
+    P.deck.push(got[0]);                                     // recycle: the bottom of their deck
+    RB.log(s, 'recycle', { p: who, iid: got[0], n: 1 });
   });
   say('recycleFromHand', e => 'Choose an opponent. They reveal their hand. Choose a ' +
     (e.filter === 'nonUnit' ? 'non-unit ' : '') + 'card from it, and recycle that card.');

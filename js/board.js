@@ -156,10 +156,41 @@
   //
   // NOTHING here names a card. No id, no data- attribute, no tooltip: the opponent's hand
   // is hidden information and the DOM is readable by anyone with devtools.
+  //
+  // THE ONE EXCEPTION is a card that buys the look. When the engine has parked a `target`
+  // question at ME whose answers live in THEIR hand, the card that asked it said "they
+  // reveal their hand" — you cannot be asked to choose from a hand you cannot see, and no
+  // printed card asks you to. So the hand is drawn face up, for exactly as long as that
+  // question is open, and it goes back to backs the moment it is answered. The WHOLE hand
+  // is shown, not just the legal answers: "they reveal their hand" is a printed effect in
+  // its own right and Sabotage's units are information the caster paid for.
+  function revealedToMe(state, me) {
+    const q = state.queue[0];
+    if (!q || q.kind !== 'target' || q.who !== me) return null;
+    const theirHand = state.players[RB.opponentOf(me)].hand;
+    return q.options.some(iid => theirHand.includes(iid)) ? theirHand : null;
+  }
+
   function paintThemHand(state, me) {
     const box = $('#them-hand');
     box.innerHTML = '';
     const n = state.players[RB.opponentOf(me)].hand.length;
+    const shown = revealedToMe(state, me);
+    if (shown) {
+      const row = el('th-reveal');
+      for (const iid of shown) {
+        const c = RB.renderCard(RB.cardOf(state, iid), { size: 'hand', iid: iid });
+        // bindCard's target branch sits ABOVE its "is it mine" guard, so a legal answer
+        // becomes clickable and everything else stays a card you may only read.
+        RB.ui.bindCard(c, state, iid, null);
+        row.appendChild(c);
+      }
+      box.appendChild(row);
+      const lbl = el('th-count th-revealed');
+      lbl.textContent = 'HAND ' + n + ' — REVEALED';
+      box.appendChild(lbl);
+      return;
+    }
     const fan = el('th-fan');
     // Past ten backs the fan is a smear and the numeral carries the rest.
     const drawn = Math.min(n, 10);

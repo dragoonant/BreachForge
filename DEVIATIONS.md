@@ -22,10 +22,20 @@ Owner: unassigned.
 The human seat is asked to choose its targets: the question is parked on the state as a `target`
 queue step, the resolution restarts with the answer pre-filled, and the player answers by clicking
 the real card. `RB.offerChoice` is the one door, and everything the core resolves goes through it.
-**What remains:** each of the three set packs builds and slices its own target pool in its ops
-file rather than handing the ordered pool to `offerChoice`, so a card authored in a pack still
-auto-picks. It is a one-line change per pack and all three have it; until it lands, cards whose
-targeting lives in a pack do not ask.
+**What remains:** individual pack ops still slice their own pool rather than handing the ordered
+pool to `offerChoice`, so those cards auto-pick. This is per-OP, not per-pack: most pack ops
+already go through the door, and the remaining ones have to be found by reading for a pool that
+is indexed rather than offered.
+
+Routed through the door 2026-09-20, after a player reported Sabotage (ogn-156) appearing to do
+nothing at all: `ogn.recycleFromHand` and `ogn.discardChosen`. Both choose a card out of a hand
+the card has just revealed, so both pass `{ quiet: true }` — Deflect and the `chosen` trigger are
+about objects on the board and firing them for a card in hand would be a rule invented here.
+Their reveal surface is `revealedToMe` in `js/board.js`.
+
+Known to still auto-pick, found by reading for an indexed pool: `ogn.readyOther`,
+`ogn.returnSpellFromTrash`, `ogn.digTop`, and three sites in `js/ops-unl.js` (lines 730, 990,
+1138). Each is the same one-line change and each needs its own test.
 
 **D-3 — Rune decks are reconstructed to twelve.**
 Several posted decklists record only part of the rune deck (one records none at all). A legal

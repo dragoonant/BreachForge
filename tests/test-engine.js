@@ -274,6 +274,62 @@ export function run(t) {
     t.eq(JSON.stringify(s), snap, 'the input state is untouched');
   });
 
+  // --- choosing from a hand (D-2) --------------------------------------------
+  // Sabotage (ogn-156) reads: "Choose an opponent. They reveal their hand. Choose a
+  // non-unit card from it, and recycle that card." Three verbs, and the middle one is a
+  // decision the CASTER makes. For a while the op took the biggest non-unit silently,
+  // which a player reads as the spell doing nothing at all.
+  const handChoice = (cardId, tag) => {
+    const s = RB.newGame({ seed: 'sab', decks: [decks[0], decks[1]], humanSeat: 0 });
+    let st = s;
+    while (st.queue.length && st.queue[0].kind === 'mulligan') st = RB.apply(st, { t: 'mulligan', toss: [] });
+    const me = st.active, them = RB.opponentOf(me);
+    st.humanSeat = me;
+    // Two legal answers, or there is no choice to be asked about: offerChoice only parks a
+    // question when the pool is bigger than the number being taken.
+    const spells = RB.allCards().filter(c => c.type === 'Spell').slice(0, 2);
+    st.players[them].hand = spells.map(c => { const i = RB.mint(st, c.id, them); return i; });
+    const iid = RB.mint(st, cardId, me);
+    st.players[me].hand.push(iid);
+    st.players[me].pool.energy = 99; st.players[me].pool.any = 99;
+    const play = RB.legalActions(st).find(a => a.t === 'play' && a.iid === iid);
+    t.ok(play, cardId + ' is playable');
+    let after = RB.apply(st, play);
+    // A Spell goes on the chain and resolves when both sides pass (D-4), so drain it.
+    for (let i = 0; i < 6 && after.chain.length; i++) {
+      const pass = RB.legalActions(after).find(a => a.t === 'pass');
+      if (!pass) break;
+      after = RB.apply(after, pass);
+    }
+    return { after: after, me: me, them: them, pool: st.players[them].hand.slice() };
+  };
+
+  t.test('a card that chooses from a revealed hand ASKS the caster, it does not pick for them', () => {
+    const r = handChoice('ogn-156');
+    const q = r.after.queue[0];
+    t.ok(q && q.kind === 'target', 'Sabotage parked a target question, got ' +
+      (q ? q.kind : 'an empty queue'));
+    t.eq(q.who, r.me, 'the question goes to the CASTER, not the player whose hand it is');
+    t.ok(q.options.length > 1, 'more than one answer was offered');
+    for (const iid of q.options)
+      t.ok(r.pool.includes(iid), 'every answer is a card in their hand');
+    // And nothing has left the hand yet: the spell has not resolved.
+    t.eq(r.after.players[r.them].hand.length, r.pool.length,
+      'no card was recycled before the caster answered');
+  });
+
+  t.test('answering that question is what recycles the chosen card, and only that card', () => {
+    const r = handChoice('ogn-156');
+    const q = r.after.queue[0];
+    // Pick the one the old auto-pick would NOT have taken, so a silent regression to
+    // "biggest first" fails here rather than passing by coincidence.
+    const want = q.options[q.options.length - 1];
+    const done = RB.apply(r.after, { t: 'choose', selection: [want] });
+    t.ok(!done.players[r.them].hand.includes(want), 'the chosen card left their hand');
+    t.eq(done.players[r.them].hand.length, r.pool.length - 1, 'exactly one card left');
+    t.ok(done.players[r.them].deck.includes(want), 'and it was recycled into their deck');
+  });
+
   t.test('the same seed and action list reproduce the same game', () => {
     const run = () => {
       let s = game('deterministic', 3, 7);
