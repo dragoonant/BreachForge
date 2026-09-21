@@ -176,10 +176,33 @@ The tier is specified as "like playing a real human opponent — understands the
 how to hold back the right cards to play at the right time". Holding back is done. Two pieces
 are not:
 
-**B1 — price a position by what the opponent can still answer with.** Today `RB.evaluate`
-reads `s.players[them].hand.length`, a *count*, and their open resources not at all. A human
-reads "they have three cards and four open power, so this attack gets punished". The natural
-hook is `reserveWeight`, which already gestures at this for units in the base.
+**B1 — price a position by what the opponent can still answer with. TRIED IN BOTH AIMINGS,
+MEASURED WORSE, REVERTED — do not re-run it as written.** The idea was: `RB.evaluate` reads
+`s.players[them].hand.length`, a *count*, and their open resources not at all, where a human
+reads "they have three cards and four open power, so this attack gets punished".
+
+The capacity itself is cheap and legitimate — how many cards they hold and how many of their
+runes are unexhausted are both PUBLIC (exhausting the rune is the cost, Rule 1525), so this
+needs none of the restraint machinery B2 needs. Two aimings were built and measured:
+
+| aiming | what it did | result |
+|---|---|---|
+| their outs join the THREAT side of every held battlefield | discounts ground it controls | 35/36/32/32% at outs 1/2/4/8 |
+| their outs discount an action that OPENS a showdown | the blind spot in `settled()` | 44/38/27/12/7% at outs 8/16/30/45/70 |
+
+Both had reach (7.4% and 3.8% of decisions), so neither failed the §4.2 way — they failed by
+working exactly as designed. The second is a clean monotone dose-response in the WRONG
+direction, which is about as unambiguous as this instrument gets.
+
+**Why, and this is the part worth keeping.** Penalising an attack by the opponent's *generic*
+capacity is not what a human does. A human discounts by the chance they hold a *relevant*
+answer. A scalar "they have three cards, so don't attack" just makes the AI timid, and
+declining attacks means not taking battlefields, which means not scoring. Do not reach for
+`reserveWeight` as the hook either — it is independently flat (0.2 → 48%, 0.9 → 49%).
+
+The reading this leaves: a *count* of the opponent's outs is not informative enough to help at
+all, and the thing that would help is knowing WHICH answers — which is B2, not B1. If you want
+B1 to work, it needs the archetype or the revealed card, not the cardinality.
 
 **B2 — play around what it has legitimately seen.** This is already written up as **T-1 in
 `TODO.md`** and that entry is the spec — read it before designing anything. The constraint
@@ -244,4 +267,54 @@ actually mean to test with `git worktree add --detach <sha>`.
 - `DEVIATIONS.md` **D-12** records the one known limit of the group move (`MAX_GROUP = 10`).
 - `TODO.md` **T-1** is task B2 and is the spec for it.
 
-Start with the worktree, then the self-test, then task A.
+## 6. What task A settled (2026-09-20, commit 1c6472b)
+
+**The positional weights are at a plateau and there is very little left in them.** Two knobs
+moved and both are now shipped — `unitOnBf` 1.6 → 1.2 and `endTurnBar` 6 → 16, together 64.7%
+±7.1 over 1600 holdout pairings against `hard`, 58.4% ±6.8 against the shipped `competition`.
+The commit carries the full table. Everything else measured flat: `hand` is worse in both
+directions, `reserveWeight` is flat both ways, `bfHeld` barely reaches, and `CAP = 48` is not
+a lever at all (it truncates the pool in 1 decision in 647).
+
+**Why so little is left, structurally.** The mean non-move action pool at a real decision is
+**4.5**. Most of the time the AI is choosing among a handful of options with an obvious best
+one, so a weight can only matter where two options are already close — which is why every
+knob probes at 1–4% reach and why decisive shuffles are so rare (7–15 per 120 pairings, against
+sandbag's 42 per 200). The ceiling here is one-ply depth, not the numbers in the table.
+
+**So the remaining headroom is task B, and specifically B2.** Do not spend another session
+sweeping. Two pieces of B2 are already built and were not known to be:
+
+- `h.revealedTo` on facedown battlefield cards (`js/abilities.js:390`) is already an explicit,
+  engine-maintained record of which seat legitimately saw what — exactly the record T-1
+  constraint 1 asks you to build.
+- It already expires correctly: `js/engine.js:649` clears it in the Ending Cleanup alongside
+  every other "this turn" effect, which is T-1 constraint 2 for free.
+
+So T-1 is mostly a matter of letting the planner read that record and nothing else. Grep the
+reveal family before designing: `revealHidden` (`js/abilities.js:387`), `predict`
+(`js/ops-unl.js:300`, `js/ops-ogn.js:682`), `revealTop` (`js/ops-sfd.js:617`),
+`revealTopSpell` (`js/ops-unl.js:620`). Note that `predict` and `revealTop` look at your OWN
+deck — they inform your draws, not their hand — so the opponent-model work hangs off
+`revealHidden` and the discard effects.
+
+**Two instruments were built for this and are worth keeping** (they live in the session
+scratchpad, reproduce them in `tools/` if you want them permanently):
+
+- a *reach probe* that walks the baseline line and computes the argmax under two weight tables
+  at every decision, reporting how often the override changes the choice and on what action
+  type. This is §4.2 as a tool, and it is what caught both B1 aimings being live-but-wrong
+  before any arena time was spent on the second one.
+- a parallel sweep driver that runs N arena jobs at a concurrency limit and prints one table
+  with the printed bar already applied per row.
+
+**One trap this session hit that is not in §4.** `preview_start` pins to the PRIMARY
+checkout's `.claude/launch.json` no matter what directory the session is in, so the first
+browser "verification" of this work was served `unitOnBf: 1.6` from the main tree. Serve your
+own worktree explicitly (`PORT=<n> node tools/serve.mjs` from inside it) and confirm what is
+actually being served before believing a browser check. Rule 9 and rule 12 meet here.
+
+---
+
+Start with the worktree, then the `hard hard` self-test, then **T-1**. Task A is done and
+task B1 is closed; the live work is B2.
