@@ -421,7 +421,7 @@
   let chainTimer = null;
   RB.resetChainView = function () {
     clearTimeout(chainTimer); chainTimer = null;
-    U.chainView = null; U.chainWent = null;
+    U.chainView = null; U.chainWent = null; U.chainHidden = false;
   };
 
   RB.paintChain = function (state, me) {
@@ -446,10 +446,33 @@
     const items = (U.chainView || []).slice();
     for (const it of went) if (items.indexOf(it) < 0) items.push(it);
     box.innerHTML = '';
-    if (!items.length) { box.classList.add('hidden'); return; }
+    // The collapse is per-CHAIN, not per-game: it clears the moment the viewer empties, so
+    // hiding it once can never leave the next chain silently invisible. A headline feature
+    // that goes dead quietly is the failure mode this project has already paid for twice.
+    if (!items.length) { box.classList.add('hidden'); U.chainHidden = false; return; }
+    box.classList.toggle('collapsed', !!U.chainHidden);
     const head = RB.el('chain-head');
-    head.textContent = 'THE CHAIN — resolves left to right';
+    const label = RB.el('chain-label', 'span');
+    // Collapsed, the header is all that is left, so it stops describing the ordering
+    // nobody can see and says how much is hidden instead.
+    label.textContent = U.chainHidden
+      ? 'THE CHAIN — ' + items.length + (items.length === 1 ? ' item' : ' items')
+      : 'THE CHAIN — resolves left to right';
+    head.appendChild(label);
+    // #chain takes no pointer events — it sits over the battlefields. This button opts
+    // back in (see .chain-toggle), which is the whole reason it can be clicked at all.
+    const tog = RB.el('chain-toggle', 'button');
+    tog.type = 'button';
+    tog.textContent = U.chainHidden ? 'SHOW' : 'HIDE';
+    tog.title = U.chainHidden ? 'Show the chain' : 'Hide the chain to see the board';
+    tog.setAttribute('aria-expanded', String(!U.chainHidden));
+    tog.addEventListener('click', () => {
+      U.chainHidden = !U.chainHidden;
+      RB.paintChain(U.state, U.me);
+    });
+    head.appendChild(tog);
     box.appendChild(head);
+    if (U.chainHidden) { box.classList.remove('hidden'); return; }
     const row = RB.el('chain-row');
     // ⚠ THE CHAIN IS LIFO: chain[length-1] resolves FIRST. Reversed so the leftmost entry
     // is the next one to resolve, which is the single thing this viewer exists to say.
