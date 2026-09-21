@@ -5,8 +5,38 @@
   'use strict';
   const $ = s => document.querySelector(s);
 
+  let vidVisBound = false;        // module-scoped, not a property on RB: a flag on RB
+  // would read as a defensive module check, which is the one thing hard rule 3 forbids.
   RB.showScreen = function (id) {
     for (const s of document.querySelectorAll('.screen')) s.classList.toggle('hidden', s.id !== id);
+    // The opening plays for exactly as long as the title screen is up, and this is its
+    // ONLY owner — see the comment on the <video> tag. A hidden video keeps decoding
+    // frames nobody is looking at, which on a laptop is a fan spinning up through a whole
+    // game; and coming back to the title should start it over, not resume it halfway.
+    //
+    // The wait for `canplay` is load-bearing. Seeking a video that has no metadata yet
+    // does not rewind it, it aborts whatever playback was pending, and the only trace is a
+    // rejected play() promise — so on a cold load the opening sat on frame one forever.
+    const vid = $('#titlevid');
+    if (id !== 'title') return vid.pause();
+    const start = () => {
+      if (!document.getElementById('title').classList.contains('hidden')) {
+        vid.currentTime = 0;
+        vid.play().catch(() => {});        // a browser that refuses leaves the first frame
+      }
+    };
+    if (vid.readyState >= 2) start();
+    else vid.addEventListener('canplay', start, { once: true });
+    // A browser pauses video in a hidden tab and does NOT resume it when the tab comes
+    // back, so without this the opening is frozen for anyone who looked at something else
+    // and returned. Registered once, and it re-checks the title is still showing.
+    if (!vidVisBound) {
+      vidVisBound = true;
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && !$('#title').classList.contains('hidden'))
+          vid.play().catch(() => {});
+      });
+    }
   };
 
   let seed = String(Math.floor(Math.random() * 100000));

@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.css': 'text/css', '.json': 'application/json', '.webp': 'image/webp', '.png': 'image/png',
-  '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.mp3': 'audio/mpeg', '.svg': 'image/svg+xml' };
+  '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.mp3': 'audio/mpeg', '.svg': 'image/svg+xml',
+  '.mp4': 'video/mp4', '.webm': 'video/webm' };
 // PORT comes from the environment when the harness assigns one, which is what lets every
 // worktree run its own server at once (CLAUDE.md rule 12) instead of fighting over 8777.
 const port = +(process.argv[2] || process.env.PORT || 8777);

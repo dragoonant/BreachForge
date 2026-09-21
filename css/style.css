@@ -90,7 +90,23 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 /* ---------------------------------------------------------------- screens */
 .screen{position:absolute;inset:0;display:flex;flex-direction:column}
-#title{align-items:center;justify-content:center;gap:1.1rem;text-align:center}
+/* NO position here. .screen is already `position:absolute;inset:0`, which is both the
+   stretch that makes the screen fill the window AND the containing block the video's
+   inset:0 resolves against. Overriding it with `relative` dropped the inset and
+   collapsed the whole title screen to the height of its own text. */
+#title{align-items:center;justify-content:center;gap:1.1rem;text-align:center;
+  overflow:hidden}
+/* The opening, as wallpaper. object-fit:cover so it fills any window shape without
+   letterboxing, and a scrim over it because the title, the seed field and the disclaimer
+   all have to stay readable against whatever frame is on screen. The children are lifted
+   onto their own layer rather than the video being pushed behind with a negative z-index,
+   which would put it behind the page background and show nothing at all. */
+#titlevid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  z-index:0;pointer-events:none;opacity:.55}
+#title::after{content:'';position:absolute;inset:0;z-index:1;pointer-events:none;
+  background:radial-gradient(ellipse at center, rgba(5,8,14,.55) 0%, rgba(5,8,14,.86) 70%)}
+#title > *:not(#titlevid){position:relative;z-index:2}
+@media (prefers-reduced-motion: reduce){ #titlevid{display:none} }
 #title h1{font-size:4.2rem;margin:0;letter-spacing:.12em;font-weight:200;
   background:linear-gradient(180deg,#eaf3ff,#7fb6e8 60%,#3d6da8);-webkit-background-clip:text;background-clip:text;color:transparent}
 #title .sub{color:var(--dim);letter-spacing:.32em;text-transform:uppercase;font-size:.72rem}

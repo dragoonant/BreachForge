@@ -35,6 +35,10 @@ const check = process.argv.includes('--check');
 const TAGS = [
   { re: /(<script src=")([^"]+)(")/g, what: 'script' },
   { re: /(<link rel="stylesheet" href=")([^"]+)(")/g, what: 'stylesheet' },
+  // "EVERY declared asset" is the rule, and the title video is one. It will almost never
+  // change, which is exactly why a stamp costs nothing: an unchanged file keeps its URL
+  // and stays cached.
+  { re: /(<video id="[^"]*" src=")([^"]+)(")/g, what: 'video' },
 ];
 
 const bare = u => u.split('?')[0];
