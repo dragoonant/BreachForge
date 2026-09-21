@@ -54,14 +54,25 @@ Read before touching anything: `CARD-GAME-LESSONS.md`, `CARD-GAME-LESSONS-2.md`,
 12. **One agent per WORKTREE.** Never two agents in one checkout — give each its own:
 
     ```
-    git worktree add ../BreachForge-<task>
+    git worktree add ~/breachforge-worktrees/<task>
     ```
 
-    Own index, own HEAD, shared history and object store. Put it outside the OneDrive folder
-    so it does not sync. The dev server sorts itself out — `.claude/launch.json` sets
-    `autoPort` and `tools/serve.mjs` reads `PORT` from the environment, so every worktree
-    gets its own. Do not put a port back in `runtimeArgs`: 8777 hardcoded there is why the
-    second agent's server could not start at all.
+    Own index, own HEAD, shared history and object store. **The path is the point.** This repo
+    lives inside OneDrive, so `../BreachForge-<task>` — which this rule used to say — resolves
+    to `…/OneDrive-Personal/Documents/BreachForge-<task>`, still inside the synced folder, and
+    contradicted the very next sentence. `~/breachforge-worktrees/` is outside it and is what
+    the `todo`, `ui` and `ai-tuning` worktrees actually use. The same trap catches
+    `EnterWorktree`, whose default is `.claude/worktrees/` — inside the project, so inside
+    OneDrive. Pass an explicit path outside it.
+
+    The dev server sorts itself out — `.claude/launch.json` sets `autoPort` and
+    `tools/serve.mjs` reads `PORT` from the environment, so every worktree gets its own. Do
+    not put a port back in `runtimeArgs`: 8777 hardcoded there is why the second agent's
+    server could not start at all. `preview_start` is a separate trap — it binds to the
+    PRIMARY checkout's `.claude/launch.json` whatever directory the session is in, so it will
+    happily serve you the main tree while you believe you are testing your worktree. Serve
+    your own (`PORT=<n> node tools/serve.mjs` from inside it) and check what is actually
+    being served before believing a browser check (rule 9).
 
     A checkout has ONE index and ONE HEAD, and both are *shared mutable state*. In a single
     afternoon of two agents in one tree: `git add <file>` staged the whole file including the
