@@ -135,8 +135,15 @@
     if (went.length) U.chainWent = went;
   }
 
-  // Spotlight: the card the opponent just played, shown large for a beat. It is a
-  // decoration over the board, so it never takes a click.
+  // Spotlight: the card the opponent just played, shown at full preview size for a beat.
+  // It is a decoration over the board, so it never takes a click.
+  //
+  // The hold is long enough to READ the printed text, not merely to notice that something
+  // happened. It does not stack: a second play replaces the first outright, so the hold
+  // only ever governs the LAST card of a run. In a run of plays on the AI's 420ms beat the
+  // cards before the last one still get 420ms each — that is a property of the beat, not of
+  // this number, and no hold fixes it.
+  const SPOT_HOLD = 2800, SPOT_FADE = 260;
   let spotTimer = null;
   RB.spotlight = function (state, iid) {
     const box = $('#spotlight');
@@ -147,8 +154,8 @@
     clearTimeout(spotTimer);
     spotTimer = setTimeout(() => {
       box.classList.remove('in');
-      spotTimer = setTimeout(() => box.classList.add('hidden'), 260);
-    }, 1500);
+      spotTimer = setTimeout(() => box.classList.add('hidden'), SPOT_FADE);
+    }, SPOT_HOLD);
   };
 
   // Anything the player could act with is marked; WHERE it can go is revealed only once
