@@ -29,6 +29,7 @@
       hand: 2.2, rune: 1.1, energy: 0.15,
       held: 0,              // option value of a card kept for the opponent's turn
       sandbag: 0,           // what it costs to spend an answer at main-phase speed
+      sandbagKnown: 0,      // ...once it has SEEN the hand, priced per Energy of the biggest card
       // 16, not 6. At 6 the AI ended its turn with the turn still in it; the whole reach of
       // this knob is endTurn -> move (14 of 14 flips in a probe), so raising it buys moves it
       // was declining to make. 20 ties 16 (61% vs 61%), so 16 is the low end of a plateau
@@ -41,7 +42,11 @@
   // 200 holdout pairings the weight had never seen (tools/arena.mjs). The knob saturates
   // above ~40 — 40 and 70 choose byte-identically — so this sits on the plateau rather than
   // at the edge of the sweep.
-  RB.WEIGHTS.competition = Object.assign({}, RB.WEIGHTS.hard, { sandbag: 40 });
+  // sandbagKnown 8 is the flat 40 restated as a rate: a known hand whose biggest card costs
+  // 5 Energy prices the wait at exactly the 40 it always paid, and everything cheaper than
+  // that prices it lower. Chosen so that gaining the information cannot, on its own, make
+  // the tier more cautious than the tier that never looked.
+  RB.WEIGHTS.competition = Object.assign({}, RB.WEIGHTS.hard, { sandbag: 40, sandbagKnown: 8 });
 
   RB.evaluate = function (s, me, w) {
     w = w || RB.WEIGHTS.hard;
@@ -97,6 +102,32 @@
     let n = 0;
     for (const iid of s.players[p].hand) if (isAnswer(s, iid)) n++;
     return n;
+  }
+
+  // What holding this answer for the opponent's turn is actually worth. With nothing
+  // legitimately seen it is the flat guess the tier has always paid. Once this seat has been
+  // SHOWN their hand, the guess is replaced by what is really in it: an answer is kept for
+  // the thing it answers, and a hand with nothing big left in it is a turn with nothing to
+  // keep it for.
+  //
+  // Everything it knows arrives through RB.knownHeld, which returns only instances this seat
+  // was shown and still intersects with their live hand. The planner never touches
+  // s.players[them].hand itself — that is the whole difference between this and cheating,
+  // and it is invisible in any test that only checks the tier wins more.
+  //
+  // Only the printed Energy cost is read. What the card would DO is the engine's business;
+  // reasoning that out here would be a second copy of the rules (hard rule 4).
+  function sandbagFor(s, me, w) {
+    if (!w.sandbagKnown) return w.sandbag;
+    const known = RB.knownHeld(s, me);
+    if (!known) return w.sandbag;                    // never looked: no opinion to have
+    // Only a hand it knows ENTIRELY is worth acting on. Knowing three of their five cards
+    // says nothing about the other two, and the absence of a threat among the three it saw
+    // is not evidence that there is not one in the two it did not.
+    if (known.length !== s.players[RB.opponentOf(me)].hand.length) return w.sandbag;
+    let biggest = 0;
+    for (const iid of known) biggest = Math.max(biggest, RB.cardOf(s, iid).energy || 0);
+    return w.sandbagKnown * biggest;
   }
 
   // Moving onto a defended battlefield OPENS a showdown; it does not resolve one. Both
@@ -165,7 +196,7 @@
       // TIMING, not on the card — during a showdown or with a chain to answer, the same
       // play is the whole reason the card was kept, and costs nothing here.
       if (w.sandbag && a.t === 'play' && !s.chain.length && !s.showdown && isAnswer(s, a.iid))
-        v -= w.sandbag;
+        v -= sandbagFor(s, me, w);
       if (v > bestV) { bestV = v; best = a; }
     }
     return best || acts[0];

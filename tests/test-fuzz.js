@@ -105,6 +105,63 @@ export function run(t) {
     t.ok(c.theirs > h.theirs, 'and spends more of them there than hard does: ' + c.theirs + ' vs ' + h.theirs);
   });
 
+  t.test('competition acts on a hand it was SHOWN, and on nothing it was not', () => {
+    // The restraint, not the strength. A tier that simply reads s.players[them].hand also
+    // wins more and would sail through any test that only measured winning, so the first
+    // half here is the half that matters: with nothing revealed, competition's choice must
+    // be identical to a tier that is structurally unable to look. Only then is the second
+    // half — that a legitimate reveal changes the choice — evidence of playing rather than
+    // peeking.
+    RB.WEIGHTS['t:blind'] = Object.assign({}, RB.WEIGHTS.competition, { sandbagKnown: 0 });
+    let decisions = 0, differedBlind = 0, revealed = 0, differedAfterReveal = 0;
+    let blindDecisions = 0, inGameReveal = 0, differedOnRealReveal = 0;
+    for (let g = 0; g < 6; g++) {
+      let st = RB.newGame({ seed: 'seen' + g, decks: [decks[g % 10], decks[(g * 7 + 3) % 10]] });
+      for (let n = 0; n < 500 && !RB.isTerminal(st); n++) {
+        const me = RB.whoActs(st);
+        const acts = RB.legalActions(st);
+        if (acts.length > 1) {
+          decisions++;
+          const seeing = JSON.stringify(RB.aiChoose(st, 'competition'));
+          const blind = JSON.stringify(RB.aiChoose(st, 't:blind'));
+          // While this seat has been shown nothing, it must have nothing to act on and must
+          // choose exactly what a tier that cannot look chooses. Some of these games DO
+          // contain a real reveal (Ashe reads a hand to banish from it), and after one fires
+          // the two tiers are allowed to diverge — that divergence is the feature, and it is
+          // counted separately below rather than asserted away.
+          if (!st.players[me].seen.length) {
+            t.ok(RB.knownHeld(st, me) === null, 'knows nothing before being shown anything');
+            if (seeing !== blind) differedBlind++;
+            blindDecisions++;
+          } else {
+            inGameReveal++;
+            if (seeing !== blind) differedOnRealReveal++;
+          }
+
+          // Now show this seat their hand — legitimately, through the same door the card
+          // uses — on a copy, and ask again.
+          const shown = JSON.parse(JSON.stringify(st));
+          RB.remember(shown, me, shown.players[RB.opponentOf(me)].hand);
+          const known = RB.knownHeld(shown, me);
+          t.ok(known !== null && known.length === shown.players[RB.opponentOf(me)].hand.length,
+            'a reveal is recorded as the whole hand');
+          revealed++;
+          if (JSON.stringify(RB.aiChoose(shown, 'competition')) !== seeing) differedAfterReveal++;
+        }
+        st = RB.apply(st, RB.aiChoose(st, 'competition'));
+      }
+    }
+    t.ok(decisions > 200, 'enough decisions to mean something: ' + decisions);
+    t.ok(blindDecisions > 200, 'most of them with nothing revealed: ' + blindDecisions);
+    t.ok(differedBlind === 0,
+      'with nothing revealed it chooses exactly what a tier that cannot look chooses, ' +
+      'over ' + blindDecisions + ' decisions (differed ' + differedBlind + ')');
+    t.ok(inGameReveal > 0,
+      'and a reveal really does fire in these games: ' + inGameReveal + ' decisions after one');
+    t.ok(differedAfterReveal > 0,
+      'and a legitimate reveal changes what it does: ' + differedAfterReveal + ' of ' + revealed);
+  });
+
   t.test('the AI beats random play over a short match set', () => {
     let wins = 0, played = 0;
     // Six games is inside the noise band for a one-ply evaluator: a 24-game run measures 71%
