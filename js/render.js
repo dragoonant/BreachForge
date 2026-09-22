@@ -46,6 +46,11 @@
     plate.className = 'card-plate';
     plate.innerHTML =
       '<div class="card-name">' + esc(card.name) + '</div>' +
+      // The printed face sets the subtitle on its own line under the name, inside the same
+      // band — smaller, uppercase, italic. It is part of the name for every rules purpose
+      // (two Rengars are two names), so it is not decoration and does not get dropped at
+      // small sizes: a board with "Rengar" twice on it cannot be read.
+      (card.subtitle ? '<div class="card-subtitle">' + esc(card.subtitle) + '</div>' : '') +
       '<div class="card-type">' + esc(card.type) +
         ((card.tags && card.tags.length) ? ' · ' + esc(card.tags.join(' ')) : '') + '</div>';
     const kws = keywordNames(card);

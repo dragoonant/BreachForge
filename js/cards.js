@@ -28,6 +28,15 @@
     if (!RB.abilityData || !RB.abilityData['tok-gold']) RB.registerAbilities(RB.tokenAbilities);
     for (const c of RB.cardData.concat(RB.tokenData)) {
       byId[c.id] = c;
+      // A card's name is "[Short Name], [Subtitle]" for every rules purpose, so two cards
+      // reaching the same key are one name wearing two ids and the copy limit is being
+      // counted against the wrong thing. This used to overwrite in silence: four pairs
+      // (two Rengars, two Dravens, two Vexes, two Pykes) shared a key while the pack
+      // carried only the short half of each name, and whichever registered last evicted
+      // the other from this index.
+      if (byNameId[c.nameId] && byNameId[c.nameId].id !== c.id)
+        throw new Error('two cards share the name "' + RB.fullName(c) + '": ' +
+          byNameId[c.nameId].id + ' and ' + c.id);
       byNameId[c.nameId] = c;
       c.abilities = (RB.abilityData && RB.abilityData[c.id]) || null;
     }
@@ -39,6 +48,10 @@
     return c;
   };
   RB.cardByNameId = function (n) { return byNameId[n] || null; };
+  // The whole printed name, for anywhere one card has to be told apart from another that
+  // shares its short name. The card FACE does not use this — the printed face sets the
+  // subtitle on its own line under the name, and render.js draws it that way.
+  RB.fullName = function (c) { return c.subtitle ? c.name + ', ' + c.subtitle : c.name; };
   RB.allCards = function () { return Object.values(byId); };
 
   // Printed text is the face; the describer in js/text.js is the auditor and the

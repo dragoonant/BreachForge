@@ -40,6 +40,7 @@ div.card .card-{board|hand|preview} .color-{faction}
 │   └── span.pip.cost                                          (cost)
 ├── div.card-plate                                z-index 2   in flow, margin-top:auto
 │   ├── div.card-name
+│   ├── div.card-subtitle  ← only on cards that print one (champion units)
 │   ├── div.card-type   → span.type-tag + span.traits
 │   ├── div.card-kw     ← keyword NAMES only, joined "  ·  "
 │   ├── div.card-detail ← PREVIEW SIZE ONLY
@@ -200,6 +201,7 @@ overrides in `rem` where an absolute size is wanted.
 | Element | small | preview | color |
 |---|---|---|---|
 | `.card-name` | `.74em` / 700 / lh 1.2 | `1.05rem` | inherit |
+| `.card-subtitle` | `.5em` / 700 italic, uppercase, ls `.02em` | `.82rem` | `#ffd9a8` |
 | `.type-tag` | `.58em`, ls `.1em` | `.72em` | muted |
 | `.traits` | `.6em` | `.72em` | muted |
 | `.card-kw` | `.61em` / 700, ls `.02em` | `.78em` | `#a9c6ff` |
@@ -209,6 +211,20 @@ overrides in `rem` where an absolute size is wanted.
 Stats: attack `#ff9f87`, health `#8ee0ac`, damaged health `#ffcf6b`. `.card-detail` and
 `.card-stats` each get `border-top: 1px solid rgba(255,255,255,.1)` — a hairline is enough
 separation on top of art; a solid rule looks heavy.
+
+**The subtitle is not decoration and is never dropped at small sizes.** A card's name is
+`"[Short Name], [Subtitle]"` for every rules purpose, so `Rengar, Pouncing` and `Rengar,
+Trophy Hunter` are two different names that can each sit at three copies in one deck — and
+`rengar-body` plays both. Hiding the subtitle the way `.card-kw` hides below 900px would put
+two cards labelled `Rengar` on the same board with nothing to tell them apart. It sits on its
+own line under the name, inside the same plate, exactly as the printed face sets it, and it
+wraps rather than truncating: at the 60px of plate a champion-zone card gives it, 27 of the
+40 printed subtitles are too long for one line, so an ellipsis would be hiding part of a name
+on two cards in three.
+
+Where one card has to be named in running text instead — a deck-list row, the header of a
+choice prompt — use `RB.fullName(card)`, which joins the two with a comma. The face does not
+use it: the face has two lines.
 
 **The border carries no faction/aspect color.** Every card keeps the default slate
 `#33415e`; aspect is carried by the corner pips and by the colored aspect words in the

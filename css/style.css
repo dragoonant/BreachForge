@@ -66,6 +66,13 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .card-preview .card-plate{padding:.6rem .75rem .7rem}
 .card-name{font-size:.74em;font-weight:650;line-height:1.1;letter-spacing:.005em}
 .card-preview .card-name{font-size:1.15rem}
+/* Board cards are 73px wide, so this wraps to two lines on most subtitles and that is the
+   intended behaviour: truncating would hide part of a NAME, and 27 of the 40 are too long
+   for one line at any size still worth reading. Sized by measurement on the smallest card
+   in the game — the champion zone slot — not by eye. */
+.card-subtitle{font-size:.5em;font-weight:700;font-style:italic;line-height:1.05;
+  margin-top:.01rem;text-transform:uppercase;letter-spacing:.02em;color:#ffd9a8}
+.card-preview .card-subtitle{font-size:.82rem}
 .card-type{font-size:.6em;color:var(--dim);margin-top:.08rem;text-transform:uppercase;letter-spacing:.05em}
 .card-preview .card-type{font-size:.72rem}
 .card-kw{font-size:.6em;color:#ffdca8;margin-top:.1rem;line-height:1.15}

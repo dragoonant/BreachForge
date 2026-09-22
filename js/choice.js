@@ -55,7 +55,7 @@
     // The card that is talking, then what it is asking. Both, for the same reason the
     // yes/no prompt carries both: the name says what spoke, the question says what the
     // answer costs and buys.
-    head.textContent = (src ? src.name + ' — ' : '') +
+    head.textContent = (src ? RB.fullName(src) + ' — ' : '') +
       (q.label || 'Choose ' + q.n + (q.n === 1 ? ' card' : ' cards'));
     box.appendChild(head);
 

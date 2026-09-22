@@ -17,7 +17,8 @@
         (by[c.type] = by[c.type] || []).push({ c: c, qty: e.qty });
       }
       for (const k of Object.keys(by))
-        by[k].sort((a, b) => (a.c.energy || 0) - (b.c.energy || 0) || a.c.name.localeCompare(b.c.name));
+        by[k].sort((a, b) => (a.c.energy || 0) - (b.c.energy || 0) ||
+          RB.fullName(a.c).localeCompare(RB.fullName(b.c)));
       return by;
     };
 
@@ -62,7 +63,7 @@
         row.innerHTML = '<span style="color:#7d8ea8;min-width:1.2rem">' + qty + '×</span>' +
           '<span class="dot" style="background:var(--d-' + (c.domain || 'Colorless') + ');' +
           'width:.5em;height:.5em;border-radius:50%;display:inline-block;flex:0 0 auto;align-self:center"></span>' +
-          '<span>' + c.name + (RB.isPartial(c.id) ? ' <span style="color:#ffca63">!</span>' : '') + '</span>' +
+          '<span>' + RB.fullName(c) + (RB.isPartial(c.id) ? ' <span style="color:#ffca63">!</span>' : '') + '</span>' +
           '<span style="flex:1"></span><span style="color:#9fb0cc">' +
           (c.energy != null ? c.energy : '') + (c.power ? '◈'.repeat(c.power) : '') + '</span>';
         row.addEventListener('mouseenter', () => RB.showPreview(row, c));
