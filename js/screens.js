@@ -102,9 +102,10 @@
         for (const x of grid.children) x.classList.remove('sel');
         t.classList.add('sel');
       };
-      const look = RB.el('btn', 'button');
+      // A class, not an inline style: inline outranks every media query, and on a phone
+      // this was a 39x21 target — the only way into a deck list before you commit to it.
+      const look = RB.el('btn listbtn', 'button');
       look.textContent = 'List';
-      look.style.cssText = 'padding:.16rem .5rem;font-size:.66rem;align-self:flex-start';
       look.onclick = ev => { ev.stopPropagation(); RB.audio.play('ui.click'); RB.showDeckList(d); };
       t.appendChild(look);
       grid.appendChild(t);
