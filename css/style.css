@@ -78,9 +78,14 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .stat.buffed{color:#9effc4}
 .card.is-exhausted{transform:rotate(7deg);transform-origin:50% 85%}
 .card.is-token .card-name{font-style:italic}
-.card-back{background:linear-gradient(150deg,#22304e,#0d1424 60%);display:flex;align-items:center;justify-content:center}
-.card-back::before{content:'';width:46%;aspect-ratio:1;border-radius:50%;
-  border:2px solid rgba(160,200,255,.35);box-shadow:inset 0 0 12px rgba(120,190,255,.28)}
+/* One printed back, on every hidden card: the opponent's hand fan, a facedown card at a
+   battlefield, the deck pile. The gradient stays UNDER the image as the second layer, so
+   a back whose image fails to load is still a dark card and never a hole in the board —
+   an asset fallback, not a module fallback (hard rule 3). The image is 687x1024 (.671)
+   against the card's 5/7 (.714), so `cover` crops ~6% of the height, split evenly by
+   `center` — the art is symmetric about both axes and reads the same either way. */
+.card-back{background:url("../art/cards/cardback.jpg") center/cover no-repeat,
+  linear-gradient(150deg,#22304e,#0d1424 60%)}
 .ic{display:inline-block;font-weight:700;padding:0 .12em}
 .ic-might{color:#ffb38a}.ic-power{color:#a8d8ff}.ic-energy{color:#ffe09a}
 .ic-exhaust{color:#c5b2ff}.ic-arrow{color:#8fe3ff}
@@ -306,7 +311,12 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
    is one click away in the inspector, and a hand-sized stack here would be taking width
    from the base row to say something the count already says. */
 .zone.piles .zonerow{gap:.4rem;flex-wrap:nowrap}
-.pile .card{width:2.9rem;aspect-ratio:5/7;min-height:0}
+/* NO width here. The piles are furniture beside the base row and must read as the same
+   object as the cards next to them, so a pile card takes .card-board's own width — the
+   2.9rem thumbnail this used to force made the deck and the trash look like a different
+   game's components. `.side`'s piles column is `auto`, so the base column (1fr) gives up
+   the difference, which it has to spare. */
+.pile .card{min-height:0}
 .pile{position:relative;display:flex;flex-direction:column;align-items:center;gap:.16rem}
 .pile.empty .card-back{opacity:.35}
 .pile-n{font-size:.55rem;letter-spacing:.12em;color:#8195b3;white-space:nowrap}
