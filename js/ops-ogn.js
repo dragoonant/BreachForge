@@ -216,8 +216,11 @@
     let iid;
     if (e.target === 'self') iid = (RB.obj(s, ctx.source).counters || 0) > 0 ? ctx.source : null;
     else {
-      const got = unitsOf(s, ctx.p).filter(i => RB.obj(s, i).counters > 0);
-      iid = got.sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b))[0];       // the cheapest to lose
+      // Which buffed unit loses its buff is the player's. Ordered cheapest-to-lose first,
+      // which is all an unasked seat gets.
+      const got = unitsOf(s, ctx.p).filter(i => RB.obj(s, i).counters > 0)
+        .sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b));
+      iid = RB.offerChoice(s, got, 1, ctx, 'spendBuff', 'Spend which unit\'s buff?')[0];
     }
     if (!iid) return;
     RB.obj(s, iid).counters--;
@@ -285,12 +288,20 @@
     : e.scope === 'each' ? 'Each player kills one of their gear.'
       : 'Kill ' + selText({ pick: 'gear', n: num(e, 'n', 1) }) + '.');
 
+  // "Each player kills one of their units." MINE is my choice and goes through the door;
+  // theirs is theirs, and this engine can only ask the seat that is resolving, so it takes
+  // their cheapest — the same rule unl's eachPlayerKills meets the same wall with.
   def('eachKillsUnit', (s, e, ctx) => {
-    void e; void ctx;
+    void e;
     for (let q = 0; q < 2; q++) {
       const p = (s.active + q) % 2;
       const mine = unitsOf(s, p).sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b));
-      if (mine.length) RB.kill(s, mine[0]);                  // each player keeps their best
+      if (!mine.length) continue;
+      const taken = p === ctx.p
+        ? RB.offerChoice(s, mine, 1, Object.assign({}, ctx, { p: p }), 'eachKillsUnit',
+                         'Kill which of your units?')
+        : [mine[0]];                                         // each player keeps their best
+      if (taken[0]) RB.kill(s, taken[0]);
     }
   });
   say('eachKillsUnit', () => 'Each player kills one of their units.');
@@ -436,7 +447,9 @@
       .filter(i => placeOf(RB.locationOf(s, i)) !== mine)
       .sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
     if (!pool.length) return;
-    const other = pool[0];
+    const other = RB.offerChoice(s, pool, 1, ctx, 'swapPlaces',
+      'Swap places with which of your units?')[0];
+    if (!other) return;
     const theirs = placeOf(RB.locationOf(s, other));
     relocate(s, me, theirs);
     relocate(s, other, mine);
@@ -444,11 +457,17 @@
   say('swapPlaces', () => 'Choose a unit you control at another location: move me to its ' +
     'location and it to my original location.');
 
+  // "Ready another unit." Which one is the player's, and an exhausted unit is an object on
+  // the board, so this is a full targeting decision — no `quiet`.
   def('readyOther', (s, e, ctx) => {
     void e;
-    const pool = targets(s, { pick: 'myUnits', other: true, n: 99 }, ctx);
-    const iid = pool.filter(i => RB.obj(s, i).exhausted)[0];
-    if (iid) { RB.obj(s, iid).exhausted = false; RB.log(s, 'ready', { p: ctx.p, iid: iid }); }
+    const pool = targets(s, { pick: 'myUnits', other: true, n: 99 }, ctx)
+      .filter(i => RB.obj(s, i).exhausted);
+    if (!pool.length) return;
+    for (const iid of RB.offerChoice(s, pool, 1, ctx, 'readyOther', 'Ready which unit?')) {
+      RB.obj(s, iid).exhausted = false;
+      RB.log(s, 'ready', { p: ctx.p, iid: iid });
+    }
   });
   say('readyOther', () => 'Ready another unit you control.');
 
@@ -464,14 +483,25 @@
       ' this way, draw ' + num(e, 'draw', 1) + '.';
   });
 
-  // Look at the top N and keep one: the stated rule keeps the most expensive, the card
-  // you were least likely to be able to play off the top anyway.
+  // "Look at the top 3 cards of your Main Deck. Put 1 into your hand and recycle the rest."
+  // LOOK is a printed verb and PUT is a printed decision, and for a while this op did
+  // neither: it sorted the three by Energy, took the most expensive, and the player was
+  // never shown the cards they had just been told to look at. That reads as the spell
+  // playing itself, which is what a player reported.
+  //
+  // The order below is ALL the ordering is now: it decides what a seat that is never
+  // asked takes. The human seat is shown every card and answers for itself.
   def('digTop', (s, e, ctx) => {
     const P = s.players[ctx.p];
     const look = P.deck.splice(0, Math.min(num(e, 'n', 3), P.deck.length));
     if (!look.length) return;
+    RB.log(s, 'look', { p: ctx.p, n: look.length });
     const order = look.slice().sort((a, b) => (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0));
-    for (const iid of order.slice(0, num(e, 'take', 1))) {
+    const take = Math.min(num(e, 'take', 1), order.length);
+    // quiet, for the reason discardChosen is: a card in a deck is not an object on the
+    // board, so Deflect and the `chosen` trigger have nothing to fire on.
+    for (const iid of RB.offerChoice(s, order, take, ctx, 'digTop',
+      'Put ' + take + ' of them into your hand — the rest are recycled', { quiet: true })) {
       RB.removeFrom(look, iid);
       P.hand.push(iid);
       RB.log(s, 'draw', { p: ctx.p, iid: iid }, 'card.draw');
@@ -483,15 +513,21 @@
   say('digTop', e => 'Look at the top ' + num(e, 'n', 3) + ' cards of your Main Deck. Put ' +
     num(e, 'take', 1) + ' into your hand and recycle the rest.');
 
+  // "Return a spell from your trash to your hand." WHICH spell is the whole card, and the
+  // trash is a pile the board draws one card of — so the answer is offered as faces, not
+  // taken. quiet: a card in a trash is not an object on the board.
   def('returnSpellFromTrash', (s, e, ctx) => {
     void e;
     const P = s.players[ctx.p];
     const pool = P.trash.filter(i => RB.cardOf(s, i).type === 'Spell')
       .sort((a, b) => (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0));
     if (!pool.length) return;
-    RB.removeFrom(P.trash, pool[0]);
-    P.hand.push(pool[0]);
-    RB.log(s, 'returnFromTrash', { p: ctx.p, iid: pool[0] }, 'card.draw');
+    const got = RB.offerChoice(s, pool, 1, ctx, 'returnSpellFromTrash',
+      'Return which spell from your trash?', { quiet: true });
+    if (!got.length) return;
+    RB.removeFrom(P.trash, got[0]);
+    P.hand.push(got[0]);
+    RB.log(s, 'returnFromTrash', { p: ctx.p, iid: got[0] }, 'card.draw');
   });
   say('returnSpellFromTrash', () => 'Return a spell from your trash to your hand.');
 
@@ -587,19 +623,23 @@
   // trash first — the cards come back to you — and the cheapest of it first, so a card
   // that plays out of the trash still has its best target.
   def('recycleFromTrash', (s, e, ctx) => {
-    let left = num(e, 'n', 1);
+    // ONE pool across both trashes, in the order the card would take them if nobody
+    // answers — your own trash first, cheapest of it first — so "recycle 4 from trashes"
+    // is one question with one answer rather than a split the player cannot steer.
     const order = e.both ? [ctx.p, RB.opponentOf(ctx.p)] : [ctx.p];
-    for (const p of order) {
-      const P = s.players[p];
-      const pool = P.trash.slice().sort((a, b) =>
-        (RB.cardOf(s, a).energy || 0) - (RB.cardOf(s, b).energy || 0));
-      for (const iid of pool) {
-        if (left <= 0) break;
-        RB.removeFrom(P.trash, iid);
-        P.deck.push(iid);
-        left--;
-        RB.log(s, 'recycle', { p: p, iid: iid, n: 1 });
-      }
+    const pool = [];
+    for (const p of order)
+      for (const iid of s.players[p].trash.slice().sort((a, b) =>
+        (RB.cardOf(s, a).energy || 0) - (RB.cardOf(s, b).energy || 0))) pool.push(iid);
+    const n = Math.min(num(e, 'n', 1), pool.length);
+    if (!n) return;
+    // quiet: a card in a trash is not an object on the board.
+    for (const iid of RB.offerChoice(s, pool, n, ctx, 'recycleFromTrash',
+      'Recycle which ' + n + ' card' + (n === 1 ? '' : 's') + ' from the trashes?', { quiet: true })) {
+      const p = RB.obj(s, iid).owner;
+      RB.removeFrom(s.players[p].trash, iid);
+      s.players[p].deck.push(iid);
+      RB.log(s, 'recycle', { p: p, iid: iid, n: 1 });
     }
   });
   say('recycleFromTrash', e => 'Recycle ' + (e.upTo ? 'up to ' : '') + num(e, 'n', 1) +
@@ -630,8 +670,15 @@
       const P = s.players[p];
       const top = P.deck.splice(0, Math.min(look, P.deck.length));
       if (!top.length) continue;
-      const best = top.slice().sort((a, b) =>
-        (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0))[0];
+      RB.log(s, 'look', { p: p, n: top.length });
+      const order = top.slice().sort((a, b) =>
+        (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0));
+      // My five are mine to choose from; theirs is theirs, and the engine can only ask the
+      // seat that is resolving, so their half keeps the stated rule.
+      const best = p === ctx.p
+        ? (RB.offerChoice(s, order, 1, ctx, 'eachBanishTopAndPlay',
+                          'Banish which of them to play for free?', { quiet: true })[0] || order[0])
+        : order[0];
       RB.removeFrom(top, best);
       P.banished.push(best);
       picked[p] = best;
@@ -663,13 +710,21 @@
   def('playSpellFromTrashUnderPoints', (s, e, ctx) => {
     void e;
     const P = s.players[ctx.p];
-    const pool = P.trash
-      .filter(i => RB.cardOf(s, i).type === 'Spell' && (RB.cardOf(s, i).energy || 0) < P.points)
-      .sort((a, b) => (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0));
-    for (const iid of pool) {
+    // Only a spell whose Power half this player can actually pay is a legal answer, so the
+    // pool is filtered before it is offered rather than walked until one sticks.
+    const payable = iid => {
       const cost = RB.costOf(s, iid);
       cost.energy = 0;
-      const plan = RB.planPayment(s, ctx.p, cost);
+      return RB.planPayment(s, ctx.p, cost);
+    };
+    const pool = P.trash
+      .filter(i => RB.cardOf(s, i).type === 'Spell' && (RB.cardOf(s, i).energy || 0) < P.points)
+      .filter(i => !!payable(i))
+      .sort((a, b) => (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0));
+    // quiet: a card in a trash is not an object on the board.
+    for (const iid of RB.offerChoice(s, pool, 1, ctx, 'playSpellFromTrashUnderPoints',
+      'Play which spell from your trash?', { quiet: true })) {
+      const plan = payable(iid);
       if (!plan) continue;
       RB.pay(s, ctx.p, plan);
       RB.removeFrom(P.trash, iid);

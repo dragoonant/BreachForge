@@ -428,10 +428,15 @@
       return true;
     });
     if (!pool.length) return;
-    // Biggest first: a card that lets you replay something from the trash means the best
-    // thing there, and an op that takes the worst is a weaker card than the printed one.
+    // Biggest first: that ordering is now only what a seat that is never asked takes. WHICH
+    // card comes back is the player's, and neither a deck nor a trash is a zone the board
+    // draws in full — so the faces are offered.
     pool.sort((a, b) => (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0));
-    const iid = pool[0];
+    // quiet: a card in a deck or trash is not an object on the board, so Deflect and the
+    // `chosen` trigger have nothing to fire on.
+    const iid = RB.offerChoice(s, pool, 1, ctx, 'playFromZone',
+      'Play which card from your ' + (e.zone || 'trash') + '?', { quiet: true })[0];
+    if (!iid) return;
     RB.removeFrom(zone, iid);
     // The cost is ignored where the card says so; where it is not, the power half is
     // still owed and is solved through the ordinary payment path.

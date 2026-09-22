@@ -567,17 +567,25 @@
   // "Look at the top N of your Main Deck. [You may] reveal a unit from among them and draw
   // it. Recycle the rest." Both branches recycle, which is why the card asks with `choose`
   // rather than `may`.
+  //
+  // "Reveal a unit from among them" is the player's pick, not the biggest one. Ordered
+  // biggest-first only to decide what a seat that is never asked takes; quiet, because a
+  // card in a deck is not an object on the board and has no Deflect to toll.
   RB.defineOp('digUnit', (s, e, ctx) => {
     const P = s.players[ctx.p];
     const n = Math.min(n_(e), P.deck.length);
     if (!n) return;
     const look = P.deck.splice(0, n);
+    RB.log(s, 'look', { p: ctx.p, n: look.length });
     let taken = null;
     if (e.take) {
       const units = look.filter(i => RB.cardOf(s, i).type === 'Unit');
       if (units.length) {
         units.sort((a, b) => (RB.cardOf(s, b).might || 0) - (RB.cardOf(s, a).might || 0));
-        taken = units[0];
+        taken = RB.offerChoice(s, units, 1, ctx, 'digUnit',
+          'Reveal a unit from among them and draw it', { quiet: true })[0] || null;
+      }
+      if (taken) {
         P.hand.push(taken);
         RB.log(s, 'draw', { p: ctx.p, iid: taken }, 'card.draw');
       }
@@ -594,19 +602,25 @@
   RB.defineOp('playFromHand', (s, e, ctx) => {
     const P = s.players[ctx.p];
     const want = e.type || 'Unit';
-    const options = P.hand.filter(i => RB.cardOf(s, i).type === want);
-    options.sort((a, b) => (RB.cardOf(s, b).might || 0) - (RB.cardOf(s, a).might || 0));
-    for (const iid of options) {
+    const planFor = iid => {
       const c = RB.cardOf(s, iid);
       const doms = (c.domains && c.domains.length ? c.domains : [c.domain]).filter(d => d && d !== 'Colorless');
       const power = c.power || 0;
-      const cost = { energy: e.ignoreEnergy ? 0 : (c.energy || 0), power: power,
-        domains: doms, each: power > 0 && doms.length > 1 && power === doms.length };
-      const plan = RB.planPayment(s, ctx.p, cost);
+      return RB.planPayment(s, ctx.p, { energy: e.ignoreEnergy ? 0 : (c.energy || 0), power: power,
+        domains: doms, each: power > 0 && doms.length > 1 && power === doms.length });
+    };
+    // Which unit is the player's; only one they can pay the Power for is a legal answer,
+    // so the pool is filtered before it is offered rather than walked until one sticks.
+    // quiet: a card in hand is not an object on the board.
+    const options = P.hand.filter(i => RB.cardOf(s, i).type === want && !!planFor(i));
+    options.sort((a, b) => (RB.cardOf(s, b).might || 0) - (RB.cardOf(s, a).might || 0));
+    for (const iid of RB.offerChoice(s, options, 1, ctx, 'playFromHand',
+      'Play which ' + want.toLowerCase() + ' from your hand?', { quiet: true })) {
+      const plan = planFor(iid);
       if (!plan) continue;
       RB.pay(s, ctx.p, plan);
       RB.removeFrom(P.hand, iid);
-      RB.log(s, 'play', { p: ctx.p, iid: iid, card: c.id, to: 'base' }, 'unit.deploy');
+      RB.log(s, 'play', { p: ctx.p, iid: iid, card: RB.cardOf(s, iid).id, to: 'base' }, 'unit.deploy');
       RB.resolveCard(s, { iid: iid, controller: ctx.p, to: 'base', kind: 'card', targets: [] });
       return;
     }
@@ -727,7 +741,12 @@
     });
     if (!pool.length) return;
     pool.sort((a, b) => (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0));
-    const iid = pool[0];
+    // WHICH unit comes back is the whole of the card once the cost has been paid, and the
+    // trash is a pile the board draws one card of — so the faces are offered, not taken.
+    // quiet: a card in a trash is not an object on the board.
+    const iid = RB.offerChoice(s, pool, 1, ctx, 'resurrectWithin',
+      'Play which unit from your trash?', { quiet: true })[0];
+    if (!iid) return;
     RB.removeFrom(P.trash, iid);
     RB.log(s, 'play', { p: ctx.p, iid: iid, card: RB.obj(s, iid).cardId, to: 'base' }, 'unit.deploy');
     RB.resolveCard(s, { iid: iid, controller: ctx.p, to: 'base', kind: 'card', targets: [] });
@@ -762,8 +781,14 @@
     if (!P.hand.length) return;
     RB.remember(s, ctx.p, P.hand);   // Ashe reads the hand to pick from it: she has seen it
     RB.log(s, 'reveal', { p: foe, n: P.hand.length });
-    const pick = P.hand.slice().sort((a, b) =>
-      (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0))[0];
+    // "Choose a card revealed this way" — the CASTER chooses, out of a hand the board is
+    // already showing them face up for exactly as long as this question is open. quiet: a
+    // card in hand is not an object on the board.
+    const pool = P.hand.slice().sort((a, b) =>
+      (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0));
+    const pick = RB.offerChoice(s, pool, 1, ctx, 'banishFromHand',
+      'Banish which card from their hand?', { quiet: true })[0];
+    if (!pick) return;
     RB.removeFrom(P.hand, pick);
     P.banished.push(pick);
     RB.obj(s, ctx.source).unlBanished = pick;
@@ -982,18 +1007,22 @@
     'If at least one of them has Temporary, move each to the other\'s location.');
 
   // --- eachPlayerKills ------------------------------------------------------
-  // "Each player must kill one of their units." Mine is a choice and goes through the
-  // door; theirs is THEIR choice, which this engine has no way to ask for, so it takes
-  // their cheapest — the same rule the core's own killFriendly cost uses.
+  // "Each player must kill one of their units." BOTH halves are the owning player's
+  // choice, and the door sends each question to the seat that is choosing — so the human
+  // is asked for their own unit whether or not they played this. An unasked seat loses its
+  // cheapest, the same rule the core's own killFriendly cost uses.
   RB.defineOp('eachPlayerKills', (s, e, ctx) => {
     for (let p = 0; p < 2; p++) {
       if (p === ctx.p && e.exceptIfPaid && (ctx.paid || []).includes(e.exceptIfPaid)) continue;
       const pool = RB.allUnits(s).filter(i => RB.obj(s, i).controller === p)
         .sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b));
       if (!pool.length) continue;
+      // quiet for the seat that did not play this: a forced loss is not a choice of a
+      // target, so no Deflect is tolled and the `chosen` trigger does not fire.
       const taken = p === ctx.p
         ? RB.offerChoice(s, pool, 1, ctx, 'sacrificeMine', 'Choose one of your units to kill')
-        : [pool[0]];
+        : RB.offerChoice(s, pool, 1, Object.assign({}, ctx, { p: p }), 'sacrificeTheirs',
+                         'Kill which of your units?', { quiet: true });
       if (taken[0]) RB.kill(s, taken[0]);
     }
   });
@@ -1131,17 +1160,23 @@
 
   // --- defenderKillsHere ----------------------------------------------------
   // "When I attack, the defender must kill one of their units here." Which of their units
-  // is THEIR choice, and this engine can only ask the one seat that is resolving — the
-  // same wall `eachPlayerKills` meets. It takes their cheapest, which is what they would
-  // pick, and is never a choice of mine: nothing is chosen, so no Deflect is tolled and
-  // no `chosen` trigger fires.
+  // is THEIR choice — and the door sends a question to whichever SEAT is choosing, not to
+  // whoever is resolving, so the defender is asked when the defender is the human. An
+  // unasked seat still loses its cheapest, which is what it would pick anyway.
   RB.defineOp('defenderKillsHere', (s, e, ctx) => {
     const bf = ctx.event && ctx.event.bf;
     if (bf === undefined || bf === null) return;
-    const pool = RB.unitsAt(s, bf, RB.opponentOf(ctx.p))
+    const foe = RB.opponentOf(ctx.p);
+    const pool = RB.unitsAt(s, bf, foe)
       .slice().sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b));
     if (!pool.length) return;
-    RB.kill(s, pool[0]);
+    // The question goes to the DEFENDER — it is their unit and their decision, and
+    // offerChoice sends it to whichever seat is choosing, not to whoever attacked.
+    // quiet: "must kill one of their units" is a forced loss, not a choice of a target,
+    // so no Deflect is tolled and the `chosen` trigger does not fire.
+    const taken = RB.offerChoice(s, pool, 1, Object.assign({}, ctx, { p: foe }),
+      'defenderKillsHere', 'Kill which of your units here?', { quiet: true });
+    if (taken[0]) RB.kill(s, taken[0]);
   });
   RB.defineDescriber('defenderKillsHere', () =>
     'The defender must kill one of their units here.');

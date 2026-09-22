@@ -10,6 +10,9 @@
 
   RB.paintBoard = function (state, me) {
     const U = RB.ui;
+    // Every card element below is about to be replaced; a preview anchored to one that
+    // does not come back would hang over the new board.
+    RB.dropStalePreview();
     // Computed once per repaint, not once per card: legalActions is not cheap and the
     // board asks about every card on it.
     U.actable = U.actableSet(state);
@@ -28,6 +31,8 @@
     RB.paintChain(state, me);
     RB.paintLog(state, me);
     RB.paintPrompt(state, me);
+    // Last: it asks the DOM which options the board just drew.
+    RB.paintChoiceModal(state, me);
     void U;
   };
 

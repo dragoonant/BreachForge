@@ -307,10 +307,18 @@
       const src = q0.source ? RB.cardOf(state, q0.source) : null;
       const theirs = src && RB.obj(state, q0.source).controller !== me;
       const left = q0.n - U.picks.length;
+      // The card says WHAT ("Choose an enemy unit"); the prompt line says HOW. Where to
+      // click depends on whether the board can draw the answers at all — a choice from a
+      // deck or a trash is answered in the panel js/choice.js opens over the board.
+      const inPanel = !!RB.ui.offBoardChoice(state, me);
+      // A card's own prompt may already end in a question mark; a full stop after one
+      // reads as a typo, and every prompt written from here on is a question.
+      const ask = q0.label || 'Choose ' + q0.n + (q0.n === 1 ? ' target' : ' targets');
       say((src ? (theirs ? 'Their <b>' : '<b>') + src.name + '</b> — ' : '') +
-        (q0.label || 'Choose ' + q0.n + (q0.n === 1 ? ' target' : ' targets')) +
-        '. <span style="color:#ff6bcb">Click ' + left + ' more highlighted card' +
-        (left === 1 ? '' : 's') + '.</span>');
+        ask + (/[.?!]$/.test(ask) ? '' : '.') +
+        ' <span style="color:#ff6bcb">Click ' + left + ' more card' +
+        (left === 1 ? '' : 's') + (inPanel ? ' in the panel.' : ' highlighted on the board.') +
+        '</span>');
       if (U.picks.length) btn('Clear', () => { U.picks = []; RB.paintBoard(state, me); });
       return;
     }
@@ -392,9 +400,11 @@
 
   // --- preview --------------------------------------------------------------
   let previewEl = null;
+  let previewAnchor = null;
   RB.showPreview = function (anchor, card) {
     RB.hidePreview();
     const box = $('#preview');
+    previewAnchor = anchor;
     previewEl = RB.renderCard(card, { size: 'preview' });
     box.innerHTML = '';
     box.appendChild(previewEl);
@@ -406,7 +416,17 @@
     box.style.top = Math.max(8, Math.min(window.innerHeight - 420, r.top - 60)) + 'px';
     box.classList.remove('hidden');
   };
-  RB.hidePreview = function () { $('#preview').classList.add('hidden'); previewEl = null; };
+  RB.hidePreview = function () {
+    $('#preview').classList.add('hidden'); previewEl = null; previewAnchor = null;
+  };
+  // A preview is anchored to a card element. paintBoard rebuilds every one of them, so a
+  // card hovered as it LEAVES the board never gets its mouseleave and its preview hangs
+  // there over whatever comes next — which is how the choice panel arrived under a
+  // full-size picture of the spell that opened it. The anchor still being in the document
+  // is the test, and it costs one call per repaint.
+  RB.dropStalePreview = function () {
+    if (previewAnchor && !document.contains(previewAnchor)) RB.hidePreview();
+  };
 
   // --- the chain ------------------------------------------------------------
   // U.chainView MIRRORS state.chain. It is set from the live chain and is allowed to
@@ -545,6 +565,10 @@
             : d.how === 'burnOut' ? ' (they burned out)' : ''); break;
         case 'scoreDenied': t = you(d.p) + ' could not take the winning point by conquest — drew instead'; break;
         case 'burnOut': t = you(d.p) + ' ran out of cards — trash recycled, and a point conceded'; break;
+        // Named, never enumerated: WHICH cards were looked at is the looker's alone.
+        case 'look': t = you(d.p) + ' looked at the top ' + d.n + ' of ' +
+          (d.p === me ? 'your' : 'their') + ' deck'; break;
+        case 'recycle': t = you(d.p) + ' recycled ' + (d.n || 1) + ' card' + ((d.n || 1) === 1 ? '' : 's'); break;
         case 'hide': t = you(d.p) + ' hid a card face down at ' + bfnm(d.bf); break;
         case 'hiddenLost': t = you(d.p) + ' lost a facedown card with the battlefield'; break;
         case 'deflectPaid': t = you(d.p) + ' paid Deflect to choose ' + nm(d.iid); break;

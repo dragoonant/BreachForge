@@ -330,6 +330,154 @@ export function run(t) {
     t.ok(done.players[r.them].deck.includes(want), 'and it was recycled into their deck');
   });
 
+  // --- choosing from a pile the board cannot draw (D-2) ------------------------
+  // Stacked Deck (ogn-183): "Look at the top 3 cards of your Main Deck. Put 1 into your
+  // hand and recycle the rest." LOOK is a printed verb and PUT is a printed decision. The
+  // op used to sort the three by Energy, take the most expensive, and never show the
+  // player the cards it had just told them to look at — which is what was reported.
+  const deckChoice = (cardId, tag) => {
+    const s = RB.newGame({ seed: 'dig', decks: [decks[0], decks[1]], humanSeat: 0 });
+    let st = s;
+    while (st.queue.length && st.queue[0].kind === 'mulligan') st = RB.apply(st, { t: 'mulligan', toss: [] });
+    const me = st.active;
+    st.humanSeat = me;
+    const iid = RB.mint(st, cardId, me);
+    st.players[me].hand.push(iid);
+    st.players[me].pool.energy = 99; st.players[me].pool.any = 99;
+    const top = st.players[me].deck.slice(0, 3);
+    // legalActions offers ONE play per distinct card id in hand, so a copy already dealt
+    // owns the action — match on the card, not on the instance this test minted.
+    const play = RB.legalActions(st).find(a => a.t === 'play' && !a.pay &&
+      RB.obj(st, a.iid).cardId === cardId);
+    t.ok(play, cardId + ' is playable');
+    void iid;
+    let after = RB.apply(st, play);
+    for (let i = 0; i < 6 && after.chain.length; i++) {          // D-4: drain the chain
+      const pass = RB.legalActions(after).find(a => a.t === 'pass');
+      if (!pass) break;
+      after = RB.apply(after, pass);
+    }
+    return { after: after, me: me, top: top, tag: tag };
+  };
+
+  t.test('a card that looks at the top of a deck ASKS which card to keep, it does not pick one', () => {
+    const r = deckChoice('ogn-183');
+    const q = r.after.queue[0];
+    t.ok(q && q.kind === 'target', 'Stacked Deck parked a target question, got ' +
+      (q ? q.kind : 'an empty queue'));
+    t.eq(q.who, r.me, 'the question goes to the player who looked');
+    t.eq(q.options.length, 3, 'all three cards it looked at are offered');
+    t.eq(q.options.slice().sort(), r.top.slice().sort(),
+      'the three offered are the three that were on top');
+    t.eq(q.n, 1, 'exactly one of them is kept');
+    // Nothing has moved yet: the spell has not finished resolving.
+    t.eq(r.after.players[r.me].hand.length,
+      r.after.players[r.me].hand.length, 'sanity');
+    for (const iid of r.top)
+      t.ok(!r.after.players[r.me].hand.includes(iid), 'no card reached the hand before the answer');
+  });
+
+  t.test('answering it puts the CHOSEN card in hand and recycles exactly the other two', () => {
+    const r = deckChoice('ogn-183');
+    const q = r.after.queue[0];
+    // Pick the one the old auto-pick would NOT have taken — the cheapest — so a silent
+    // regression to "most expensive first" fails here instead of passing by coincidence.
+    const want = q.options.slice().sort((a, b) =>
+      (RB.cardOf(r.after, a).energy || 0) - (RB.cardOf(r.after, b).energy || 0))[0];
+    const done = RB.apply(r.after, { t: 'choose', selection: [want] });
+    const P = done.players[r.me];
+    t.ok(P.hand.includes(want), 'the chosen card is in hand');
+    for (const iid of r.top)
+      if (iid !== want) {
+        t.ok(!P.hand.includes(iid), 'a card that was not chosen did not reach the hand');
+        t.ok(P.deck.includes(iid), 'and it was recycled into the deck');
+      }
+    t.eq(P.deck.slice(0, 3).filter(i => r.top.includes(i)).length, 0,
+      'the recycled cards went to the BOTTOM, not back on top');
+  });
+
+  t.test('a card that plays out of a trash ASKS which card, and plays the one chosen', () => {
+    const s = RB.newGame({ seed: 'harrow', decks: [decks[0], decks[1]], humanSeat: 0 });
+    let st = s;
+    while (st.queue.length && st.queue[0].kind === 'mulligan') st = RB.apply(st, { t: 'mulligan', toss: [] });
+    const me = st.active;
+    st.humanSeat = me;
+    // Three units in the trash, so there is a real question. The Harrowing (ogn-198) reads
+    // "Play a unit from your trash, ignoring its Energy cost"; it used to take the biggest.
+    const buried = ['ogn-087', 'unl-152', 'ogn-216'].map(id => {
+      const i = RB.mint(st, id, me); st.players[me].trash.push(i); return i;
+    });
+    st.players[me].hand.push(RB.mint(st, 'ogn-198', me));
+    st.players[me].pool.energy = 99; st.players[me].pool.any = 99;
+    const play = RB.legalActions(st).find(a => a.t === 'play' && !a.pay &&
+      RB.obj(st, a.iid).cardId === 'ogn-198');
+    t.ok(play, 'The Harrowing is playable');
+    let after = RB.apply(st, play);
+    for (let i = 0; i < 6 && after.chain.length; i++) {
+      const pass = RB.legalActions(after).find(a => a.t === 'pass');
+      if (!pass) break;
+      after = RB.apply(after, pass);
+    }
+    const q = after.queue[0];
+    t.ok(q && q.kind === 'target', 'it parked a target question');
+    t.eq(q.options.slice().sort(), buried.slice().sort(), 'every unit in the trash is offered');
+    // Answer with the SMALLEST, which is the one the old auto-pick would never have taken.
+    const want = q.options.slice().sort((a, b) =>
+      (RB.cardOf(after, a).energy || 0) - (RB.cardOf(after, b).energy || 0))[0];
+    const done = RB.apply(after, { t: 'choose', selection: [want] });
+    t.ok(done.players[me].base.includes(want), 'the CHOSEN unit is on the board');
+    for (const iid of buried)
+      if (iid !== want) t.ok(done.players[me].trash.includes(iid), 'the others stayed in the trash');
+  });
+
+  t.test('"ready another unit" asks which one', () => {
+    const s = RB.newGame({ seed: 'mate', decks: [decks[0], decks[1]], humanSeat: 0 });
+    let st = s;
+    while (st.queue.length && st.queue[0].kind === 'mulligan') st = RB.apply(st, { t: 'mulligan', toss: [] });
+    const me = st.active;
+    st.humanSeat = me;
+    const tired = ['ogn-087', 'unl-152'].map(id => {
+      const i = RB.mint(st, id, me); st.players[me].base.push(i);
+      RB.obj(st, i).exhausted = true; return i;
+    });
+    st.players[me].hand.push(RB.mint(st, 'ogn-132', me));       // First Mate
+    st.players[me].pool.energy = 99; st.players[me].pool.any = 99;
+    const play = RB.legalActions(st).find(a => a.t === 'play' && !a.pay &&
+      RB.obj(st, a.iid).cardId === 'ogn-132');
+    t.ok(play, 'First Mate is playable');
+    const after = RB.apply(st, play);
+    const q = after.queue[0];
+    t.ok(q && q.kind === 'target', 'it parked a target question');
+    t.eq(q.options.slice().sort(), tired.slice().sort(), 'both exhausted units are offered');
+    const want = q.options[q.options.length - 1];
+    const done = RB.apply(after, { t: 'choose', selection: [want] });
+    t.ok(!RB.obj(done, want).exhausted, 'the chosen unit readied');
+    for (const iid of tired)
+      if (iid !== want) t.ok(RB.obj(done, iid).exhausted, 'and no other unit did');
+  });
+
+  // The seat that CHOOSES is not always the seat that is resolving. Atakhan (unl-170) reads
+  // "the defender must kill one of their units here" — it is the defender's unit and the
+  // defender's decision, and asking the attacker would be the wrong player entirely.
+  t.test('a clause that makes the OPPONENT choose parks the question at their seat', () => {
+    const s = game('atakhan');
+    const attacker = s.active, defender = RB.opponentOf(attacker);
+    s.humanSeat = defender;                       // the human is the one being asked
+    const theirs = ['ogn-087', 'unl-152'].map(id => {
+      const i = RB.mint(s, id, defender); s.bf[0].units.push(i); return i;
+    });
+    const src = RB.mint(s, 'unl-170', attacker);
+    s.bf[0].units.push(src);
+    const ctx = { p: attacker, source: src, event: { bf: 0 } };
+    RB.resolveAsking(s, { kind: 'ability', iid: src, controller: attacker },
+      st => RB.runEffects(st, [{ op: 'defenderKillsHere' }], ctx));
+    const q = s.queue[0];
+    t.ok(q && q.kind === 'target', 'it parked a target question');
+    t.eq(q.who, defender, 'the question goes to the DEFENDER, not the attacker');
+    t.eq(q.options.slice().sort(), theirs.slice().sort(), 'the answers are the defender\'s units');
+    t.ok(theirs.every(i => s.bf[0].units.includes(i)), 'nothing died before the answer');
+  });
+
   t.test('the same seed and action list reproduce the same game', () => {
     const run = () => {
       let s = game('deterministic', 3, 7);

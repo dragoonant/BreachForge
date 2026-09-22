@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>BreachForge</title>
-<link rel="stylesheet" href="css/style.css?v=e91b5b90d7">
+<link rel="stylesheet" href="css/style.css?v=7558b90a1e">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b1220'/%3E%3Cpath d='M16 5l9 6v10l-9 6-9-6V11z' fill='none' stroke='%236fd3e8' stroke-width='2.2'/%3E%3Ccircle cx='16' cy='16' r='3.2' fill='%236fd3e8'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -82,6 +82,12 @@
 
 <div id="pileview" class="overlay hidden"><div class="panel" style="max-width:62rem;width:92vw"></div></div>
 
+<!-- The answers to a targeting question the board cannot draw — the top of a deck, a card
+     in a trash. Outside #game on purpose: the "did the board draw this option?" test in
+     js/choice.js queries #game, and a modal nested inside it would answer its own
+     question and close itself on the next repaint. -->
+<div id="choicemodal" class="hidden"></div>
+
 <div id="spotlight" class="hidden"></div>
 
 <div id="preview" class="hidden"></div>
@@ -119,13 +125,13 @@
 <script src="js/log.js?v=de30008fe5"></script>
 <script src="js/state.js?v=241f7819ad"></script>
 <script src="js/cost.js?v=5f4ace7e82"></script>
-<script src="js/abilities.js?v=6e1edc0348"></script>
+<script src="js/abilities.js?v=a1a2ffc00b"></script>
 <script src="js/combat.js?v=ee1f3fb2be"></script>
 <script src="js/engine.js?v=a68efef23c"></script>
 <script src="js/text.js?v=1f13eda1a4"></script>
-<script src="js/ops-ogn.js?v=89dd68c628"></script>
+<script src="js/ops-ogn.js?v=30abcf334c"></script>
 <script src="js/ops-sfd.js?v=b3bc11dc04"></script>
-<script src="js/ops-unl.js?v=63dfb36afe"></script>
+<script src="js/ops-unl.js?v=40d874717d"></script>
 <script src="data/abilities-ogn.js?v=e8e05e9d15"></script>
 <script src="data/abilities-sfd.js?v=4f95f8ad50"></script>
 <script src="data/abilities-unl.js?v=43f7ca8f9e"></script>
@@ -139,11 +145,12 @@
 <script src="js/procart.js?v=c5a443be70"></script>
 <script src="js/audio.js?v=d86be1d769"></script>
 <script src="js/render.js?v=94dff21f2a"></script>
-<script src="js/board.js?v=5bbb2f5f35"></script>
-<script src="js/ui.js?v=6617afa2ff"></script>
+<script src="js/board.js?v=56303faaa0"></script>
+<script src="js/ui.js?v=ca8cbc269b"></script>
+<script src="js/choice.js?v=d1b3150991"></script>
 <script src="js/piles.js?v=006130c800"></script>
 <script src="js/decklist.js?v=65325feca8"></script>
 <script src="js/screens.js?v=3491451a08"></script>
-<script src="js/main.js?v=3bc3bd00b6"></script>
+<script src="js/main.js?v=429a63b1cd"></script>
 </body>
 </html>

@@ -18,14 +18,11 @@ in the pool are multi-domain and six of them carry a power cost, so this is the 
 per-domain cost lands.
 Owner: unassigned.
 
-**D-2 — RETIRED in the core, 2026-09-20; the three card packs are still being routed through it.**
+**D-2 — RETIRED in the core 2026-09-20; RETIRED for every resolution op 2026-09-21. What is
+left is the PAYMENT path and two variable-count clauses.**
 The human seat is asked to choose its targets: the question is parked on the state as a `target`
 queue step, the resolution restarts with the answer pre-filled, and the player answers by clicking
 the real card. `RB.offerChoice` is the one door, and everything the core resolves goes through it.
-**What remains:** individual pack ops still slice their own pool rather than handing the ordered
-pool to `offerChoice`, so those cards auto-pick. This is per-OP, not per-pack: most pack ops
-already go through the door, and the remaining ones have to be found by reading for a pool that
-is indexed rather than offered.
 
 Routed through the door 2026-09-20, after a player reported Sabotage (ogn-156) appearing to do
 nothing at all: `ogn.recycleFromHand` and `ogn.discardChosen`. Both choose a card out of a hand
@@ -33,9 +30,34 @@ the card has just revealed, so both pass `{ quiet: true }` — Deflect and the `
 about objects on the board and firing them for a card in hand would be a rule invented here.
 Their reveal surface is `revealedToMe` in `js/board.js`.
 
-Known to still auto-pick, found by reading for an indexed pool: `ogn.readyOther`,
-`ogn.returnSpellFromTrash`, `ogn.digTop`, and three sites in `js/ops-unl.js` (lines 730, 990,
-1138). Each is the same one-line change and each needs its own test.
+Routed 2026-09-21, after a player reported Stacked Deck (ogn-183) looking at three cards, showing
+none of them and keeping one by itself: `ogn.digTop`, `unl.digUnit`, `ogn.eachBanishTopAndPlay`,
+`ogn.returnSpellFromTrash`, `ogn.recycleFromTrash`, `ogn.playSpellFromTrashUnderPoints`,
+`core.playFromZone`, `unl.resurrectWithin`, `unl.playFromHand`, `unl.banishFromHand`,
+`ogn.readyOther`, `ogn.spendBuff`, `ogn.swapPlaces`, `ogn.eachKillsUnit`,
+`unl.defenderKillsHere` and the second half of `unl.eachPlayerKills`. Half of those answer out of
+a deck or a trash, which the board does not draw — the surface for those is the choice modal,
+`js/choice.js`, chosen automatically by asking the DOM which options the board just painted
+(CARD-LOG-AND-TARGETING-SPEC.md §10). The last two send the question to the seat that is
+CHOOSING rather than the seat that is resolving, so a human defender answers for their own unit.
+
+**What remains, and why each one is not the same one-line change:**
+
+1. *The payment path.* `RB.defineExtraCost`'s `pay` runs inside `apply`, not inside
+   `RB.resolveAsking`, so there is nowhere for it to stop and ask. `killFriendly` and
+   `discountsByKilled`/`killFriendlyRecord` (`js/cost.js`, `js/ops-unl.js`) take the cheapest
+   friendly unit; the `discard` extra cost takes the last card in hand; the `spendBuff` extra cost
+   takes the first buffed unit. Each is a printed decision the player does not make.
+   *Fix:* make the payment solver restartable the way resolution is, then route these four.
+2. *Variable-count clauses.* A `target` queue step carries a fixed `n` and `legalActions`
+   enumerates combinations of exactly that many, so "you may recycle one or both" (`ogn.
+   lookAndRecycle`, ogn-291), "recycle up to 4" (`ogn.recycleFromTrash` with `upTo`, ogn-212) and
+   "move any number with a total Might of 8 or less" (`unl.gatherEnemies`, under
+   `unl.moveEnemyGroup`, unl-054) cannot be asked. WHICH cards is now the player's in the second
+   of those; HOW MANY is still the maximum, and the third still gathers greedily smallest-first.
+   *Fix:* a `min`/`max` on the target step instead of a single `n`, and a Confirm button on the
+   panel — CARD-LOG-AND-TARGETING-SPEC.md §9 and §12 describe both.
+Owner: unassigned.
 
 **D-3 — Rune decks are reconstructed to twelve.**
 Several posted decklists record only part of the rune deck (one records none at all). A legal

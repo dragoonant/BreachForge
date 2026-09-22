@@ -422,3 +422,36 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 }
 /* A prompt is open: everything that is not an answer steps back. */
 #game.choosing .card:not(.role-target):not(.role-picked):not(.card-preview){filter:brightness(.62) saturate(.7)}
+
+/* ------------------------------------------------ the choice modal
+   The second of the two targeting surfaces (CARD-LOG-AND-TARGETING-SPEC.md §10/§13). The
+   board handles a question whose answers it draws; this handles the ones it does not —
+   the top of a deck, a card in a trash. The faces are shown bigger than a board card
+   because they are being READ, not located. */
+#choicemodal{position:absolute;inset:0;z-index:210;display:grid;place-items:center;
+  background:rgba(4,7,13,.80);backdrop-filter:blur(3px)}
+#choicemodal.hidden{display:none}
+.choice-panel{background:var(--panel);border:1px solid var(--edge);border-radius:.7rem;
+  padding:1.1rem 1.3rem;max-width:min(92vw,52rem);max-height:88vh;overflow:auto;text-align:center;
+  box-shadow:0 20px 80px rgba(0,0,0,.6)}
+.choice-prompt{font-weight:700;font-size:1rem;margin-bottom:.2rem}
+.choice-hint{color:var(--dim);font-size:.78rem;margin-bottom:.4rem}
+.choice-cards{display:flex;flex-wrap:wrap;gap:.8rem;justify-content:center;
+  align-items:flex-start;margin:.8rem 0 1rem}
+.choice-cards .card{width:calc(var(--card-board-w)*1.75);cursor:pointer;
+  transition:transform .12s}
+.choice-cards .card:hover{transform:translateY(-.4rem)}
+.choice-controls{display:flex;gap:.5rem;justify-content:center}
+@media (max-width:620px){.choice-cards .card{width:calc(var(--card-board-w)*2.1)}}
+
+/* Peek: the panel gets out of the way WITHOUT answering, because which card to pick
+   usually depends on what is already on the table — which the panel is covering. The pill
+   lives outside the panel so it survives while the panel is hidden. */
+.choice-restore{display:none}
+#choicemodal.peek{background:transparent;backdrop-filter:none;pointer-events:none;
+  place-items:start center}
+#choicemodal.peek .choice-panel{display:none}
+#choicemodal.peek .choice-restore{display:inline-flex;align-items:center;pointer-events:auto;
+  margin-top:calc(var(--chrome-top) + .8rem);background:var(--accent);color:#06101f;border:0;border-radius:999px;
+  padding:.45rem 1.1rem;font-size:.85rem;font-weight:700;cursor:pointer;
+  box-shadow:0 6px 20px rgba(0,0,0,.55)}
