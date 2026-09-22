@@ -84,7 +84,35 @@ Read before touching anything: `CARD-GAME-LESSONS.md`, `CARD-GAME-LESSONS-2.md`,
     If you are ever forced to share a tree: build the commit in an isolated `GIT_INDEX_FILE`
     so the shared index cannot leak into it, and move the branch with
     `git update-ref <branch> <new> <expected-old>`, which refuses when someone else has moved
-    it — `git reset` has no such guard and will silently discard their commit.
+    it — `git reset` has no such guard and will silently discard their commit. **That advice
+    is for a branch nobody has checked out.** `update-ref` moves the ref and nothing else, so
+    pointing it at a branch that IS checked out somewhere leaves that tree's index and files
+    on the old commit while its HEAD reports the new one — and everything you just landed
+    shows up there as *staged in reverse*. Demonstrated, not guessed: moving a two-commit-old
+    worktree forward with `update-ref` left it reporting
+    `R video/breachforgeopening.mp4 -> art/breachforgeopening.mp4`, the rename backwards and
+    pre-staged. A `git commit` in that tree would have quietly reverted the merge.
+
+    **`main` is checked out in the primary folder, and that checkout belongs to nobody.**
+    Treat it as the integration tree: no agent *works* there, so it is always clean, and it
+    exists to land branches and prove them green. Land with:
+
+    ```
+    git merge --ff-only <branch>
+    ```
+
+    from inside it. That updates ref, index and working tree together, and it refuses outright
+    if `main` has moved somewhere your branch does not descend from — which is the same guard
+    `update-ref`'s expected-old gives, without desynchronising the tree. Rebase onto the new
+    `main` and try again; never `git reset` to force it. Then run the gates THERE, because
+    green on your branch is not green on `main`: `main` moved twice under this session, once
+    for `todo` and once for `card-choices`, and the second rewrote `js/ops-unl.js` — a file
+    this session had also changed.
+
+    The corollary is that nobody should be running a dev server out of the primary folder
+    either, which `preview_start` does by default (see above). If a server is serving the
+    integration tree, someone is verifying `main` while believing they are verifying their
+    own worktree.
 
     **And gate the COMMIT, not the working tree.** Slice bulk authoring by disjoint id ranges
     *with disjoint files*, and never measure against a tree someone else is fixing: a working
