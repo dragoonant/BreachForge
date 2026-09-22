@@ -51,26 +51,25 @@
     bar.innerHTML = '';
     const mk = (label, p, them) => {
       const w = el('scoreline');
-      w.innerHTML = '<span style="font-size:.7rem;letter-spacing:.1em;color:#9fb0cc">' + label + '</span>';
+      w.innerHTML = '<span class="sl-lbl">' + label + '</span>';
       w.appendChild(pipRow(state.players[p].points, state.victoryScore, them));
       const n = el('', 'b'); n.textContent = state.players[p].points; n.style.marginLeft = '.25rem';
       w.appendChild(n);
       return w;
     };
     bar.appendChild(mk('YOU', me, false));
-    const mid = el(''); mid.style.cssText = 'flex:1;text-align:center;font-size:.72rem;letter-spacing:.24em;color:#7d8ea8';
-    mid.style.overflow = 'hidden'; mid.style.textOverflow = 'ellipsis';
+    const mid = el('turnline');
     mid.textContent = 'TURN ' + state.turn + ' · ' + (state.active === me ? 'YOUR TURN' : 'THEIR TURN');
     bar.appendChild(mid);
     bar.appendChild(mk('RIVAL', RB.opponentOf(me), true));
-    const btns = el(''); btns.style.cssText = 'display:flex;gap:.4rem;margin-left:.8rem';
-    const mute = el('btn', 'button');
-    mute.style.cssText = 'padding:.2rem .6rem;font-size:.7rem';
+    const btns = el('topbtns');
+    const mute = el('btn topbtn', 'button');
+    mute.title = RB.audio.isMuted() ? 'Sound is off' : 'Sound is on';
     mute.textContent = RB.audio.isMuted() ? '🔇' : '🔊';
     mute.onclick = () => { RB.audio.setMuted(!RB.audio.isMuted()); RB.paintBoard(state, me); };
     btns.appendChild(mute);
-    const lg = el('btn', 'button');
-    lg.style.cssText = 'padding:.2rem .6rem;font-size:.7rem';
+    const lg = el('btn topbtn', 'button');
+    lg.title = 'The game log';
     lg.textContent = 'Log';
     // The same one piece of state the pull tab toggles; the drawer is not DOM state.
     lg.onclick = () => { RB.toggleLog(); RB.audio.play('ui.click'); };
@@ -78,8 +77,7 @@
     // The black box. "That card did something weird" becomes a file with a seed, two deck
     // ids and every action taken — one run of tools/replay-report.mjs instead of a
     // conversation.
-    const bug = el('btn', 'button');
-    bug.style.cssText = 'padding:.2rem .6rem;font-size:.7rem';
+    const bug = el('btn topbtn', 'button');
     bug.textContent = '🐞';
     bug.title = 'Save a bug trace — hand it to tools/replay-report.mjs';
     bug.onclick = () => RB.downloadBugReport(window.prompt('What looked wrong?') || '');
@@ -140,7 +138,7 @@
     bz.appendChild(brow);
     root.appendChild(bz);
 
-    const rz = el('zone');
+    const rz = el('zone runezone');
     rz.innerHTML = '<div class="lbl" title="Runes on board · Main deck · Trash">' +
       P.runes.length + 'R · ' + P.deck.length + 'D · ' + P.trash.length + 'T</div>';
     paintZone(rz, mine ? 'runes-mine' : 'runes-theirs');
@@ -151,8 +149,7 @@
       r.title = RB.cardOf(state, iid).name + (RB.obj(state, iid).exhausted ? ' (exhausted)' : '');
       rr.appendChild(r);
     }
-    const pool = el('');
-    pool.style.cssText = 'font-size:.64rem;color:#9fb0cc;margin-top:.3rem;width:100%;line-height:1.5';
+    const pool = el('pool');
     const pw = Object.keys(P.pool.power).filter(d => P.pool.power[d] > 0)
       .map(d => '<span style="color:var(--d-' + d + ')">' + P.pool.power[d] + '◈</span>').join(' ');
     // What you can still pay for this turn, not just what is already in the pool — unspent
@@ -161,7 +158,8 @@
     const avail = {};
     for (const i of ready) { const d = RB.cardOf(state, i).domain; avail[d] = (avail[d] || 0) + 1; }
     pool.innerHTML = (P.pool.energy ? '<b>' + P.pool.energy + '</b>⚡ ' : '') + pw +
-      (mine ? '<div style="opacity:.8">can pay <b>' + (P.pool.energy + ready.length) + '</b>⚡ · ' +
+      (mine ? '<div class="paywith"><span class="paylbl">can pay </span><b>' +
+        (P.pool.energy + ready.length) + '</b>⚡ · ' +
         (Object.keys(avail).length
           ? Object.keys(avail).map(d => '<span style="color:var(--d-' + d + ')">' + avail[d] + '◈</span>').join(' ')
           : 'no Power') + '</div>' : '');
@@ -330,6 +328,10 @@
       RB.ui.bindCard(c, state, iid, 'hand');
       h.appendChild(c);
     }
+    // A hand too wide for the screen scrolls (css/mobile.css), and a row that scrolls with
+    // no edge to show it is a row whose last card does not exist. Measured after the cards
+    // are in, because that is the only moment the answer is known.
+    h.classList.toggle('scrolls', h.scrollWidth > h.clientWidth + 2);
   }
   RB.el = el;
 })(window.RB = window.RB || {});

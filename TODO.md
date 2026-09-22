@@ -82,3 +82,63 @@ up for the other player's turn.
   one that catches the cheating version, because the cheating version also wins more.
 - Playing the deck that carries the reveal card against it, a human can *see* the AI act on
   what it saw — it holds the counter, or plays around the card it knows is coming.
+
+---
+
+## T-2 — Landscape on a phone needs a hand drawer, or it will never fit
+
+**Status:** not started · **Wanted by:** owner, 2026-09-22 (opened by the phone layout work)
+
+Portrait on an iPhone 16 Pro is done and measured (`docs/MOBILE.md`). Landscape is not: it
+shows a dismissible rotate notice, and behind it a coherent-but-cramped board whose middle
+scrolls. That is an honest degradation, not a finished surface.
+
+**Why it does not fit, in numbers**
+
+Landscape on that device is **756x352**, and the board is a vertical stack of five bands.
+Measured at the landscape sizes in `css/mobile.css`:
+
+| band | px |
+|---|---|
+| topbar | 34 |
+| their hand | 22 |
+| their side | 58 |
+| battlefields (two lanes at `--card-board-w` 2.8rem + the name) | 126 |
+| your side | 58 |
+| your hand | 92 |
+| prompt bar | 39 |
+| padding + gaps | 14 |
+| **total** | **443 of 352** |
+
+Every band is already at the smallest size worth rendering, so there is no 91px to find by
+shrinking. The hand is the only band that does not have to be on screen all the time.
+
+**What to build**
+
+The hand becomes a pull-up drawer in landscape only, the way Hearthstone's hand peeks above
+the bottom edge: cards sit mostly below the fold, a tap or a swipe raises them, and playing
+one drops it again. That frees 92px and the remaining 351 fits 352 with a pixel to spare.
+
+**What must not break**
+
+1. `#hand` is a grid row of `#game` today. Taking it out of flow is what buys the height —
+   but `--chrome-bottom` is the variable the grid solves from, and `#prompt` is a real grid
+   row on a phone. Move both together or the prompt bar lands under the hand.
+2. **No second copy of the rules** (hard rule 4). A raised hand is a view state, like the
+   chain's collapse and the choice panel's peek — it lives in `RB.ui`, never on `state`, and
+   undo must never bring it back.
+3. The long press must still read a card while the hand is lowered. `RB.touch.longPress` is
+   bound per card in `U.bindCard` and does not care where the card is, but a drawer that
+   eats `pointermove` for its own swipe will cancel the press at 12px of drift — the same
+   SLOP the horizontal scroll already relies on. Decide which gesture owns the finger.
+4. The rotate notice is CSS-only (`@media (orientation: landscape) and (max-height: 480px)`)
+   plus one dismiss listener in `js/touch.js`. It comes out in the same commit, not before.
+
+**Done when**
+
+- `tools/`-side or scratch harness under an `iPhone 16 Pro landscape` viewport reports the
+  same clean audit portrait does today: nothing wider than the screen that cannot be
+  scrolled to, no tap target under 44px, no page errors — with the rotate notice gone.
+- A hand of seven is reachable, readable and playable without the board scrolling.
+- Portrait is byte-identical. The landscape rules are their own media query; portrait must
+  not move by a pixel, and the desktop must not move at all.
