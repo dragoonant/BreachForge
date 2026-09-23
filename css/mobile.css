@@ -22,6 +22,30 @@
    the commit message.
    ============================================================================ */
 
+/* ------------------------------------------------- any finger, any screen size
+   FIRST, so the phone query below narrows it further rather than the other way round.
+
+   These rules key off the POINTER, not the width, because a finger is the same size on
+   every device and a tablet is a finger on a 1024px screen. An iPad correctly gets the
+   desktop board — it has the room — and used to get the desktop's controls with it: a
+   26px log tab and 36x23 topbar buttons, which are not touch targets at any screen size.
+   js/touch.js keys its gestures off the same question (RB.touch.coarse), so the layout
+   and the input model can never disagree about what is holding the device. */
+@media (pointer: coarse) {
+  /* 44px is Apple's minimum touch target. These four are every control a player presses
+     more than once a game. */
+  #logtab { width: 2.75rem; }
+  .topbtn { min-width: 2.75rem; min-height: 2.4rem; padding: .25rem .5rem; font-size: .84rem;
+    display: inline-flex; align-items: center; justify-content: center; }
+  .promptbtn { min-height: 2.4rem; min-width: 4.4rem; padding: .5rem 1rem; font-size: .8rem; }
+  .listbtn { min-height: 2.4rem; padding: .45rem .8rem; }
+  /* A tap leaves :hover stuck on the card until something else is tapped, so the hand's
+     hover-lift stayed up under a card no finger is on any more. On touch a lift means
+     one thing: this card is selected. */
+  #hand .card-hand:hover { transform: none; }
+  #hand .card-hand.role-selected { transform: translateY(-.6rem); }
+}
+
 /* ---------------------------------------------------------------- phone board */
 @media (max-width: 760px) {
 
@@ -290,12 +314,42 @@
   #deckpick > div:first-child { flex-wrap: wrap; gap: .5rem; }
   #deckpick h2 { font-size: 1rem; flex: 1 1 100%; }
   #deckpick .btn { padding: .55rem 1.1rem; }
-  .deckgrid { grid-template-columns: 1fr; gap: .5rem; }
+  /* `1fr` and nothing else gave a 740px window ONE 718px tile, whose content packs left
+     — which put the List button at the tile's own centre point, so a tap meant for the
+     tile opened the deck list instead. min(100%,16rem) is one column on a phone and two
+     as soon as there is room for two, which is what the desktop rule already does. */
+  .deckgrid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr)); gap: .5rem; }
   .decktile { padding: .45rem; gap: .55rem; }
   .decktile .tile-art { width: 4.2rem; }
   .decktile .nm { font-size: .84rem; }
   .decktile .meta { font-size: .64rem; }
-  .listbtn { padding: .55rem .9rem; font-size: .72rem; align-self: center; min-height: 2.6rem; }
+  /* Pinned to the right edge, so it cannot drift into the middle of a wide tile however
+     wide the tile gets. */
+  .listbtn { padding: .55rem .9rem; font-size: .72rem; align-self: center;
+    min-height: 2.6rem; margin-left: auto; }
+}
+
+/* ---------------------------------------------------------- the small phones
+   The topbar above is solved for 402px: two score rows and three 44px buttons come to
+   339px, which fits an iPhone 16 Pro and does NOT fit an iPhone SE or a Galaxy S9+ at
+   320. The buttons went off the edge again, in exactly the way this whole file exists to
+   have fixed. The pips give up the width rather than the buttons — a pip is a glance and
+   a button a player cannot reach is a feature they do not have. */
+@media (max-width: 380px) {
+  #topbar { gap: .2rem; padding: 0 .25rem; }
+  .scoreline { gap: .15rem; }
+  .sl-lbl { font-size: .48rem; letter-spacing: .02em; }
+  .pips { gap: .05rem; }
+  .sp { width: .3rem; height: .3rem; }
+  .topbtns { gap: .2rem; }
+  .topbtn { min-width: 2.6rem; padding: .2rem .25rem; font-size: .84rem; }
+  /* The board itself narrows with it: the side rails were measured against 402px too. */
+  :root { --card-board-w: 2.95rem; --card-hand-w: 4.3rem; }
+  .side { grid-template-columns: auto 3.3rem minmax(0, 1fr) 3.2rem; gap: .22rem; }
+  .zone.piles { width: 3.3rem; }
+  .zone.piles .pile .card { width: 1.24rem; }
+  .rune { width: .55rem; height: .82rem; }
+  .pool { font-size: .5rem; }
 }
 
 /* ------------------------------------------------------------- the inspector
