@@ -22,6 +22,11 @@
 }
 *{box-sizing:border-box}
 html,body{overflow:hidden;height:100%;margin:0}
+/* A phone browser "boosts" the fonts of anything it reads as an article. On a 402px board
+   that rendered .7rem labels at 2.5x, which is what pushed the mute, Log and bug buttons
+   clean off the right edge of an iPhone with no way to reach any of them. The declared
+   sizes are the sizes — this board solves its own type from the viewport already. */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 body{overflow:hidden;
   background:radial-gradient(120% 90% at 50% -10%,#1b2540 0%,#080b14 60%,#05070d 100%);
   color:var(--ink); font:14px/1.35 "Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
@@ -145,6 +150,11 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 #topbar{display:flex;align-items:center;gap:.8rem;padding:0 .8rem;border-bottom:1px solid var(--edge);
   background:linear-gradient(180deg,rgba(255,255,255,.05),transparent);white-space:nowrap;overflow:hidden}
 .scoreline{display:flex;align-items:center;gap:.4rem}
+.sl-lbl{font-size:.7rem;letter-spacing:.1em;color:#9fb0cc}
+.turnline{flex:1;text-align:center;font-size:.72rem;letter-spacing:.24em;color:#7d8ea8;
+  overflow:hidden;text-overflow:ellipsis}
+.topbtns{display:flex;gap:.4rem;margin-left:.8rem}
+.topbtn{padding:.2rem .6rem;font-size:.7rem}
 .pips{display:flex;gap:.16rem}
 .sp{width:.62rem;height:.62rem;border-radius:50%;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.05)}
 .sp.on{background:var(--accent);box-shadow:0 0 7px var(--accent);border-color:var(--accent)}
@@ -171,6 +181,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .rune{width:1.05rem;height:1.5rem;border-radius:.2rem;border:1px solid rgba(255,255,255,.28);
   background:currentColor;opacity:.92;transition:transform .12s,opacity .12s}
 .rune.ex{opacity:.3;transform:rotate(16deg)}
+.pool{font-size:.64rem;color:#9fb0cc;margin-top:.3rem;width:100%;line-height:1.5}
+.paywith{opacity:.8}
 .bfrow{display:flex;gap:.7rem;justify-content:center;align-items:stretch;min-width:0}
 
 
@@ -204,6 +216,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
    free — small and grey, because it is context and not the question. */
 .promptwhy{font-size:.72rem;color:#8ea2be;margin:.1rem 0 .18rem;white-space:pre-wrap}
 .promptq{color:#cfe6ff}
+.promptbtn{padding:.28rem .9rem;font-size:.76rem}
 /* ABOVE .overlay (200), not below it. A preview is always the answer to a deliberate
    hover, so it belongs on top of whatever the player is hovering inside — at 100 it
    rendered behind the overlay's own backdrop in every inspector that lists cards (the
@@ -272,6 +285,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .decktile .tile-art .card-art::after{background:linear-gradient(to top,rgba(5,8,14,.45) 0%,rgba(5,8,14,0) 38%)}
 .decktile .meta{min-width:0}
 .decktile .nm{margin-bottom:.22rem}
+.listbtn{padding:.16rem .5rem;font-size:.66rem;align-self:flex-start}
 
 /* Narrow windows: the side columns give up their fixed widths before anything overflows. */
 @media (max-width: 1100px){

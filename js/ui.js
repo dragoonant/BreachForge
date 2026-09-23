@@ -55,13 +55,17 @@
     box.addEventListener('mouseout', ev => {
       if (ev.target.closest('.cardref')) RB.hidePreview();
     });
-    // Touch has no hover. A tap on a name opens the preview and the next tap anywhere
-    // closes it, which is the whole gesture — the game is on the web now.
+    // Touch has no hover. A tap on a name opens the card and the next tap anywhere closes
+    // it, which is the whole gesture — the game is on the web now. On a phone that read is
+    // the inspector rather than the flyout: 21rem of card does not fit beside a 402px
+    // board, so there is nowhere for a flyout to go.
     box.addEventListener('click', ev => {
       const t = ev.target.closest('.cardref');
       if (!t) return;
       ev.stopPropagation();
-      RB.showPreview(t, RB.card(t.dataset.def));
+      const card = RB.card(t.dataset.def);
+      if (RB.touch.coarse) RB.inspect(card);
+      else RB.showPreview(t, card);
     });
     document.addEventListener('click', () => RB.hidePreview());
     $('#logtab').addEventListener('click', () => { RB.audio.play('ui.click'); RB.toggleLog(); });
@@ -171,16 +175,52 @@
   };
 
   // --- selection ------------------------------------------------------------
+  // Two jobs, kept apart because a phone needs them apart. bindAction() below decides
+  // whether a TAP on this card commits something; this decides how the card is READ, and
+  // then gives the tap to the inspector when no action claimed it.
   U.bindCard = function (elm, state, iid, role) {
-    elm.addEventListener('mouseenter', () => RB.showPreview(elm, RB.cardOf(state, iid)));
-    elm.addEventListener('mouseleave', RB.hidePreview);
+    const card = RB.cardOf(state, iid);
+    if (RB.touch.coarse) {
+      // Press and hold reads any card, including one that is also a legal tap target —
+      // bound first, so choosing between reading and acting is the player's, not ours.
+      RB.touch.longPress(elm, () => RB.inspect(card, U.noteFor(state, iid, role)));
+    } else {
+      elm.addEventListener('mouseenter', () => RB.showPreview(elm, card));
+      elm.addEventListener('mouseleave', RB.hidePreview);
+    }
+    if (bindAction(elm, state, iid, role) || !RB.touch.coarse) return;
+    // A tap no action claimed still has to do something, or most of the board is dead to
+    // a finger — and a card you cannot act on is exactly the card you most want to read.
+    // This changes no game state, so it is not the UI inventing a rule: CARD-PRESENTATION
+    // -SPEC §0.5, tapping a card never changes the game.
+    elm.style.cursor = 'pointer';
+    elm.addEventListener('click', ev => {
+      ev.stopPropagation();
+      RB.inspect(card, U.noteFor(state, iid, role));
+    });
+  };
+
+  // The sentence the desktop hides in a `title`. A finger never sees a tooltip, so the
+  // one thing a tooltip was carrying — why this card is greyed out — rides the inspector
+  // instead. js/board.js computes the same string for the desktop tooltip; both ask
+  // RB.whyCannotPay, which is the one home for the answer.
+  U.noteFor = function (state, iid, role) {
+    if (role !== 'hand') return null;
+    if (RB.whoActs(state) !== U.me) return 'Not your turn yet.';
+    if (RB.legalActions(state).some(a => a.t === 'play' && a.iid === iid)) return null;
+    return RB.whyCannotPay(state, U.me, RB.costOf(state, iid)) || 'Cannot be played right now.';
+  };
+
+  // Returns TRUE when a tap on this card now commits or selects something. The return
+  // value is the whole contract: U.bindCard hands the tap to the inspector on false.
+  function bindAction(elm, state, iid, role) {
     // Answering a prompt is the one exception to "tapping never changes the game": it is a
     // deliberate response to a question the game just asked, and clicking the real card is
     // the documented way to answer targeting. This sits ABOVE the "is it mine" guard,
     // because the answer to a prompt is very often one of the opponent's cards.
     const q = state.queue[0];
     if (q && q.kind === 'target' && q.who === U.me) {
-      if (!q.options.includes(iid)) return;
+      if (!q.options.includes(iid)) return false;
       const picked = U.picks.includes(iid);
       elm.classList.add(picked ? 'role-picked' : 'role-target');
       elm.style.cursor = 'pointer';
@@ -196,10 +236,10 @@
         }
         RB.paintBoard(state, U.me);
       });
-      return;
+      return true;
     }
 
-    if (!role || RB.whoActs(state) !== U.me) return;
+    if (!role || RB.whoActs(state) !== U.me) return false;
 
     // A selected Gear is looking for a host: any unit that is a legal destination for it
     // becomes a click target, and says so with the drop outline.
@@ -209,11 +249,11 @@
         elm.classList.add('dropok');
         elm.style.cursor = 'pointer';
         elm.addEventListener('click', ev => { ev.stopPropagation(); RB.commit(drop); });
-        return;
+        return true;
       }
     }
     if (mulliganStep(state)) {
-      if (role !== 'hand') return;
+      if (role !== 'hand') return false;
       elm.style.cursor = 'pointer';
       elm.classList.toggle('toss', U.toss.includes(iid));
       elm.addEventListener('click', ev => {
@@ -224,12 +264,12 @@
         else if (U.toss.length < 2) U.toss.push(iid);   // rule 121: up to two
         RB.paintBoard(state, U.me);
       });
-      return;
+      return true;
     }
     const acts = RB.legalActions(state);
     const mine = acts.filter(a => U.actsOn(a, iid) &&
       (a.t === 'play' || a.t === 'move' || a.t === 'activate' || a.t === 'hide'));
-    if (!mine.length) return;
+    if (!mine.length) return false;
     // Four states, four colours, and that is the whole targeting vocabulary.
     elm.classList.add(U.sel === iid ? 'role-selected' : 'role-actable');
     if (U.sel !== iid) {
@@ -252,7 +292,8 @@
       U.sel = (U.sel === iid) ? null : iid;
       RB.paintBoard(state, U.me);
     });
-  };
+    return true;
+  }
 
   U.bindDrop = function (box, state, me) {
     box.addEventListener('click', () => {
@@ -281,8 +322,9 @@
     // and the buttons drop below it rather than being squeezed off the right edge.
     const say = (t, cls) => { const d = RB.el(cls || ''); d.innerHTML = t; p.appendChild(d); };
     const btn = (label, fn, cls) => {
-      const b = RB.el('btn' + (cls ? ' ' + cls : ''), 'button');
-      b.style.cssText = 'padding:.28rem .9rem;font-size:.76rem';
+      // A class, not an inline style: an inline style outranks every media query, and on
+      // a phone these are the only buttons in the game that must reach a 44px thumb target.
+      const b = RB.el('btn promptbtn' + (cls ? ' ' + cls : ''), 'button');
       b.textContent = label; b.onclick = fn; p.appendChild(b); return b;
     };
     if (RB.isTerminal(state)) return say('<b>Game over.</b>');
@@ -394,7 +436,9 @@
       ' playable, <b>' + moves + '</b> unit' + (moves === 1 ? '' : 's') + ' can move.' +
       (champReady ? ' <span style="color:#ffca63">Your champion can be played.</span>' : '') +
       (canHide ? ' <span style="color:#ffca63">' + canHide + ' can be hidden.</span>' : '') +
-      (plays === 0 && held > 0 ? ' <span style="color:#9fb0cc">Hover a card to see what it needs.</span>' : ''));
+      (plays === 0 && held > 0 ? ' <span style="color:#9fb0cc">' +
+        (RB.touch.coarse ? 'Press and hold a card to see what it needs.'
+                         : 'Hover a card to see what it needs.') + '</span>' : ''));
     btn('End turn', () => RB.commit({ t: 'endTurn' }), 'primary');
   };
 
@@ -515,9 +559,13 @@
         (it.kind === 'ability' ? 'ability' : String(card.type).toLowerCase());
       e.appendChild(cap);
       // The container takes no clicks — it sits over the battlefields. The entries opt
-      // back in for the pointer alone, so hovering one reads the card.
-      e.addEventListener('mouseenter', () => RB.showPreview(e, card));
-      e.addEventListener('mouseleave', RB.hidePreview);
+      // back in for the pointer alone, so hovering one reads the card; a finger taps it,
+      // because there is no hover to opt into.
+      if (RB.touch.coarse) e.addEventListener('click', ev => { ev.stopPropagation(); RB.inspect(card); });
+      else {
+        e.addEventListener('mouseenter', () => RB.showPreview(e, card));
+        e.addEventListener('mouseleave', RB.hidePreview);
+      }
       row.appendChild(e);
     });
     box.appendChild(row);

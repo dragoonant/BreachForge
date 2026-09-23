@@ -66,8 +66,11 @@
           '<span>' + RB.fullName(c) + (RB.isPartial(c.id) ? ' <span style="color:#ffca63">!</span>' : '') + '</span>' +
           '<span style="flex:1"></span><span style="color:#9fb0cc">' +
           (c.energy != null ? c.energy : '') + (c.power ? '◈'.repeat(c.power) : '') + '</span>';
-        row.addEventListener('mouseenter', () => RB.showPreview(row, c));
-        row.addEventListener('mouseleave', RB.hidePreview);
+        if (RB.touch.coarse) row.addEventListener('click', ev => { ev.stopPropagation(); RB.inspect(c); });
+        else {
+          row.addEventListener('mouseenter', () => RB.showPreview(row, c));
+          row.addEventListener('mouseleave', RB.hidePreview);
+        }
         col.appendChild(row);
       }
       cols.appendChild(col);

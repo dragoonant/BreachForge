@@ -1,0 +1,429 @@
+/* ============================================================================
+   The phone. Drawn for an iPhone 16 Pro: 402x874 points, 402x681 of it left once
+   Safari's own chrome is on screen, a Dynamic Island at the top and a home indicator
+   at the bottom.
+
+   This file is LAST in the cascade and it only ever narrows: every rule here sits
+   inside a media query, so a desktop window loads it and is untouched by it. It
+   changes no affordance — js/ui.js still derives every one of them from
+   RB.legalActions — it changes SIZE, PLACE and GESTURE.
+
+   Three things a phone does not have, and what each one costs:
+
+     * NO HOVER.  The board's whole read — the preview flyout — is bound to
+       mouseenter. js/touch.js answers this: press and hold opens the card full size,
+       and js/ui.js binds the mouse listeners only on a fine pointer.
+     * NO TOOLTIP.  `title` is where the board says why a card cannot be played. That
+       sentence rides into the inspector (U.noteFor).
+     * NO WIDTH.  402px against a desktop's 1280. Every fixed column in the side rows
+       had to become a rail, and a battlefield had to stop being half a screen.
+
+   Verified against the real page under an iPhone 16 Pro viewport, not by eye — see
+   the commit message.
+   ============================================================================ */
+
+/* ------------------------------------------------- any finger, any screen size
+   FIRST, so the phone query below narrows it further rather than the other way round.
+
+   These rules key off the POINTER, not the width, because a finger is the same size on
+   every device and a tablet is a finger on a 1024px screen. An iPad correctly gets the
+   desktop board — it has the room — and used to get the desktop's controls with it: a
+   26px log tab and 36x23 topbar buttons, which are not touch targets at any screen size.
+   js/touch.js keys its gestures off the same question (RB.touch.coarse), so the layout
+   and the input model can never disagree about what is holding the device. */
+@media (pointer: coarse) {
+  /* 44px is Apple's minimum touch target. These four are every control a player presses
+     more than once a game. */
+  #logtab { width: 2.75rem; }
+  .topbtn { min-width: 2.75rem; min-height: 2.4rem; padding: .25rem .5rem; font-size: .84rem;
+    display: inline-flex; align-items: center; justify-content: center; }
+  .promptbtn { min-height: 2.4rem; min-width: 4.4rem; padding: .5rem 1rem; font-size: .8rem; }
+  .listbtn { min-height: 2.4rem; padding: .45rem .8rem; }
+  /* A tap leaves :hover stuck on the card until something else is tapped, so the hand's
+     hover-lift stayed up under a card no finger is on any more. On touch a lift means
+     one thing: this card is selected. */
+  #hand .card-hand:hover { transform: none; }
+  #hand .card-hand.role-selected { transform: translateY(-.6rem); }
+}
+
+/* ---------------------------------------------------------------- phone board */
+@media (max-width: 760px) {
+
+  :root {
+    /* Solved from the viewport, as on the desktop (see the note at the top of
+       style.css) — just from a much smaller one. A board card is 48px: too small to
+       read, which is exactly why press-and-hold exists, and big enough to hit. */
+    --card-board-w: 3.4rem;
+    --card-hand-w: 4.9rem;
+    /* The inspector, not a flyout: it is centred, so it may take the width it needs. */
+    --card-preview-w: min(78vw, 19rem);
+    --res-card-w: 1.5rem;
+    --chrome-top: 3.1rem;
+    /* Hand only. The prompt becomes a real grid row below it rather than a box
+       floating over the board — see #game. */
+    --chrome-bottom: 8.2rem;
+    --log-w: min(20rem, 84vw);
+  }
+
+  /* dvh, not %. Safari's address bar collapses as you scroll and 100% is measured
+     against whichever viewport was current when the page loaded — which leaves the
+     hand either cut off or floating 60px above the bottom of the screen for the rest
+     of the game. dvh follows the bar. */
+  html, body { height: 100dvh; }
+  /* A rubber-band drag on a board that fills the screen looks like the board coming
+     loose. There is nothing to scroll to; refuse the gesture rather than animate it. */
+  body { overscroll-behavior: none; }
+  /* Every tap is a game action, so none of them wants the 300ms double-tap-to-zoom
+     wait. `manipulation` keeps pinch-zoom — a player who needs to magnify still can,
+     which is why the viewport tag does not disable scaling. */
+  body, .card, .btn, button { touch-action: manipulation; }
+  /* iOS offers copy / share / save-image on a long press over an image, and a card is
+     nothing but an image. The press belongs to the game. */
+  .card, .card-art, .card-art img, .bf, .pile { -webkit-touch-callout: none; }
+
+  /* The notch, the Dynamic Island and the home indicator. Padding on the screen
+     itself, so the grid rows below solve inside what is left and every absolutely
+     positioned child (#prompt, #log, #chain) already sits inside the safe box —
+     an absolute child resolves against the PADDING box, which is the whole trick. */
+  #game, #title, #deckpick {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+             env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+
+  /* The prompt stops being an overlay and becomes the bottom bar: the one place on a
+     phone a thumb reaches without moving the hand holding it. It is a fourth grid row,
+     so it can never cover the board and the board can never cover it. */
+  #game { grid-template-rows: var(--chrome-top) 1fr var(--chrome-bottom) auto; }
+
+  /* ------------------------------------------------------------------ topbar */
+  /* All three buttons — mute, Log, bug — used to render from x=375 to x=503 on a 402px
+     screen. Not clipped decoration: the log and the mute were UNREACHABLE. The turn
+     line gives up its place to them, because the prompt bar already says whose turn it
+     is in words. */
+  #topbar { gap: .35rem; padding: 0 .4rem; }
+  .turnline { display: none; }
+  .scoreline { gap: .25rem; }
+  .sl-lbl { font-size: .54rem; letter-spacing: .06em; }
+  .pips { gap: .1rem; }
+  .sp { width: .42rem; height: .42rem; }
+  .topbtns { margin-left: auto; gap: .3rem; }
+  /* 44px is Apple's minimum touch target and these are the only chrome controls in
+     the game; they get it. */
+  .topbtn { min-width: 2.75rem; min-height: 2.75rem; padding: .2rem .4rem; font-size: .92rem;
+    display: flex; align-items: center; justify-content: center; }
+
+  /* ------------------------------------------------------------------- board */
+  #boardwrap { gap: .3rem; padding: .3rem .35rem; grid-template-rows: auto auto 1fr auto; }
+
+  /* The side rows. Four fixed columns did not fit: at 402px the legend, piles and
+     runes took the lot and the BASE — the row you move units out of — was solved to
+     zero width and drawn as nothing at all. A phone gets a rail on each side and the
+     base in the middle with the flex, scrolling sideways when it has more than four
+     units, which is the only zone here that ever does. */
+  /* ONE row, the same four columns the desktop has, all four narrowed. A two-row rail
+     with the piles stacked over the runes was tried first and measured: it wants 139px of
+     side against the legend's 104, and the board then asks for 505px of the 448 it has —
+     so the grid shrank the auto rows instead and clipped 17px of pile, counts and all,
+     which looked like a styling slip and was actually the board being 57px over budget.
+     One row costs the base 45px of width, which it scrolls, and nothing else. */
+  /* Column order is the desktop's, because the DOM order is: legend, piles, base, runes.
+     Auto-placement follows the DOM, so naming the columns in any other order silently
+     puts the PILES in the flexible track and solves the base to 45px — which is the same
+     failure the desktop rule already carries a comment about, arrived at from the other
+     direction. */
+  .side { grid-template-columns: auto 3.75rem minmax(0, 1fr) 3.6rem; gap: .3rem; }
+  .zone { padding: .2rem .25rem; border-radius: .4rem; }
+  .zone > .lbl { font-size: .46rem; letter-spacing: .06em; top: .12rem; left: .3rem; right: .3rem; }
+  .zonerow { padding-top: .66rem; gap: .22rem; }
+  /* The base scrolls rather than wrapping: a wrapped second row would push the
+     battlefields off the bottom of the screen, and the battlefields are the game. */
+  .base .zonerow { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
+    scrollbar-width: none; overscroll-behavior-x: contain; }
+  .base .zonerow::-webkit-scrollbar { display: none; }
+  .base .zonerow > .card { flex: 0 0 auto; }
+
+  /* The piles are 24px thumbnails here, against style.css's note that they should take
+     a board card's width. That note is about a desktop board, where the piles sit
+     beside the base and must read as the same kind of object. On a 402px screen the
+     rail is 68px wide and two board-width piles would take the base's whole column to
+     say what the count under them already says. The inspector is one tap away. */
+  .zone.piles .zonerow { gap: .25rem; padding-top: .6rem; justify-content: center; }
+  .zone.piles .pile .card { width: 1.42rem; }
+  /* Art only, the way the deck picker's tiles do it. A 23px face still tries to draw a
+     name, a type line and a might stat on top of each other, and the result is a smudge
+     that reads as a rendering fault. The art alone says "there is a trash and something
+     is in it"; the count below says how much, and a tap opens the real list. */
+  .zone.piles .pile .card-plate,
+  .zone.piles .pile .card-stats,
+  .zone.piles .pile .card-corners { display: none; }
+  .zone.piles .pile .card-art::after {
+    background: linear-gradient(to top, rgba(5,8,14,.5) 0%, rgba(5,8,14,0) 45%); }
+  .pile-n { font-size: .46rem; letter-spacing: .06em; }
+  .pile-word { display: none; }
+
+  /* The runes, and what they can still buy. The words go; the numbers stay, because
+     the numbers are what decides every turn. */
+  .runes { width: 100%; padding-top: .62rem; gap: .1rem; }
+  .rune { width: .62rem; height: .92rem; border-radius: .14rem; }
+  .pool { font-size: .54rem; line-height: 1.35; margin-top: .18rem; }
+  .paylbl { display: none; }
+
+  /* The opponent's hand: the count is the information, so the fan shrinks first. */
+  #them-hand { min-height: 1.9rem; gap: .35rem; }
+  .th-fan .card-tiny + .card-tiny { margin-left: -.72rem !important; }
+  .th-count { font-size: .5rem; letter-spacing: .08em; }
+  .th-reveal { gap: .2rem; max-width: 96vw; }
+
+  /* The battlefields keep the flex row — two of them at 190px each is still two
+     battlefields, and stacking them would cost the one glance that says who is
+     winning. Their printed text is already hidden below 820px. */
+  .bfrow { gap: .35rem; }
+  .bf { padding: .25rem; border-radius: .45rem; min-height: calc(var(--card-board-w) * 2.95); gap: .15rem; }
+  .bf .bfname { font-size: .52rem; letter-spacing: .05em; }
+  .bf .lane { gap: .15rem; min-height: calc(var(--card-board-w) * 1.44); }
+
+  /* --------------------------------------------------------------- card faces */
+  /* A 48px board card cannot carry a type line, a subtitle and two keyword names on
+     top of a name — at any font size those five things are a grey smudge. It keeps
+     what locates a card on a board: the art, the name, the cost, the might, and the
+     keywords that change how it fights. Everything else is one press away, which is
+     the trade the inspector exists to make. */
+  .card-board .card-type,
+  .card-board .card-subtitle { display: none; }
+  .card-board .card-corners { left: .18rem; right: .18rem; gap: .1rem; }
+  .card-board .pip { font-size: .56em; padding: .02rem .14rem; min-width: .82rem; }
+  .card-board .pip.dom { padding: .08rem .12rem; }
+  .card-board .pip.cost .ic-power { letter-spacing: -.06em; padding: 0 .06em; }
+  .card-board .card-plate { padding: .16rem .2rem .18rem; }
+  .card-board .card-name { font-size: .52em; line-height: 1.04;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card-board .card-kw { font-size: .5em; line-height: 1.05; margin-top: .04rem;
+    display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+  /* The hand is the one place a card is being CHOSEN rather than located, so it keeps
+     its type line — it is the difference between a Unit you can commit and a Reaction
+     you are holding. The name clamps instead of wrapping to four lines over the art. */
+  .card-hand .card-name { font-size: .66em; line-height: 1.06;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card-hand .card-subtitle { font-size: .44em; }
+  /* One line. Two put "MOUNT TARGON" straight under the might stat, which sits in that
+     corner absolutely and does not move for it. The second tag is in the inspector. */
+  .card-hand .card-type { font-size: .5em; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; }
+  .card-hand .card-kw { font-size: .5em; }
+
+  /* ------------------------------------------------------------------- hand */
+  /* Five cards at 69px is 345px of a 402px screen; seven is 483 and the last two were
+     simply clipped away by `overflow:hidden`. It scrolls. `safe center` centres a hand
+     that fits and falls back to the left edge for one that does not — plain `center`
+     overflows in BOTH directions and the first card cannot be scrolled back to. */
+  #hand {
+    justify-content: flex-start;
+    justify-content: safe center;
+    gap: .25rem; padding: .5rem .5rem .25rem;
+    overflow-x: auto; overflow-y: hidden;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  #hand::-webkit-scrollbar { display: none; }
+  /* A hand wider than the screen has to LOOK scrollable or the sixth card does not exist.
+     Masked rather than covered by a gradient: a gradient over the row would be an overlay
+     across the cards, and an overlay over the hand is an overlay over every tap target. */
+  #hand.scrolls { mask-image: linear-gradient(to right, transparent 0, #000 1.1rem,
+    #000 calc(100% - 1.1rem), transparent 100%); }
+  #hand .card-hand { flex: 0 0 auto; scroll-snap-align: center; cursor: pointer; }
+  /* There is no hover to lift for, and a lift the size of the desktop one would be
+     clipped by the row it scrolls in. Selection is what the lift now means. */
+  #hand .card-hand:hover { transform: none; }
+  #hand .card-hand.role-selected,
+  #hand .card-hand.toss { transform: translateY(-.3rem); }
+
+  /* ------------------------------------------------------------- the prompt bar */
+  /* A real grid row, docked at the bottom, inside the home-indicator inset. The text
+     is on the left where it is read and the buttons are on the right where the thumb
+     is. It never moves: a control that changes place between turns is a control the
+     player has to look for. */
+  #prompt {
+    position: static; transform: none; grid-row: 4;
+    max-width: none; width: 100%;
+    border-radius: 0; border: 0; border-top: 1px solid var(--edge);
+    flex-wrap: nowrap; align-items: center; justify-content: space-between;
+    gap: .45rem; padding: .35rem .5rem; font-size: .68rem; min-height: 3.1rem;
+  }
+  .promptblock { flex: 1 1 auto; text-align: left; line-height: 1.3;
+    max-height: 3.4em; overflow-y: auto; overscroll-behavior: contain; }
+  .promptwhy { font-size: .62rem; margin: .04rem 0 .1rem; }
+  /* 44px of thumb. These are the only buttons in the game pressed every single turn. */
+  .promptbtn { flex: 0 0 auto; min-height: 2.5rem; min-width: 4.6rem;
+    padding: .5rem .9rem; font-size: .84rem; border-radius: .45rem; }
+
+  /* -------------------------------------------------------------- the chain */
+  /* It sits at the TOP of the board on a phone rather than the middle. Centred, at
+     desktop size, it covered both battlefields and the prompt at once — the one thing
+     an overlay may not do is cover what the player is being asked to look at. */
+  #chain { top: .2rem; transform: translateX(-50%); max-width: 97%;
+    padding: .3rem .4rem .35rem; gap: .2rem; }
+  .chain-head { font-size: .5rem; letter-spacing: .1em; gap: .35rem; }
+  /* Secondary, so it does not get the full 44px — but it was 21px tall, which is not a
+     button on a phone, it is a decoration a thumb keeps missing. */
+  .chain-toggle { padding: .3rem .6rem; font-size: .6rem; min-height: 2.15rem;
+    display: inline-flex; align-items: center; }
+  .chain-row { gap: .25rem; }
+  .chain-item .card-board { width: 2.5rem; }
+  .chain-n, .chain-cap { font-size: .48rem; }
+  .chain-abil { font-size: .42rem; }
+
+  /* ---------------------------------------------------------------- the log */
+  #log { font-size: .68rem; padding: .5rem .6rem; }
+  /* The pull tab is the way back to a drawer the player closed, and on a phone it was
+     26px wide. A thumb needs 44. */
+  #logtab { width: 2.75rem; padding: 1.3rem 0; font-size: .58rem; }
+
+  /* ------------------------------------------------------------- the overlays */
+  .panel { padding: 1rem 1.1rem; max-width: 94vw; max-height: 82dvh; overflow-y: auto;
+    overscroll-behavior: contain; }
+  #help .panel { text-align: left; font-size: .82rem; }
+  .choice-panel { padding: .8rem .7rem; max-width: 96vw; max-height: 86dvh; }
+  .choice-cards { gap: .45rem; margin: .5rem 0 .7rem; }
+  /* Big enough to READ, because a choice panel is the one surface where the card face
+     is the question. Two to a row at 402px. */
+  .choice-cards .card { width: min(41vw, 9rem); }
+  .choice-prompt { font-size: .86rem; }
+  .choice-hint { font-size: .68rem; }
+  #choicemodal.peek .choice-restore { margin-top: calc(var(--chrome-top) + .5rem);
+    padding: .6rem 1.2rem; }
+  .pile-grid { gap: .35rem; max-height: 62dvh; }
+  .pile-cell .card-hand { width: min(27vw, 6rem); }
+
+  /* The spotlight is the opponent's card, held for a beat. It sits higher on a phone:
+     centred, its bottom edge reached into the hand. */
+  #spotlight { top: 38%; }
+
+  /* ------------------------------------------------------------- title screen */
+  /* "BREACHFORGE" at 4.2rem with .12em of tracking is 465px wide. The screen is 402. */
+  #title h1 { font-size: clamp(2rem, 11.5vw, 4.2rem); letter-spacing: .08em; }
+  #title { gap: .8rem; padding-left: 1rem; padding-right: 1rem; }
+  #title .sub { font-size: .6rem; letter-spacing: .22em; }
+  #title .btn { padding: .7rem 1.2rem; }
+  .disclaimer { font-size: .56rem; padding: 0 .8rem; bottom: calc(.6rem + env(safe-area-inset-bottom)); }
+
+  /* -------------------------------------------------------------- deck picker */
+  /* The header was a single nowrap flex row and the Play button rendered at x=385..467
+     — off the screen, on the screen whose only job is to start a game. */
+  #deckpick { padding: .8rem .7rem; gap: .7rem; }
+  #deckpick > div:first-child { flex-wrap: wrap; gap: .5rem; }
+  #deckpick h2 { font-size: 1rem; flex: 1 1 100%; }
+  #deckpick .btn { padding: .55rem 1.1rem; }
+  /* `1fr` and nothing else gave a 740px window ONE 718px tile, whose content packs left
+     — which put the List button at the tile's own centre point, so a tap meant for the
+     tile opened the deck list instead. min(100%,16rem) is one column on a phone and two
+     as soon as there is room for two, which is what the desktop rule already does. */
+  .deckgrid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr)); gap: .5rem; }
+  .decktile { padding: .45rem; gap: .55rem; }
+  .decktile .tile-art { width: 4.2rem; }
+  .decktile .nm { font-size: .84rem; }
+  .decktile .meta { font-size: .64rem; }
+  /* Pinned to the right edge, so it cannot drift into the middle of a wide tile however
+     wide the tile gets. */
+  .listbtn { padding: .55rem .9rem; font-size: .72rem; align-self: center;
+    min-height: 2.6rem; margin-left: auto; }
+}
+
+/* ---------------------------------------------------------- the small phones
+   The topbar above is solved for 402px: two score rows and three 44px buttons come to
+   339px, which fits an iPhone 16 Pro and does NOT fit an iPhone SE or a Galaxy S9+ at
+   320. The buttons went off the edge again, in exactly the way this whole file exists to
+   have fixed. The pips give up the width rather than the buttons — a pip is a glance and
+   a button a player cannot reach is a feature they do not have. */
+@media (max-width: 380px) {
+  #topbar { gap: .2rem; padding: 0 .25rem; }
+  .scoreline { gap: .15rem; }
+  .sl-lbl { font-size: .48rem; letter-spacing: .02em; }
+  .pips { gap: .05rem; }
+  .sp { width: .3rem; height: .3rem; }
+  .topbtns { gap: .2rem; }
+  .topbtn { min-width: 2.6rem; padding: .2rem .25rem; font-size: .84rem; }
+  /* The board itself narrows with it: the side rails were measured against 402px too. */
+  :root { --card-board-w: 2.95rem; --card-hand-w: 4.3rem; }
+  .side { grid-template-columns: auto 3.3rem minmax(0, 1fr) 3.2rem; gap: .22rem; }
+  .zone.piles { width: 3.3rem; }
+  .zone.piles .pile .card { width: 1.24rem; }
+  .rune { width: .55rem; height: .82rem; }
+  .pool { font-size: .5rem; }
+}
+
+/* ------------------------------------------------------------- the inspector
+   The read, on a device with no hover and no tooltip. It is a modal because a phone
+   has nowhere to put a flyout — 19rem of card does not fit beside a 402px board — and
+   because the tap that dismisses it must not also play the card underneath it.
+   Written outside the media query on purpose: js/touch.js opens it whenever the
+   PRIMARY POINTER is coarse, which is a property of the device and not of the window
+   width, and a tablet in a narrow window is still a tablet. */
+#inspect {
+  position: fixed; inset: 0; z-index: 320;
+  display: flex; align-items: center; justify-content: center;
+  padding: calc(1rem + env(safe-area-inset-top)) 1rem calc(1rem + env(safe-area-inset-bottom));
+  background: rgba(4, 7, 13, .88); backdrop-filter: blur(4px);
+  -webkit-tap-highlight-color: transparent;
+}
+#inspect.hidden { display: none !important; }
+.inspect-panel { display: flex; flex-direction: column; align-items: center; gap: .7rem;
+  max-height: 100%; overflow-y: auto; overscroll-behavior: contain; }
+/* NO min-height override. The preview card's 25rem minimum is what keeps the plate at
+   the BOTTOM of the face — .card is justify-content:flex-end and the plate is the only
+   in-flow child, so a card allowed to shrink to its text put the plate at the top, under
+   the absolutely positioned corner pips, and drew the name straight through the domain.
+   The panel scrolls instead; a tall card is a scroll, not a collapse. */
+.inspect-panel .card-preview { flex: 0 0 auto; }
+/* The sentence a desktop hides in a tooltip. Gold, because every time it appears it is
+   the answer to "why can't I play this?". */
+.inspect-note { max-width: min(78vw, 19rem); font-size: .78rem; line-height: 1.4;
+  color: #ffca63; border-left: 2px solid #ffca63; padding-left: .55rem; text-align: left; }
+.inspect-close { min-height: 2.6rem; min-width: 7rem; }
+
+/* ---------------------------------------------------------------- orientation
+   This board is a vertical stack — their hand, their side, the battlefields, your
+   side, your hand — and at 352px of height a phone on its side has room for four of
+   the five. Portrait is the shape it is drawn for, and saying so once beats letting a
+   player find out by trying to play a game in it.
+
+   It is advice, not a lock: js/touch.js dismisses it on a tap and the rules above still
+   apply underneath, so a player who wants to play sideways gets a coherent board with
+   a scrolling middle rather than a broken one. */
+#rotate { display: none; }
+@media (orientation: landscape) and (max-height: 480px) and (pointer: coarse) {
+  #rotate {
+    position: fixed; inset: 0; z-index: 400;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: .8rem; text-align: center; padding: 1.5rem;
+    background: radial-gradient(120% 90% at 50% -10%, #1b2540 0%, #080b14 60%, #05070d 100%);
+  }
+  #rotate.dismissed { display: none; }
+  #rotate .glyph { font-size: 2.6rem; }
+  #rotate h2 { margin: 0; font-weight: 300; letter-spacing: .06em; font-size: 1.15rem; }
+  #rotate p { margin: 0; color: var(--dim); font-size: .78rem; max-width: 26rem; line-height: 1.5; }
+  #rotate .hint { color: #63748f; font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; }
+  /* Behind the notice, for anyone who dismisses it: the board keeps its shape and the
+     middle scrolls rather than the battlefields being solved to nothing. */
+  #boardwrap { overflow-y: auto; overscroll-behavior: contain; }
+  :root { --chrome-top: 2.2rem; --chrome-bottom: 6.6rem;
+    --card-board-w: 2.8rem; --card-hand-w: 3.9rem; }
+
+  /* A preview card is 304x400 and a phone on its side is 352 tall, so BOTH surfaces that
+     show one were taller than the screen. The spotlight was the worse of the two — it
+     takes no clicks, so it did not block the game, it simply covered all of it for 2.8
+     seconds every time the opponent played a card.
+
+     Scaled, not resized: the card's 25rem minimum is what holds its plate at the bottom
+     of the face (see .inspect-panel above), and shrinking the box instead puts the name
+     back through the domain pip. A transform on the CARD also leaves #spotlight's own
+     translate/scale pair alone, which owns the fade-in and must not be fought over. */
+  #spotlight { top: 50%; }
+  #spotlight .card-preview { transform: scale(.62); }
+  /* The inspector turns on its side with the phone: the card beside its note, rather
+     than a column that has to be scrolled to reach the Close button. */
+  .inspect-panel { flex-direction: row; align-items: center; gap: .2rem; }
+  .inspect-panel .card-preview { transform: scale(.66); margin: -6.5rem -5rem; }
+  .inspect-note { max-width: 15rem; font-size: .72rem; }
+  .inspect-close { min-height: 2.4rem; min-width: 5.5rem; }
+}

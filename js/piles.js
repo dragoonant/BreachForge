@@ -42,8 +42,12 @@
       box.appendChild(RB.el('card card-board card-back'));
     }
 
+    // The word and the count in separate spans: on a phone the pile face is 25px wide and
+    // "TRASH 0" is three times that, so css/mobile.css drops the word. It is the only part
+    // that is redundant there — the deck shows a back and the trash shows its top card.
     const n = RB.el('pile-n');
-    n.textContent = (which === 'deck' ? 'DECK ' : 'TRASH ') + list.length;
+    n.innerHTML = '<span class="pile-word">' + (which === 'deck' ? 'DECK' : 'TRASH') +
+      ' </span>' + list.length;
     box.appendChild(n);
 
     if (canOpen) {
@@ -105,9 +109,13 @@
           cell.appendChild(n);
         }
         // Hover reads the card at full preview size, the same as anywhere else on the
-        // board. A pile you can see but not read is a list of names.
-        cell.addEventListener('mouseenter', () => RB.showPreview(cell, card));
-        cell.addEventListener('mouseleave', RB.hidePreview);
+        // board. A pile you can see but not read is a list of names. A finger has no
+        // hover, so on a phone the same read is a tap into the inspector.
+        if (RB.touch.coarse) cell.addEventListener('click', ev => { ev.stopPropagation(); RB.inspect(card); });
+        else {
+          cell.addEventListener('mouseenter', () => RB.showPreview(cell, card));
+          cell.addEventListener('mouseleave', RB.hidePreview);
+        }
         grid.appendChild(cell);
       });
     }

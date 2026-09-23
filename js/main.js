@@ -13,6 +13,7 @@
     }
     // Bound once: #log survives every repaint, and a hover listener per log entry would
     // be rebound and leaked a few hundred times a game.
+    RB.initTouch();
     RB.initLogHover();
     RB.initChoiceKeys();
     RB.initScreens();
