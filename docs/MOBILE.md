@@ -20,6 +20,25 @@ would make landscape a real surface is `TODO.md` T-2, with the measurements that
 
 This is a product decision, not a limitation: portrait is what the board's shape asks for.
 
+## 1a. Width and pointer are two different questions
+
+Two media queries decide two different things, and conflating them is how a tablet ends up
+with a 26px pull tab.
+
+| question | asked by | answers |
+|---|---|---|
+| **How much room is there?** | `@media (max-width: 760px)` (and 380px under it) | the phone board — side rails, docked prompt bar, scrolling hand |
+| **What is holding it?** | `@media (pointer: coarse)` in CSS, `RB.touch.coarse` in JS | 44px targets, no stuck `:hover`, long press instead of a flyout |
+
+An **iPad correctly gets the desktop board** — it has the room — and the pointer query is what
+gives it touch-sized controls and the press-to-read gesture anyway. The coarse block sits
+*before* the phone block in `css/mobile.css` so the phone narrows it further, never the reverse.
+
+`RB.touch.coarse` reads the same query and **listens to it**: docking a mouse to a tablet fires
+`change`, and the board repaints, rebinding every card to the other gesture. An earlier draft
+also flipped it to `true` on the first `touchstart` and never flipped back, which cost a
+touchscreen laptop its hover for the rest of the session after one stray tap.
+
 ## 2. The three things a phone does not have
 
 ### No hover
@@ -91,6 +110,33 @@ was a visible fault first.
   the turn line, the rune pool, the deck-picker List button — moved out of `style.cssText` and
   into a class. That extraction is a pure refactor: the desktop board is **pixel-identical**.
 
+## 5a. The form factors this was measured at
+
+Every row is the same pinned game, driven through to the human's first main phase, then
+audited for: anything wider than the viewport that no ancestor can scroll to, any button under
+44px on a coarse pointer, any of the eight board zones solved to nothing, and page errors.
+
+| | width | phone CSS | pointer | read gesture |
+|---|---|---|---|---|
+| desktop 1920 / 1440, laptop 1280 / 1024 | ≥1024 | no | fine | hover flyout |
+| narrow window 900 / 800 | 800–900 | no | fine | hover flyout |
+| narrow window 740 | 740 | **yes** | fine | hover flyout |
+| iPad Pro 11, iPad Mini (both orientations) | 768–1194 | no | **coarse** | long press |
+| iPhone 16 Pro, Pixel 7 | 402–412 | yes | coarse | long press |
+| iPhone SE, Galaxy S9+ | 320 | yes | coarse | long press |
+
+Three of these were faults found by running the matrix, not by design:
+
+- **320px.** The topbar is solved for 402: two score rows and three 44px buttons come to 339px.
+  At 320 the buttons went off the edge again, in exactly the way this file exists to have
+  fixed. The pips give up the width, not the buttons.
+- **740px.** The phone rule forced the deck grid to a single column, which at 740 is one 718px
+  tile whose content packs left — putting the List button at the tile's own centre point, so a
+  tap meant for the tile opened the deck list. `minmax(min(100%,16rem),1fr)` is one column on a
+  phone and two as soon as there is room.
+- **Tablets.** They take the desktop board, and were taking the desktop's 26px log tab and
+  36x23 topbar buttons with it. Hence §1a.
+
 ## 6. How to verify a change here
 
 Rule 9 means a browser, and for this layer it means a phone-shaped one. Drive the real page under
@@ -104,3 +150,22 @@ deck picker → mulligan → a played game, and assert three things on every scr
 
 Then check the gestures themselves, because they are the part that has no CSS to inspect: a long
 press opens the inspector, a tap dismisses it, and a tap on a card with no legal action reads it.
+
+Then run the **matrix in §5a**, because a phone rule is a rule about every window narrower than
+760px and a pointer rule is a rule about every tablet — two of the three faults above were found
+nowhere near a phone.
+
+And prove the desktop did not move, against `origin/main` rather than against memory. Two traps
+make a naive screenshot diff lie:
+
+- **The `role-actable` pulse takes its phase from the wall clock** (`js/ui.js` sets
+  `animationDelay` from `Date.now()`), so two shots of the same build differ by a frame of glow.
+  Freeze animations and transitions before comparing.
+- **The game is not pinned by the seed alone.** Your deck is pre-picked at init from a *random*
+  seed and stays whatever it was, so the seed field only pins the rival — click a deck tile.
+  The AI's 420ms beat needs pinning too, or a fixed wait lands a different number of actions in.
+
+Even then the board has a **2-pixel noise floor**: `origin/main` diffed against itself across two
+runs shows 2 pixels at a max channel delta of 8, on the bottom edge of the legend zone. Compare
+geometry as well as pixels, and do not chase anything at that scale until you have reproduced it
+against a build compared with itself.

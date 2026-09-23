@@ -21,9 +21,16 @@
   const T = RB.touch = RB.touch || {};
 
   // matchMedia answers for the PRIMARY pointer, which is the right question: a laptop
-  // with a touchscreen still has a mouse and must keep its hover flyout. A real touch
-  // event is the second and stronger answer, for the device that lies.
-  T.coarse = window.matchMedia('(pointer: coarse)').matches;
+  // with a touchscreen still has a mouse and must keep its hover flyout.
+  //
+  // It is LIVE, and that is the whole reason it is the only answer here. The first draft
+  // also flipped this to true on the first touchstart, for a device that reports a fine
+  // pointer and is then touched — but nothing takes it back, so one stray tap on a
+  // touchscreen laptop cost that session its hover for good. A query that already
+  // reports the primary pointer, and re-reports it when the hardware changes, says the
+  // same thing without the one-way door.
+  const MQ = window.matchMedia('(pointer: coarse)');
+  T.coarse = MQ.matches;
 
   const HOLD = 340;   // ms before a touch becomes a read
   const SLOP = 12;    // px of drift before it is a scroll and not a press at all
@@ -90,10 +97,14 @@
   };
 
   RB.initTouch = function () {
-    // A device that reports a fine pointer and is then touched is a device with a finger
-    // on it. Every card element is rebuilt on the next RB.paintBoard, so the switch takes
-    // effect on the first repaint after the first touch.
-    window.addEventListener('touchstart', () => { T.coarse = true; }, { once: true, passive: true });
+    // Undocking a mouse from a tablet, or docking one to it, changes the answer. Every
+    // card element is rebuilt by RB.paintBoard, so a repaint is all it takes to rebind
+    // the whole board to the other gesture — and a game in progress gets it at once
+    // rather than on the player's next action.
+    MQ.addEventListener('change', function (ev) {
+      T.coarse = ev.matches;
+      if (RB.ui.state) RB.paintBoard(RB.ui.state, RB.ui.me);
+    });
     // The whole overlay dismisses, not just the button: the gesture that opened it was a
     // press anywhere, so the gesture that closes it is a tap anywhere.
     document.getElementById('inspect').addEventListener('click', RB.closeInspect);
