@@ -530,6 +530,19 @@ export function run(t) {
       'and the ordinary base play is still main-phase only');
   });
 
+  t.test('a bug trace carries the seed, both deck ids and every action applied', () => {
+    const s = game('blackbox', 2, 5);
+    RB.recordStart(s);
+    const a1 = RB.legalActions(s)[0];
+    RB.recordAction(a1);
+    const trace = JSON.parse(RB.bugReport('what looked wrong'));
+    t.eq(trace.seed, s.seed);
+    t.eq(trace.decks, s.players.map(p => p.deckId));
+    t.eq(trace.actions, [a1]);
+    t.eq(trace.note, 'what looked wrong');
+    t.ok(trace.at, 'the trace is stamped with a time');
+  });
+
   t.test('the same seed and action list reproduce the same game', () => {
     const run = () => {
       let s = game('deterministic', 3, 7);

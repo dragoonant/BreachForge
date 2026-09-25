@@ -82,7 +82,23 @@
     bug.style.cssText = 'padding:.2rem .6rem;font-size:.7rem';
     bug.textContent = '🐞';
     bug.title = 'Save a bug trace — hand it to tools/replay-report.mjs';
-    bug.onclick = () => RB.downloadBugReport(window.prompt('What looked wrong?') || '');
+    bug.onclick = () => {
+      // The note is optional and never gates the save: window.prompt is suppressed
+      // outright in some embedded browsers, where it returns null with no dialog shown.
+      let note = '';
+      try { note = window.prompt('What looked wrong?') || ''; } catch (e) { note = ''; }
+      const name = RB.downloadBugReport(note);
+      // Say so on the button itself. The file lands in a downloads folder the page cannot
+      // see, so without this the only thing separating a successful save from a dead
+      // button is whether the player thinks to go looking for the file.
+      bug.textContent = '✓ saved';
+      bug.title = 'Saved ' + name + ' — hand it to tools/replay-report.mjs';
+      RB.audio.play('ui.click');
+      setTimeout(() => {
+        bug.textContent = '🐞';
+        bug.title = 'Save a bug trace — hand it to tools/replay-report.mjs';
+      }, 2200);
+    };
     btns.appendChild(bug);
     bar.appendChild(btns);
   }
