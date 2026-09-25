@@ -478,6 +478,58 @@ export function run(t) {
     t.ok(theirs.every(i => s.bf[0].units.includes(i)), 'nothing died before the answer');
   });
 
+  // [Ambush] reads "You may play me as a [Reaction] to a battlefield where you have units."
+  // The engine honoured the play LOCATION half and judged SPEED from the card's keyword
+  // list alone, so an Ambush unit was illegal in the showdown that its own friendly unit
+  // opened by moving in — the one moment the keyword exists for.
+  //
+  // unl-120 proves both halves at once: it carries [Ambush] and a second, wider
+  // play-location permission ("even if you don't have units there"), and that second
+  // clause grants the location only.
+  const ambushSetup = () => {
+    let s = game('ambush', 0, 1);
+    const me = s.active, them = RB.opponentOf(me);
+    // Both battlefields theirs, each held by a unit of theirs. I will move onto bf0 only.
+    for (const i of [0, 1]) {
+      s.bf[i].units.push(RB.mint(s, 'unl-113', them));
+      s.bf[i].controller = them;
+    }
+    const yi = RB.mint(s, 'unl-113', me);
+    RB.obj(s, yi).exhausted = false;
+    s.players[me].base.push(yi);
+    const rengar = RB.mint(s, 'unl-120', me);
+    s.players[me].hand.push(rengar);
+    s.players[me].pool.energy = 20;
+    for (const d of RB.DOMAINS) s.players[me].pool.power[d] = 5;
+    return { s, me, yi, rengar };
+  };
+
+  t.test('[Ambush] lets a unit be played during a showdown at a battlefield where you have units', () => {
+    const { s, me, yi, rengar } = ambushSetup();
+    const move = RB.legalActions(s).find(a => a.t === 'move' && (a.iids || []).includes(yi) && a.to === 'bf0');
+    t.ok(move, 'the standard move onto bf0 is offered');
+    const after = RB.apply(s, move);
+    t.ok(after.showdown, 'moving in contested bf0 and opened a showdown');
+    t.eq(RB.whoActs(after), me, 'I hold priority in the showdown I opened');
+    const plays = RB.legalActions(after).filter(a => a.t === 'play' && a.iid === rengar);
+    t.ok(plays.some(a => a.to === 'bf0'),
+      'the Ambush unit may be played to the battlefield where my unit now stands');
+  });
+
+  t.test('[Ambush] grants Reaction speed only where you have units, not at every legal destination', () => {
+    const { s, yi, rengar } = ambushSetup();
+    const move = RB.legalActions(s).find(a => a.t === 'move' && (a.iids || []).includes(yi) && a.to === 'bf0');
+    const after = RB.apply(s, move);
+    const plays = RB.legalActions(after).filter(a => a.t === 'play' && a.iid === rengar);
+    // bf1 holds only enemy units, so unl-120's second permission makes it a legal LOCATION
+    // at main speed — but Ambush's Reaction is scoped to where you have units, and bf1 is
+    // not one of those. Offering it there would invent a speed the card does not have.
+    t.ok(!plays.some(a => a.to === 'bf1'),
+      'the enemy-units permission does not carry Reaction speed with it');
+    t.ok(!plays.some(a => a.to === 'base'),
+      'and the ordinary base play is still main-phase only');
+  });
+
   t.test('the same seed and action list reproduce the same game', () => {
     const run = () => {
       let s = game('deterministic', 3, 7);

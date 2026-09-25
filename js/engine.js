@@ -116,12 +116,22 @@
     return out;
   };
 
-  function timingOk(state, card, mode) {
+  // Whether this card may be played at this speed TO THIS DESTINATION. The destination is
+  // part of the question because [Ambush] carries its own speed and scopes it to where it
+  // is landing: "You may play me as a [Reaction] to a battlefield where you have units."
+  // A card may hold a second play-location permission that is deliberately wider — Rengar
+  // Trophy Hunter (unl-120) adds "even if you don't have units there" — and that clause
+  // grants the LOCATION only. So one card is a Reaction at the battlefield where its
+  // friends are standing and main-phase-only at the one where they are not, and a single
+  // card-level answer cannot say that.
+  function timingOk(state, card, mode, p, dest) {
     const kws = (card.abilities && card.abilities.keywords) || [];
     const has = n => kws.some(k => k === n || k.name === n);
     if (mode === 'main') return true;
-    if (mode === 'showdown') return has('Action') || has('Reaction');
-    if (mode === 'reaction') return has('Reaction');
+    const ambush = has('Ambush') && typeof dest === 'string' && dest.indexOf('bf') === 0
+      && RB.playWhere('whereIHaveUnits')(state, p, Number(dest.slice(2)));
+    if (mode === 'showdown') return has('Action') || has('Reaction') || ambush;
+    if (mode === 'reaction') return has('Reaction') || ambush;
     return false;
   }
 
@@ -173,12 +183,15 @@
     for (const iid of P.hand) {
       const card = RB.cardOf(state, iid);
       if (seen.has(card.id)) continue;               // one action per distinct card in hand
-      if (!timingOk(state, card, mode)) continue;
       // Every combination of optional additional costs the player could choose is its own
       // action, because paying one changes both what the card costs and what it does —
       // [Accelerate] is a different play, not a decision taken afterwards.
       if (RB.restricted(state, p, 'play', card.type)) continue;
-      const dests = playDestinations(state, p, card);
+      // Timing is asked per destination rather than once per card: see timingOk. Asking it
+      // first, of the card alone, is what made every [Ambush] unit unplayable in the
+      // showdown its own arrival opened.
+      const dests = playDestinations(state, p, card)
+        .filter(dest => timingOk(state, card, mode, p, dest));
       if (!dests.length) continue;
       let any = false;
       for (const pick of extraCombinations(state, p, iid, 'hand')) {
