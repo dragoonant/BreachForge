@@ -46,15 +46,34 @@
     return w;
   }
 
+  // XP is a player resource, publicly tracked (rules §728) — and until this readout existed
+  // it was tracked by nobody, because the engine had it and the board never said so. It
+  // appears once the game has any XP in it and never leaves again: the trigger is the LOG,
+  // not the current total, so spending back down to 0 does not make the chip vanish mid-turn
+  // and take the explanation of a [Level N] card with it. state.log is never trimmed.
+  function xpInPlay(state) {
+    if (state.players[0].xp || state.players[1].xp) return true;
+    for (const e of state.log) if (e.kind === 'xp') return true;
+    return false;
+  }
+
   function paintScores(state, me) {
     const bar = $('#topbar');
     bar.innerHTML = '';
+    const showXP = xpInPlay(state);
     const mk = (label, p, them) => {
       const w = el('scoreline');
       w.innerHTML = '<span style="font-size:.7rem;letter-spacing:.1em;color:#9fb0cc">' + label + '</span>';
       w.appendChild(pipRow(state.players[p].points, state.victoryScore, them));
       const n = el('', 'b'); n.textContent = state.players[p].points; n.style.marginLeft = '.25rem';
       w.appendChild(n);
+      if (showXP) {
+        const x = el('xpchip');
+        x.innerHTML = '<span class="lbl">XP</span>' + (state.players[p].xp || 0);
+        x.title = 'Experience \u2014 a player resource, not a card\u2019s. A card printed ' +
+          '[Level N] gains its extra text while its controller has N or more XP.';
+        w.appendChild(x);
+      }
       return w;
     };
     bar.appendChild(mk('YOU', me, false));

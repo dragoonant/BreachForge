@@ -85,6 +85,26 @@
     return el;
   };
 
+  // Grants aggregated the way RB.keywordValue reads them: one entry per name, values summed.
+  // A valueless grant of a name that also arrives with a value contributes 0 to the sum, so
+  // Assault + Assault 2 is Assault 2 and not Assault 3 \u2014 same arithmetic as the engine.
+  function grantedNames(granted) {
+    const order = [], val = Object.create(null);
+    for (const k of granted) {
+      const name = typeof k === 'string' ? k : k.name;
+      if (!(name in val)) { order.push(name); val[name] = 0; }
+      val[name] += typeof k === 'string' ? 0 : (k.value || 0);
+    }
+    return order.map(n => n + (val[n] ? ' ' + val[n] : ''));
+  }
+
+  function addKw(band, text) {
+    const sp = document.createElement('span');
+    sp.className = 'gr';
+    sp.textContent = (band.textContent ? '  \u00b7  ' : '') + text;
+    band.appendChild(sp);
+  }
+
   function keywordNames(card) {
     const ab = card.abilities;
     if (!ab || !ab.keywords) return [];
@@ -137,6 +157,39 @@
       }
     }
     if (o.role) el.dataset.role = o.role;
+    // renderCard puts the PRINTED keywords on the face. A granted one is live state, and it
+    // was invisible: Master Yi (unl-113) crossing 6 XP silently gains Deflect and Ganking
+    // through two conditional statics, and his card looked identical before and after. Both
+    // channels land here \u2014 RB.grantedOn returns the instance's "this turn" grants and every
+    // static whose `when` currently holds \u2014 so an "until end of turn" grant shows too.
+    //
+    // Aggregated by name with values summed, which is the rule RB.keywordValue already
+    // applies: a unit granted Assault and Assault 2 has Assault 3, and printing
+    // "+Assault \u00b7 +Assault 2" invited the reader to do arithmetic the engine had already
+    // done. Prefixed "+" and in its own colour because a grant SUMS with a printed keyword
+    // of the same name \u2014 "Assault 1 \u00b7 +Assault 2" is a unit with Assault 3, not a
+    // contradiction.
+    const gr = grantedNames(RB.grantedOn(state, iid));
+    if (gr.length) {
+      const plate = el.querySelector('.card-plate');
+      let band = el.querySelector('.card-kw');
+      if (!band) {
+        band = document.createElement('div');
+        band.className = 'card-kw';
+        // Ahead of the preview-only detail block and the partial note, so the band sits with
+        // the printed keywords rather than under the rules text.
+        plate.insertBefore(band, plate.querySelector('.card-detail'));
+      }
+      // "The small card shows identity; the big view shows everything"
+      // (CARD-PRESENTATION-SPEC.md \u00a70.3). Five grants at board size is 70px of unreadable
+      // text that overflows the plate and runs under the Might number \u2014 measured, with a
+      // damaged stat, not assumed. The board card says which grants it has room to name and
+      // how many more there are; the preview names them all.
+      const preview = el.classList.contains('card-preview');
+      const show = preview ? gr : gr.slice(0, 3);
+      for (const name of show) addKw(band, '+' + name);
+      if (show.length < gr.length) addKw(band, '+' + (gr.length - show.length) + ' more');
+    }
     return el;
   };
 

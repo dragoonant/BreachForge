@@ -75,7 +75,18 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .card-preview .card-subtitle{font-size:.82rem}
 .card-type{font-size:.6em;color:var(--dim);margin-top:.08rem;text-transform:uppercase;letter-spacing:.05em}
 .card-preview .card-type{font-size:.72rem}
-.card-kw{font-size:.6em;color:#ffdca8;margin-top:.1rem;line-height:1.15}
+.card-kw{font-size:.6em;color:#ffdca8;margin-top:.1rem;line-height:1.15;
+  /* .card-stats is absolutely positioned bottom-right OVER the plate, so whatever line
+     lands last runs under the Might number. The keyword band is that line on a unit, and
+     with grants appended it is reliably two lines deep — measured overlap, not a worry.
+     Reserving the gutter here wraps the text before the number instead of under it. The
+     reserve is sized to the WIDEST the stat gets \u2014 a damaged "2/4", three glyphs at
+     .95em of the card, not the one glyph an undamaged unit shows. */
+  padding-right:4.8em}
+/* A GRANTED keyword, not a printed one — a [Level N] static that has switched on, or an
+   "until end of turn" grant. Its own colour because the distinction is a rule: the printed
+   set is fixed, this set changes as XP and the turn change. */
+.card-kw .gr{color:var(--accent)}
 .card-detail{margin-top:.5rem;font-size:.82rem;line-height:1.42;white-space:pre-wrap;color:#dce6f7}
 .card-stats{position:absolute;right:.28rem;bottom:.24rem;z-index:3;display:flex;gap:.2rem}
 .stat{font-weight:800;font-size:.95em;color:#fff;
@@ -150,6 +161,11 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .sp.on{background:var(--accent);box-shadow:0 0 7px var(--accent);border-color:var(--accent)}
 .sp.on.them{background:#e0563b;box-shadow:0 0 7px #e0563b;border-color:#e0563b}
 .sp.win{outline:1px solid #fff}
+/* The XP readout, beside the points it is not. Present only once the game has XP in it. */
+.xpchip{display:inline-flex;align-items:center;gap:.22rem;margin-left:.3rem;padding:.04rem .32rem;
+  font-size:.72rem;font-weight:700;color:#cfe0ff;border:1px solid rgba(111,211,232,.35);
+  border-radius:999px;background:rgba(111,211,232,.10)}
+.xpchip .lbl{font-size:.62rem;font-weight:600;letter-spacing:.08em;color:#8fa6c8}
 #boardwrap{position:relative;display:grid;grid-template-rows:auto 1fr auto 1fr;gap:.4rem;padding:.4rem .6rem;
   overflow:hidden;min-width:0}
 /* legend | piles | base | runes. The base is the only flexible column, so adding the

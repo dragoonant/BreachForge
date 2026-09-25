@@ -560,6 +560,11 @@
         case 'combatDamage': t = 'Might ' + d.attackerMight + ' vs ' + d.defenderMight; break;
         case 'die': t = nm(d.iid) + ' was destroyed'; break;
         case 'conquer': t = you(d.p) + ' conquered ' + bfnm(d.bf); break;
+        // The event carries the new TOTAL, not the delta (js/abilities.js, js/ops-unl.js all
+        // log `xp` after assigning), so the line states the total. Deriving a delta from the
+        // previous xp line would be wrong on the first line of a truncated view, and a wrong
+        // number is worse than one fewer number.
+        case 'xp': t = you(d.p) + ' now have ' + d.xp + ' XP'; break;
         case 'score': cls = ' score'; t = you(d.p) + ' scored — ' + d.points + ' point' + (d.points === 1 ? '' : 's') +
           (d.how === 'hold' ? ' (hold)' : d.how === 'conquer' ? ' (conquer)'
             : d.how === 'burnOut' ? ' (they burned out)' : ''); break;
