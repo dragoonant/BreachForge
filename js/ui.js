@@ -7,6 +7,7 @@
   U.sel = null;          // the selected hand card or unit
   U.toss = [];           // cards set aside during the mulligan
   U.picks = [];          // running selection while answering a targeting prompt
+  U.payAsk = null;       // a destination reached by several actions: which costs to pay
   U.state = null;
   U.me = 0;
   U.difficulty = 'competition';
@@ -78,6 +79,7 @@
   RB.startGame = function (state, me, difficulty) {
     state.humanSeat = me;                 // from here the engine asks this seat to choose
     U.state = state; U.me = me; U.difficulty = difficulty || 'competition'; U.sel = null;
+    U.payAsk = null;
     RB.resetChainView();
     RB.recordStart(state);
     RB.showScreen('game');
@@ -107,6 +109,7 @@
     RB.recordAction(action);
     U.state = RB.apply(before, action);
     U.sel = null;
+    U.payAsk = null;
     soundFor(U.state, before);
     RB.step();
   };
@@ -254,17 +257,42 @@
     });
   };
 
+  // Every optional additional cost a card carries is its OWN play action at the same
+  // destination — "[Accelerate] is a different play, not a decision taken afterwards", as
+  // the engine puts it. So a destination can be reached by several actions that differ
+  // only in what the player pays, and taking the first of them silently answers a printed
+  // question on their behalf. Akshan (sfd-109) reads "You may pay [C][C] as an additional
+  // cost to play me", and find() would have declined it every single time.
+  U.playsTo = function (state, to) {
+    return RB.legalActions(state).filter(x => U.actsOn(x, U.sel) && x.to === to);
+  };
+
   U.bindDrop = function (box, state, me) {
     box.addEventListener('click', () => {
       if (!U.sel) return;
-      const to = box.dataset.drop;
-      const a = RB.legalActions(state).find(x => U.actsOn(x, U.sel) && x.to === to);
-      if (!a) { RB.audio.play('ui.invalid'); return; }
-      RB.commit(a);
+      const opts = U.playsTo(state, box.dataset.drop);
+      if (!opts.length) { RB.audio.play('ui.invalid'); return; }
+      RB.audio.play('ui.click');
+      if (opts.length === 1) return RB.commit(opts[0]);
+      U.payAsk = { to: box.dataset.drop, opts: opts };
+      RB.paintBoard(state, U.me);
     });
-    if (U.sel && RB.legalActions(state).some(x => U.actsOn(x, U.sel) && x.to === box.dataset.drop))
-      box.classList.add('dropok');
+    if (U.sel && U.playsTo(state, box.dataset.drop).length) box.classList.add('dropok');
     void me;
+  };
+
+  // What one option on that question is called. The cost's prose comes from the describer
+  // in js/text.js rather than a second phrasing written here.
+  U.payLabel = function (state, iid, a) {
+    const ids = a.pay || [];
+    if (!ids.length) return 'Play for its printed cost only';
+    const parts = ids.map(id => {
+      const m = /^x(\d+)$/.exec(id);
+      if (m) return 'X = ' + m[1];
+      try { return RB.extraCostText(RB.additionalCost(state, iid, id, a.from || 'hand')); }
+      catch (e) { return id; }
+    });
+    return 'Also pay ' + parts.join(' and ');
   };
 
   function mulliganStep(state) {
@@ -367,6 +395,19 @@
       btn('Pass', () => RB.commit({ t: 'pass' }), 'primary');
       return;
     }
+    // A destination reached by more than one action, differing only in what is paid. The
+    // card names itself and shows its printed text, because the question is about a clause
+    // on that card and the player should not have to remember which.
+    if (U.sel && U.payAsk) {
+      const card = RB.cardOf(state, U.sel);
+      say('<b>' + esc(card.name) + '</b> — how do you want to pay?');
+      const pr = RB.printed && RB.printed[card.id];
+      if (pr) say('<span style="color:#9fb0cc;font-size:.72rem;white-space:pre-line">' + esc(pr) + '</span>');
+      for (const a of U.payAsk.opts)
+        btn(U.payLabel(state, U.sel, a), () => RB.commit(a), a.pay && a.pay.length ? 'primary' : '');
+      btn('Cancel', () => { U.payAsk = null; U.sel = null; RB.paintBoard(state, me); });
+      return;
+    }
     if (U.sel) {
       const dests = acts.filter(a => U.actsOn(a, U.sel) && (a.t === 'play' || a.t === 'move'));
       const hides = acts.filter(a => U.actsOn(a, U.sel) && a.t === 'hide');
@@ -378,7 +419,7 @@
       for (const h of hides)
         btn('Hide at ' + RB.card(state.bf[+h.to.slice(2)].cardId).name,
           () => RB.commit(h));
-      btn('Cancel', () => { U.sel = null; RB.paintBoard(state, me); });
+      btn('Cancel', () => { U.sel = null; U.payAsk = null; RB.paintBoard(state, me); });
       return;
     }
     // The champion is playable from its own zone, so it is counted separately — "5 of 4

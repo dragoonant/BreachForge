@@ -351,7 +351,11 @@
   function extraCost(x) {
     const bits = [];
     if (x.energy) bits.push(x.energy + ' Energy');
-    if (x.power) bits.push(x.power + ' Power');
+    // Name the domain. "2 Power" is not a cost a player can act on when six domains are
+    // in the game, and the button that offers an optional cost reads this same describer.
+    if (x.power) bits.push(x.power + ' ' +
+      (x.domains && x.domains.length && x.domains.length < RB.DOMAINS.length
+        ? x.domains.join('/') + ' ' : '') + 'Power');
     if (x.pays) {
       const fn = EXTRA_TEXT[x.pays];
       bits.push(fn ? fn(x) : x.pays.replace(/([A-Z])/g, ' $1').toLowerCase().trim());
@@ -361,6 +365,10 @@
     for (const k of Object.keys(EXTRA_NOTE)) if (x[k]) out += ' — ' + EXTRA_NOTE[k](x);
     return out;
   }
+  // Exported because the board has to LABEL an optional additional cost on the button
+  // that offers it, and a second phrasing of the same cost written in the UI is the
+  // two-homes bug this project keeps paying for. One describer, both readers.
+  RB.extraCostText = extraCost;
 
   // An ability's cost may carry a clause of its own — "this ability costs 1 less for each
   // friendly unit with Temporary" belongs to the cost, not to the effect. The mirror of

@@ -163,6 +163,13 @@
 
     const bz = el('zone base');
     bz.dataset.drop = mine ? 'base' : '';
+    // Your base is a drop destination and has to be BOUND like one. It has carried
+    // data-drop="base" from the beginning and never got bindDrop — the only call sits in
+    // the battlefield loop below — so the base never took the outline and never answered a
+    // click. Any card whose sole destination is the base and which does not auto-commit on
+    // the first click selected, said "click a highlighted destination", and left nothing on
+    // the board to click. A unit with an optional additional cost is exactly that card:
+    // two actions, same destination, so it asks.
     bz.innerHTML = '<div class="lbl">Base · ' + P.base.length + '</div>';
     paintZone(bz, mine ? 'base-mine' : 'base-theirs');
     const brow = el('zonerow');
@@ -173,6 +180,9 @@
       brow.appendChild(c);
     }
     bz.appendChild(brow);
+    // Bound last, the way each battlefield is, so the outline is applied to a finished box.
+    // `mine` already means p is the viewing seat, which is the seat bindDrop is about.
+    if (mine) RB.ui.bindDrop(bz, state, p);
     root.appendChild(bz);
 
     const rz = el('zone');

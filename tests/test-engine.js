@@ -543,6 +543,41 @@ export function run(t) {
     t.ok(trace.at, 'the trace is stamped with a time');
   });
 
+  // Akshan (sfd-109) reads "You may pay [C][C] as an additional cost to play me". An
+  // optional additional cost is its own play action at the SAME destination, so the card
+  // offers two plays to the base and neither the engine nor the board may pick for the
+  // player. The board could do neither: its only drop-zone binding was on battlefields, so
+  // a card whose sole destination is the base had nothing to click, and the first matching
+  // action would have been taken silently once it did.
+  t.test('an optional additional cost is offered as its own play at the same destination', () => {
+    const s = game('extracost', 0, 1);
+    const me = s.active;
+    // Not minted into a hand that may already hold one: the hand loop offers one action set
+    // per distinct card id, so a second copy would be skipped and prove nothing.
+    s.players[me].hand = s.players[me].hand.filter(i => RB.cardOf(s, i).id !== 'sfd-109');
+    const ak = RB.mint(s, 'sfd-109', me);
+    s.players[me].hand.push(ak);
+    s.players[me].pool.energy = 20;
+    for (const d of RB.DOMAINS) s.players[me].pool.power[d] = 5;
+
+    const plays = RB.legalActions(s).filter(a => a.t === 'play' && a.iid === ak);
+    t.eq(plays.length, 2, 'the paid and unpaid plays are both offered');
+    t.ok(plays.every(a => a.to === 'base'), 'and both go to the base, which is what made them collide');
+    t.ok(plays.some(a => !a.pay), 'one declines the additional cost');
+    t.ok(plays.some(a => (a.pay || []).includes('reclaim')), 'the other pays it');
+
+    const paid = plays.find(a => (a.pay || []).includes('reclaim'));
+    const after = RB.apply(s, paid);
+    t.eq(after.players[me].pool.power.Body, 3, 'paying it costs 2 Body Power');
+  });
+
+  t.test('a power cost names its domain, because "2 Power" is not a cost anyone can act on', () => {
+    t.ok(typeof RB.extraCostText === 'function', 'the describer is exported for the board to label with');
+    t.eq(RB.extraCostText({ power: 2, domains: ['Body'] }), '2 Body Power');
+    // Unrestricted power stays unqualified: listing all six domains is noise, not precision.
+    t.eq(RB.extraCostText({ power: 1, domains: RB.DOMAINS.slice() }), '1 Power');
+  });
+
   t.test('the same seed and action list reproduce the same game', () => {
     const run = () => {
       let s = game('deterministic', 3, 7);
