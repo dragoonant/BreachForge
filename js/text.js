@@ -370,6 +370,18 @@
   // two-homes bug this project keeps paying for. One describer, both readers.
   RB.extraCostText = extraCost;
 
+  // What to call one activated ability on a button. Its printed name when it has one —
+  // "[Equip]" is what the ability IS — and otherwise the same cost-and-effect line the
+  // card face shows for it. Not the bare cost: an ability with no cost renders "Free",
+  // and a button reading "Use: Free" names nothing the player can decide about.
+  RB.activatedName = function (s, iid, ix) {
+    const a = ((RB.cardOf(s, iid).abilities || {}).activated || [])[ix];
+    if (!a) return 'ability';
+    if (a.keyword) return a.keyword;
+    const c = cost(a), body = a.effects.map(line).join(' ');
+    return c === 'Free' ? body : c + ': ' + body;
+  };
+
   // An ability's cost may carry a clause of its own — "this ability costs 1 less for each
   // friendly unit with Temporary" belongs to the cost, not to the effect. The mirror of
   // defineExtraCostNote, for the mirror layer (RB.defineAbilityCostModifier).

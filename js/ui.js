@@ -8,6 +8,7 @@
   U.toss = [];           // cards set aside during the mulligan
   U.picks = [];          // running selection while answering a targeting prompt
   U.payAsk = null;       // a destination reached by several actions: which costs to pay
+  U.selUnits = [];       // units gathered for one simultaneous standard move (rule 144.4)
   U.state = null;
   U.me = 0;
   U.difficulty = 'competition';
@@ -15,6 +16,7 @@
   // out of one. js/render.js has had its own esc() all along; this file did not.
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const trim = (t, n) => (t.length > n ? t.slice(0, n - 1).replace(/\s+\S*$/, '') + '…' : t);
 
   // --- the log drawer -------------------------------------------------------
   // Two states, not three. Closed is a pull tab on the right edge and the board gets its
@@ -70,16 +72,52 @@
   };
 
   // A standard move carries a SET of units (rule 144.4); every other action names one card
-  // in `iid`. Until the board offers multi-select, the human's affordances bind only the
-  // one-unit groups, so a click on a unit still means "move this one".
+  // in `iid`. "Does this action involve this card" is the question here, and for a move
+  // that is membership of the set — it used to be `iids.length === 1`, which bound the
+  // human seat to one-unit groups and made every other subset the engine generates
+  // unreachable. The AI had them from the start.
   U.actsOn = function (a, iid) {
-    return a.t === 'move' ? (a.iids.length === 1 && a.iids[0] === iid) : a.iid === iid;
+    return a.t === 'move' ? a.iids.includes(iid) : a.iid === iid;
+  };
+
+  // --- the simultaneous standard move --------------------------------------
+  // The engine's action space is every non-empty subset of movable units that share a
+  // destination, so the board's job is to let the player NAME one of those subsets. It
+  // gathers units, then picks a destination; the action committed is the one whose set of
+  // movers is exactly what was gathered.
+  //
+  // This matters more than a convenience. A move completes, a cleanup runs, and a staged
+  // showdown opens at once, so units sent one at a time fight one at a time — the engine's
+  // own comment calls attacking into anything held "unwinnable by construction" without
+  // the simultaneous move.
+  const sameSet = (a, b) => a.length === b.length && a.every(x => b.includes(x));
+  U.groupTo = function (state, to) {
+    if (!U.selUnits.length) return null;
+    return RB.legalActions(state).find(a =>
+      a.t === 'move' && a.to === to && sameSet(a.iids, U.selUnits)) || null;
+  };
+  U.groupDests = function (state) {
+    if (!U.selUnits.length) return [];
+    return RB.legalActions(state)
+      .filter(a => a.t === 'move' && sameSet(a.iids, U.selUnits))
+      .map(a => a.to);
+  };
+  // Units that could still join the gathering: the ones some legal move takes to a
+  // destination the whole enlarged group could also reach. Asking the engine this rather
+  // than reasoning about exhaustion keeps the rule in one place.
+  U.canJoin = function (state, iid) {
+    if (U.selUnits.includes(iid)) return true;
+    const want = U.selUnits.concat([iid]);
+    return RB.legalActions(state).some(a => a.t === 'move' && sameSet(a.iids, want));
+  };
+  U.destName = function (state, to) {
+    return to === 'base' ? 'your base' : RB.card(state.bf[+to.slice(2)].cardId).name;
   };
 
   RB.startGame = function (state, me, difficulty) {
     state.humanSeat = me;                 // from here the engine asks this seat to choose
     U.state = state; U.me = me; U.difficulty = difficulty || 'competition'; U.sel = null;
-    U.payAsk = null;
+    U.payAsk = null; U.selUnits = [];
     RB.resetChainView();
     RB.recordStart(state);
     RB.showScreen('game');
@@ -110,6 +148,7 @@
     U.state = RB.apply(before, action);
     U.sel = null;
     U.payAsk = null;
+    U.selUnits = [];
     soundFor(U.state, before);
     RB.step();
   };
@@ -233,6 +272,30 @@
     const mine = acts.filter(a => U.actsOn(a, iid) &&
       (a.t === 'play' || a.t === 'move' || a.t === 'activate' || a.t === 'hide'));
     if (!mine.length) return;
+
+    // A unit that can move GATHERS rather than commits. It cannot auto-commit on the
+    // first click any more: committing the one-unit move is precisely what stops a second
+    // unit from ever joining it, and the group is the only way the printed rules let you
+    // commit a force. Cards in hand are unaffected — a play is always one card.
+    const gathers = mine.some(a => a.t === 'move');
+    if (gathers) {
+      const picked = U.selUnits.includes(iid);
+      const joinable = picked || !U.selUnits.length || U.canJoin(state, iid);
+      elm.classList.add(picked ? 'role-selected' : joinable ? 'role-actable' : 'role-dim');
+      if (!picked) elm.style.animationDelay = '-' + ((Date.now() % 1700) / 1000).toFixed(3) + 's';
+      if (!joinable) return;                       // visible, but not a click target
+      elm.style.cursor = 'pointer';
+      elm.addEventListener('click', ev => {
+        ev.stopPropagation();
+        RB.audio.play('ui.click');
+        U.sel = null; U.payAsk = null;             // gathering units is not selecting a card
+        const i = U.selUnits.indexOf(iid);
+        if (i >= 0) U.selUnits.splice(i, 1); else U.selUnits.push(iid);
+        RB.paintBoard(state, U.me);
+      });
+      return;
+    }
+
     // Four states, four colours, and that is the whole targeting vocabulary.
     elm.classList.add(U.sel === iid ? 'role-selected' : 'role-actable');
     if (U.sel !== iid) {
@@ -244,6 +307,7 @@
     elm.addEventListener('click', ev => {
       ev.stopPropagation();
       RB.audio.play('ui.click');
+      U.selUnits = [];
       const dests = mine.filter(a => a.t === 'play' || a.t === 'move');
       const act = mine.find(a => a.t === 'activate');
       const hides = mine.filter(a => a.t === 'hide');
@@ -269,15 +333,24 @@
 
   U.bindDrop = function (box, state, me) {
     box.addEventListener('click', () => {
+      const to = box.dataset.drop;
+      if (U.selUnits.length) {
+        const g = U.groupTo(state, to);
+        if (!g) { RB.audio.play('ui.invalid'); return; }
+        RB.audio.play('ui.click');
+        return RB.commit(g);
+      }
       if (!U.sel) return;
-      const opts = U.playsTo(state, box.dataset.drop);
+      const opts = U.playsTo(state, to);
       if (!opts.length) { RB.audio.play('ui.invalid'); return; }
       RB.audio.play('ui.click');
       if (opts.length === 1) return RB.commit(opts[0]);
-      U.payAsk = { to: box.dataset.drop, opts: opts };
+      U.payAsk = { to: to, opts: opts };
       RB.paintBoard(state, U.me);
     });
-    if (U.sel && U.playsTo(state, box.dataset.drop).length) box.classList.add('dropok');
+    if (U.selUnits.length ? U.groupTo(state, box.dataset.drop)
+                          : (U.sel && U.playsTo(state, box.dataset.drop).length))
+      box.classList.add('dropok');
     void me;
   };
 
@@ -393,6 +466,33 @@
         (state.chain.length > 1 ? state.chain.length + ' items, first to resolve. ' : '') +
         'Respond, or pass to let it resolve.');
       btn('Pass', () => RB.commit({ t: 'pass' }), 'primary');
+      return;
+    }
+    // Units gathered for one simultaneous move. Always say how many and where they can
+    // go, because the group is invisible otherwise — the only sign is the outline on each
+    // card, and "why is nothing highlighted" is how the last interface bug was reported.
+    if (U.selUnits.length) {
+      const dests = U.groupDests(state);
+      const names = U.selUnits.map(i => esc(RB.cardOf(state, i).name));
+      const might = U.selUnits.reduce((n, i) => n + RB.mightOf(state, i), 0);
+      say('<b>' + U.selUnits.length + ' unit' + (U.selUnits.length === 1 ? '' : 's') +
+        '</b> moving together — ' + names.join(', ') +
+        ' · <b>' + might + '</b> Might total.');
+      say(dests.length
+        ? '<span style="color:#9fb0cc">Click another unit to add it, or a highlighted ' +
+          'destination to move: ' + dests.map(d => esc(U.destName(state, d))).join(', ') + '.</span>'
+        : '<span style="color:#ff9a8a">These units share no destination — ' +
+          'drop one to move the rest.</span>');
+      // A unit that can move AND has an activated ability could never reach the ability:
+      // the click path treated any card with a destination as a thing to move, so the
+      // activate branch above it was dead for every mobile unit, and a unit with exactly
+      // one destination committed the MOVE on the first click instead. Gathering makes the
+      // prompt the right home for it — offered only for a single gathered unit, because an
+      // activated ability belongs to one card and not to a group.
+      if (U.selUnits.length === 1)
+        for (const a of acts.filter(x => x.t === 'activate' && x.iid === U.selUnits[0]))
+          btn('Use: ' + trim(RB.activatedName(state, a.iid, a.ix), 58), () => RB.commit(a));
+      btn('Cancel', () => { U.selUnits = []; RB.paintBoard(state, me); });
       return;
     }
     // A destination reached by more than one action, differing only in what is paid. The
