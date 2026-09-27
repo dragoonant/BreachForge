@@ -832,9 +832,11 @@
   RB.defineDescriber('revealHand', () => 'Choose an opponent. They reveal their hand.');
 
   // --- banishFromHand + returnBanished --------------------------------------
-  // Ashe: banish a card out of an opponent's revealed hand, and promise it back. The
-  // promise outlives her, so which card it was is remembered on her own object — that
-  // survives her leaving the board, because objects do.
+  // Ashe: banish a card out of an opponent's revealed hand, and promise it back "when they
+  // hold (even if I'm no longer on the board)". WHICH card is promised travels in the
+  // delayed ability's own data. It used to be one slot on Ashe's object, so an Ashe bounced
+  // and replayed overwrote her first card with her second and that one was never returned;
+  // and the `once:false` promise was never removed, so it stayed on s.delayed all game.
   RB.defineOp('banishFromHand', (s, e, ctx) => {
     const foe = RB.opponentOf(ctx.p);
     const P = s.players[foe];
@@ -851,20 +853,28 @@
     if (!pick) return;
     RB.removeFrom(P.hand, pick);
     P.banished.push(pick);
-    RB.obj(s, ctx.source).unlBanished = pick;
     RB.log(s, 'banish', { p: foe, iid: pick });
+    if (!e.returnOn) return;
+    // once:false because either player's hold raises the event and only THEIRS returns it;
+    // returnBanished removes this entry itself when it does.
+    s.delayed = s.delayed || [];
+    s.delayed.push({ on: e.returnOn, p: ctx.p, source: ctx.source, once: false,
+      effects: [{ op: 'returnBanished' }], data: { banished: pick } });
+    RB.log(s, 'delayed', { p: ctx.p, on: e.returnOn });
   });
-  RB.defineDescriber('banishFromHand', () =>
-    'Choose an opponent. They reveal their hand. Choose a card revealed this way and banish it.');
+  RB.defineDescriber('banishFromHand', e =>
+    'Choose an opponent. They reveal their hand. Choose a card revealed this way and banish it.' +
+    (e.returnOn === 'hold' ? " When they hold, return it to their hand (even if I'm no longer on the board)." : ''));
 
   RB.defineOp('returnBanished', (s, e, ctx) => {
-    const o = RB.obj(s, ctx.source);
-    const iid = o.unlBanished;
-    if (!iid) return;                       // already given back: the promise is spent
+    const d = ctx.delayed;
+    if (!d || !d.banished) return;
+    if (!ctx.event || ctx.event.p === ctx.p) return;          // "when THEY hold"
+    const iid = d.banished;
+    s.delayed = (s.delayed || []).filter(x => !(x.data && x.data.banished === iid));
     const owner = RB.obj(s, iid).owner;
-    if (!RB.removeFrom(s.players[owner].banished, iid)) { o.unlBanished = null; return; }
+    if (!RB.removeFrom(s.players[owner].banished, iid)) return;   // it left the banishment
     s.players[owner].hand.push(iid);
-    o.unlBanished = null;
     RB.log(s, 'returnToHand', { p: owner, iid: iid }, 'card.draw');
   });
   RB.defineDescriber('returnBanished', () => 'Return it to their hand.');

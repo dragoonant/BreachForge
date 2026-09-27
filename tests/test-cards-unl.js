@@ -145,4 +145,20 @@ export function run(t) {
     t.eq(s.players[0].deck[s.players[0].deck.length - 1], first, 'the recycled card is at the bottom');
     t.eq(s.players[0].xp, 1);
   });
+
+  // --- unl-169 Ashe --------------------------------------------------------------
+  t.test('Ashe: each banished card comes back when they hold, even after Ashe was replayed', () => {
+    let s = game();
+    const ashe = put(s, 'unl-169', 0, 'base');
+    const x = put(s, vanilla, 1, 'hand'), y = put(s, aSpell, 1, 'hand');
+    const played = RB.cardOf(s, ashe).abilities.triggers[0].effects;
+    resolve(s, played, { p: 0, source: ashe });
+    resolve(s, played, { p: 0, source: ashe });            // bounced and played again
+    t.eq(s.players[1].banished.slice().sort(), [x, y].sort(), 'both banished');
+    RB.runTriggers(s, 'hold', { p: 0, bf: 0 });            // MY hold returns nothing
+    t.eq(s.players[1].hand, []);
+    RB.runTriggers(s, 'hold', { p: 1, bf: 0 });
+    t.eq(s.players[1].hand.slice().sort(), [x, y].sort(), 'both returned');
+    t.eq((s.delayed || []).length, 0, 'and the promises are spent');
+  });
 }

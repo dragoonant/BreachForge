@@ -371,20 +371,14 @@ RB.registerAbilities({
   },
 
   // Ashe — banish a card out of an opponent's revealed hand, and promise it back when THEY
-  // hold. `delayed` is the promise, and it fires from s.delayed rather than from the board,
-  // which is what "even if I'm no longer on the board" asks for. once:false because a
-  // delayed promise is consumed by the first matching event of EITHER player's hold; the
-  // return op is idempotent and the condition picks out the opponent's.
+  // hold. The promise is a delayed ability on s.delayed, not on the board, which is what
+  // "even if I'm no longer on the board" asks for — and `returnOn` makes banishFromHand
+  // register it with the banished card in its own data, so each play of Ashe promises its
+  // own card and the promise is removed once kept.
   'unl-169': {
     triggers: [{
       on: 'played',
-      effects: [
-        { op: 'banishFromHand' },
-        { op: 'delayed', on: 'hold', once: false, effects: [{
-          op: 'cond', test: { eventIsOpponents: true },
-          effects: [{ op: 'returnBanished' }],
-        }] },
-      ],
+      effects: [{ op: 'banishFromHand', returnOn: 'hold' }],
     }],
   },
 
