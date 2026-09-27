@@ -689,14 +689,16 @@ RB.registerAbilities({
   },
 
   // Keeper of Masks — [Hidden]; [Temporary] is expanded because the engine's sweep reads
-  // o.temporary, which only an op sets. The copies take her printed characteristics, not
-  // her Temporary status, which is what "become copies of me" means.
+  // o.temporary, which only an op sets. The copies take her printed characteristics, and
+  // [Temporary] IS one — it is printed on her face — so they are Temporary too. The flag is
+  // written on the copy op because the expansion above runs on her play trigger, which a
+  // token copy never gets; without it two permanent 1-Might units outlived her.
   'unl-081': {
     keywords: ['Hidden'],
     triggers: [{ on: 'played', effects: [
       { op: 'giveTemporary', target: 'self' },
       { op: 'atThisBattlefield', orBase: true, effects: [
-        { op: 'copyToken', n: 2, target: 'self', to: 'here' },
+        { op: 'copyToken', n: 2, target: 'self', to: 'here', temporary: true },
       ] },
     ] }],
   },

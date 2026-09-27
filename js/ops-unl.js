@@ -326,8 +326,10 @@
       o.token = true;
       o.exhausted = !e.ready;
       o.enteredTurn = s.turn;
-      // A copy takes printed characteristics, not statuses — a copy of a Temporary unit is
-      // not itself Temporary unless the card making it says so.
+      // A copy takes printed characteristics, not statuses. A printed [Temporary] is a
+      // characteristic, but this engine expands it into a play trigger (giveTemporary) that
+      // a token copy never runs — so the data says `temporary` where the copied card
+      // prints the keyword (unl-081), and a status someone GAVE the source is not copied.
       if (e.temporary) o.temporary = true;
       if (e.to === 'here' && ctx.event && ctx.event.bf !== undefined) {
         s.bf[ctx.event.bf].units.push(iid);
