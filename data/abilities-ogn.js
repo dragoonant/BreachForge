@@ -149,8 +149,7 @@ RB.registerAbilities({
   'ogn-104': {
     keywords: ['Reaction'],
     effects: [
-      { op: 'ogn.bounce', target: { pick: 'myUnits' } },
-      { op: 'channel', n: 1, exhausted: true }],
+      { op: 'ogn.bounce', target: { pick: 'myUnits' }, ownerChannels: 1 }],
   },
 
   // Deal 6 to each of up to two units.

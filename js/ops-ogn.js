@@ -381,10 +381,16 @@
       RB.runTriggers(s, 'leftBoard', { p: o.controller, iid: iid,
         bf: loc.kind === 'bf' ? loc.bf : undefined });
       fireLeave(s, iid, o.controller);
+      // "Its owner channels 1 rune exhausted" (ogn-104 Retreat): the OWNER of the unit that
+      // was returned, and only for a unit that was. A trailing core `channel` gave the
+      // rune to the caster, and gave it even when nothing came back.
+      if (e.ownerChannels) RB.channel(s, o.owner, e.ownerChannels, true);
     }
   });
-  say('bounce', e => e.target === 'self' ? "Return me to my owner's hand."
-    : 'Return ' + selText(e.target) + " to its owner's hand.");
+  say('bounce', e => (e.target === 'self' ? "Return me to my owner's hand."
+    : 'Return ' + selText(e.target) + " to its owner's hand.") +
+    (e.ownerChannels ? ' Its owner channels ' + e.ownerChannels + ' rune' +
+      (e.ownerChannels === 1 ? '' : 's') + ' exhausted.' : ''));
 
   def('makeTemporary', (s, e, ctx) => {
     void e;
@@ -688,9 +694,13 @@
     const iid = RB.mint(s, e.cardId, ctx.p);
     const o = RB.obj(s, iid);
     o.token = true; o.exhausted = !e.ready; o.enteredTurn = s.turn;
+    o.wasReady = !o.exhausted;                  // entering ready is not BECOMING ready
     if (loc.kind === 'bf') { s.bf[loc.bf].units.push(iid); RB.applyContested(s, loc.bf, ctx.p); }
     else s.players[ctx.p].base.push(iid);
     RB.log(s, 'token', { p: ctx.p, iid: iid, card: e.cardId }, 'unit.deploy');
+    // "Play a … token" is playing it, as the core's `token` op now says: a Recruit from
+    // ogn-211 / ogn-212 was invisible to "when a friendly unit is played" (sfd-166).
+    RB.runTriggers(s, 'unitPlayed', { p: ctx.p, iid: iid });
   });
   say('token', e => 'Play a ' + (RB.card(e.cardId).might || 0) + ' Might ' +
     RB.card(e.cardId).name + ' unit token ' + (e.to === 'source' ? 'here.' : 'at your base.'));
@@ -1138,9 +1148,12 @@
     return true;
   });
 
-  // A battlefield is "open" when it is occupied and uncontrolled (docs/rules.md §616:
-  // occupied = has a unit, uncontrolled = no controller, open = both).
-  const isOpen = (s, i) => s.bf[i].controller === null && s.bf[i].units.length > 0;
+  // A battlefield is "open" when no player controls it. This read "occupied AND
+  // uncontrolled", citing the Battlefield row of docs/rules.md's card-type table — but a
+  // battlefield with units at it is controlled by them as soon as its showdown settles, so
+  // that reading left ogn-193 Miss Fortune almost nowhere to go, and never to the empty
+  // battlefield the card is for. sfd's `conqueredOpen` (sfd-116) reads open the same way.
+  const isOpen = (s, i) => s.bf[i].controller === null;
   // js/text.js renders an unknown permission as "I may be played <name>.", and there is
   // no definePlayWhereText hook, so the name is written to complete that sentence.
   RB.definePlayWhere('to an open battlefield', (s, p, i) => { void p; return isOpen(s, i); });
@@ -1178,8 +1191,12 @@
     //  having it here meant a buff placed by another pack granted no Might.)
     for (const mod of o.ognMods || []) {
       if (!live(s, mod)) continue;
+      // "-4 this turn, to a minimum of 1": the floor stops the REDUCTION, it does not
+      // raise. A unit already below the floor keeps its Might — ogn-093 / ogn-095 used to
+      // lift a 0-Might unit to 1.
+      const before = m;
       m += mod.n;
-      if (mod.min != null && m < mod.min) m = mod.min;
+      if (mod.min != null && m < mod.min) m = Math.max(m, Math.min(mod.min, before));
     }
     if (o.role && mightDepth === 0) {
       mightDepth++;

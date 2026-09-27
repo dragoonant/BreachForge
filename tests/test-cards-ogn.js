@@ -114,6 +114,24 @@ export function run(t) {
     t.eq([at(s, a), at(s, b)], ['bf0', 'base']);
   });
 
+  // --- Retreat ---------------------------------------------------------------
+  t.test('ogn-104 Retreat: no unit returned, no rune channelled', () => {
+    const s = game();
+    const before = s.players[0].runes.length;
+    cast(s, 'ogn-104', 0);
+    t.eq(s.players[0].runes.length, before);
+  });
+
+  t.test('ogn-104 Retreat: the returned unit\'s OWNER channels the rune', () => {
+    const s = game();
+    const u = put(s, BIG, 0, 'base');
+    RB.obj(s, u).owner = 1;                          // controlled by p0, owned by p1
+    const r0 = s.players[0].runes.length, r1 = s.players[1].runes.length;
+    cast(s, 'ogn-104', 0);
+    t.ok(s.players[1].hand.includes(u), 'back to its owner\'s hand');
+    t.eq([s.players[0].runes.length - r0, s.players[1].runes.length - r1], [0, 1]);
+  });
+
   // --- First Mate ------------------------------------------------------------
   t.test('ogn-132 First Mate: "ready another unit" may ready an enemy unit', () => {
     const s = game();
@@ -134,6 +152,22 @@ export function run(t) {
     try { RB.runEffects(s, RB.card('ogn-132').abilities.triggers[0].effects, { p: 0, source: fm }); }
     finally { RB.announceChoice = base; }
     t.eq(seen.length, 1);
+  });
+
+  // --- "to a minimum of 1" ---------------------------------------------------
+  t.test('ogn-093 Smoke Screen: "to a minimum of 1" does not raise a unit already below 1', () => {
+    const s = game();
+    const u = put(s, ZERO, 1, 0);
+    t.eq(RB.mightOf(s, u), 0);
+    cast(s, 'ogn-093', 0);
+    t.eq(RB.mightOf(s, u), 0);
+  });
+
+  t.test('ogn-095 Stupefy: the floor still stops the reduction at 1', () => {
+    const s = game();
+    const u = put(s, SMALL, 1, 0);
+    cast(s, 'ogn-095', 0);
+    t.eq(RB.mightOf(s, u), 1);
   });
 
   // --- Bullet Time -----------------------------------------------------------
@@ -157,5 +191,25 @@ export function run(t) {
     const q = s.queue[0];
     t.ok(q && q.kind === 'target', 'asked');
     t.ok(q.options.includes(u) && q.options.includes(g), 'one pool of units and gear: ' + JSON.stringify(q.options));
+  });
+
+  // --- Miss Fortune ----------------------------------------------------------
+  t.test('ogn-193 Miss Fortune: an empty, uncontrolled battlefield is open', () => {
+    const s = game();
+    s.players[0].pool.energy = 20; s.players[0].pool.any = 20;
+    const mf = put(s, 'ogn-193', 0, 'hand');
+    const dests = [...new Set(plays(s, mf).map(a => a.to))].sort();
+    t.eq(dests, ['base', 'bf0', 'bf1']);
+  });
+
+  // --- tokens ----------------------------------------------------------------
+  t.test('ogn-212 Forge of the Future: playing a Recruit token is playing a unit', () => {
+    const s = game();
+    const src = put(s, 'ogn-212', 0, 'base');
+    s.delayed = [{ on: 'unitPlayed', p: 0, source: src, once: true, data: {},
+      effects: [{ op: 'draw', n: 1 }] }];
+    const hand = s.players[0].hand.length;
+    RB.runEffects(s, RB.card('ogn-212').abilities.triggers[0].effects, { p: 0, source: src });
+    t.eq(s.players[0].hand.length, hand + 1, 'the unitPlayed listener heard it');
   });
 }
