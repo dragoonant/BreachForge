@@ -12,7 +12,7 @@
 //    first RB.registerCards() — by which time every script has loaded. install() is
 //    idempotent and is also tried immediately, in case this file is ever loaded last.
 //
-// 3. ONLY TWO WRAPPERS ARE LEFT (D-8). The core now raises `deathknell`, `died`,
+// 3. THREE WRAPPERS ARE LEFT (D-8). The core now raises `deathknell`, `died`,
 //    `leftBoard`, `moved`, `defend`, `becameMighty`, `becameReady` and `chosen`, and reads
 //    `untargetableByEnemies` in RB.canChoose — so the wrappers this pack had over RB.kill,
 //    RB.apply and RB.autoPick are gone, and their cards ride the core events. What is left:
@@ -22,6 +22,8 @@
 //        neither fire this data nor be fired by it.
 //      * RB.score — "Players can't score here until their third turn" (sfd-209) is a
 //        restriction on scoring, and scoring has no hook table.
+//      * RB.legalActions — "Units can't be played here" (sfd-216) has to bar every path
+//        that offers a unit play to a battlefield, and they do not share a hook table.
 //    RB.cardText is extended too, but only as a describer: it adds prose for the static
 //    keys and set-local triggers the core describer does not know, and delegates the rest.
 //
@@ -1133,16 +1135,25 @@
       RB.defineWhenText('sfd.chosenEnemyTwice', () =>
         "if you've chosen enemy units and/or gear twice this turn with spells or unit abilities");
 
-    // "Units can't be played here" (sfd-216). A play destination is decided by the named
-    // permissions in the engine's PLAY_WHERE table, which is a hook table — so the bar is
-    // registered into it rather than wrapping RB.legalActions, and it bars every card that
-    // reaches a battlefield through a permission. Done at install time, after every pack
-    // has registered, so a later definition is not silently replaced by this one.
-    for (const name of ['whereIHaveUnits', 'whereEnemyUnits', 'whereIAmAttacking',
-      'whereIControl', 'anyBattlefield']) {
-      const basePerm = RB.playWhere(name);
-      RB.definePlayWhere(name, (st, p, i) => !unitsBarredAt(st, i) && basePerm(st, p, i));
-    }
+    // WRAPPER 3 of 3. "Units can't be played here" (sfd-216). It bars EVERY way a unit
+    // reaches a battlefield by being played from the action list, and those do not share a
+    // door: the named permissions in PLAY_WHERE, `playTo: 'battlefield'|'any'` (which never
+    // consult it), a hidden unit played at its own battlefield, and js/ops-ogn.js's own
+    // legalActions wrapper for "friendly units may be played to open battlefields" (ogn-193
+    // Miss Fortune). Barring the PLAY_WHERE entries — what this did before — let the last
+    // three through. So the finished action list is filtered instead; installed here, after
+    // every pack has loaded, it sits outside ogn's wrapper and sees what that one added.
+    // Plays made by an effect rather than an action (a token played "here", a unit put
+    // onto a battlefield by another card's resolution) do not pass through this.
+    const baseLegal = RB.legalActions;
+    RB.legalActions = function (st) {
+      const acts = baseLegal(st);
+      const out = acts.filter(a => !(a.t === 'play' && typeof a.to === 'string' &&
+        a.to.indexOf('bf') === 0 && RB.cardOf(st, a.iid).type === 'Unit' &&
+        unitsBarredAt(st, +a.to.slice(2))));
+      if (out.length === acts.length) return acts;
+      return out.length ? out : [{ t: 'pass' }];
+    };
 
     // "When you spend a buff" (sfd-101). A buff is spent as an additional cost, which is a
     // hook-table entry — so the raise is registered there, delegating to whatever the entry
@@ -1154,7 +1165,7 @@
       pay: (st, p, iid, x) => { spend.pay(st, p, iid, x); fire(st, 'buffSpent', { p: p }); },
     });
 
-    // WRAPPER 1 of 2. There is no event for a rune being recycled, and sfd-203 triggers on
+    // WRAPPER 1 of 3. There is no event for a rune being recycled, and sfd-203 triggers on
     // exactly that. Raised into this pack's own table (see note 3), never into RB.runTriggers.
     const baseRecycleRune = RB.recycleRune;
     RB.recycleRune = function (s, p, iid) {
@@ -1163,7 +1174,7 @@
       return r;
     };
 
-    // WRAPPER 2 of 2. A battlefield that locks scoring (sfd-209). "Can't score" negates
+    // WRAPPER 2 of 3. A battlefield that locks scoring (sfd-209). "Can't score" negates
     // the POINT; the conquest or hold still happened, and Conquer and Hold effects fire
     // "even if the point gain is negated or replaced" (rules.md §13.2). Blocking the whole
     // call used to drop them too. Scoring has no hook table.

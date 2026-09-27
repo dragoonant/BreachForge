@@ -230,4 +230,25 @@ export function run(t) {
     }
   });
 
+  // --- sfd-216 Rockfall Path ------------------------------------------------------
+  t.test('"Units can\'t be played here" bars Miss Fortune\'s open-battlefield play too (sfd-216 / ogn-193)', () => {
+    const s = game({ bfs: ['sfd-216'] });
+    rich(s, 0);
+    put(s, 'ogn-193', 0, 'base');
+    put(s, vanilla, 1, 0);                 // both battlefields open
+    put(s, vanilla, 1, 1);
+    const u = put(s, vanilla, 0, 'hand');
+    const dests = [...new Set(plays(s, u).map(a => a.to))].sort();
+    t.eq(dests, ['base', 'bf1']);
+  });
+
+  t.test('"Units can\'t be played here" bars a hidden unit at that battlefield (sfd-216)', () => {
+    const s = game({ bfs: ['sfd-216'] });
+    put(s, vanilla, 0, 0);
+    s.bf[0].controller = 0;
+    const m = RB.mint(s, 'unl-003', 0);
+    s.bf[0].hidden.push({ iid: m, owner: 0, turnHidden: s.turn - 1 });
+    t.eq(RB.legalActions(s).filter(a => a.iid === m).length, 0);
+  });
+
 }
