@@ -161,7 +161,12 @@
         if (h.owner !== p || state.bf[i].controller !== p) continue;
         if (h.turnHidden >= state.turn) continue;             // not until the next turn
         const card = RB.cardOf(state, h.iid);
-        const dests = playDestinations(state, p, card);
+        // A hidden permanent must be played to the battlefield it was hidden at (§811),
+        // which overrides both "units to base" and "gear to base". Asking the ordinary
+        // destinations here sent every facedown unit to base, where "when you play me to a
+        // battlefield" and "deal 2 to an enemy unit here" had nothing to find.
+        const dests = card.type === 'Unit' || card.type === 'Gear'
+          ? ['bf' + i] : playDestinations(state, p, card);
         // A facedown play takes additional costs like any other. It ignores the card's
         // BASE cost, not the costs a player chooses to add on top of it.
         for (const pick of extraCombinations(state, p, h.iid, 'hidden')) {
@@ -229,9 +234,11 @@
 
   function playDestinations(state, p, card) {
     if (card.type === 'Unit') {
-      // A unit is played to your base. It cannot be played straight to a battlefield
-      // unless something says so — [Ambush] is "I may be played to a battlefield where
-      // you control Units" (§811-adjacent), and a card may force a battlefield outright.
+      // A unit is played to your base or to a battlefield you control — that is the
+      // default play location (§8.2), not a permission. Anything else needs a card to say
+      // so: [Ambush] is "I may be played to a battlefield where you have units", and a card
+      // may force a battlefield outright. This list once started at base alone, and every
+      // "when you play me to a battlefield" in the pool could never fire.
       const ab = card.abilities || {};
       const kw = n => (ab.keywords || []).some(k => k === n || k.name === n);
       if (ab.playTo === 'battlefield') return state.bf.map((_, i) => 'bf' + i);
@@ -242,19 +249,18 @@
         // A play-location permission is narrow on most cards — "where you have units",
         // "where there are enemy units", "a battlefield you're attacking". Each is a named
         // predicate, not the blanket playTo:'battlefield'.
-        const perms = (ab.playAlso || []).slice();
+        const perms = ['whereIControl'].concat(ab.playAlso || []);
         if (kw('Ambush')) perms.push('whereIHaveUnits');
         for (let i = 0; i < state.bf.length; i++)
           if (perms.some(name => RB.playWhere(name)(state, p, i))) out.push('bf' + i);
       }
       return out;
     }
-    if (card.type === 'Gear') {
-      const targets = [];
-      for (let p2 = 0; p2 < 2; p2++) for (const u of state.players[p2].base) targets.push('unit:' + u);
-      for (let i = 0; i < state.bf.length; i++) for (const u of state.bf[i].units) targets.push('unit:' + u);
-      return targets.length ? targets : ['base'];
-    }
+    // Gear is played to your base (§8.2), Equipment included: attaching is what [Equip]
+    // and [Quick-Draw] do, each at its own price. Offering every unit on the board as a
+    // destination attached plain gear to a unit — where none of its abilities could ever
+    // be used — and let an Equipment skip its Equip cost onto an ENEMY unit.
+    if (card.type === 'Gear') return ['base'];
     return ['-'];   // spells: targets are chosen by the resolution queue
   }
 
@@ -778,6 +784,13 @@
     if (loc.kind === 'base') RB.removeFrom(s.players[loc.p].base, iid);
     else if (loc.kind === 'bf') RB.removeFrom(s.bf[loc.bf].units, iid);
     else if (loc.kind === 'bfGear') RB.removeFrom(s.bf[loc.bf].gear, iid);
+    else if (o.attachedTo && s.objects[o.attachedTo]) {
+      // An attached gear sits on its host rather than in a zone of its own, so the zone
+      // lookup reads 'nowhere' for it. Returning here made every attached gear unkillable
+      // — "kill a gear" did nothing and a Temporary Equipment never died.
+      RB.removeFrom(RB.obj(s, o.attachedTo).attached, iid);
+      o.attachedTo = null;
+    }
     else return;
     RB.log(s, 'die', { iid: iid, p: o.controller }, 'unit.die');
     // Order matters and is the card's own first: Deathknell belongs to the card that is
@@ -795,7 +808,15 @@
     o.damage = 0; o.buffs = 0; o.permBuffs = 0; o.counters = 0;
     o.granted = []; o.exhausted = false; o.temporary = false;
     o.stunned = false; o.cantMove = false; o.attachedTo = null;
-    for (const g of o.attached.slice()) { o.attached = []; RB.kill(s, g); }
+    // Attached gear does not die with its host: it is detached and falls to its
+    // controller's base, the same as when the host is bounced (ops-ogn, ops-unl). Calling
+    // kill on it here returned early — the gear was in no zone — and it simply vanished.
+    for (const g of o.attached.slice()) {
+      const go = RB.obj(s, g);
+      go.attachedTo = null;
+      s.players[go.controller].base.push(g);
+    }
+    o.attached = [];
     if (!o.token) s.players[o.owner].trash.push(iid);
   };
 

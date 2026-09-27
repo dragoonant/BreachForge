@@ -143,7 +143,10 @@ export function run(t) {
           const shown = JSON.parse(JSON.stringify(st));
           RB.remember(shown, me, shown.players[RB.opponentOf(me)].hand);
           const known = RB.knownHeld(shown, me);
-          t.ok(known !== null && known.length === shown.players[RB.opponentOf(me)].hand.length,
+          // Showing an EMPTY hand records nothing, and knownHeld's null for "never shown
+          // anything" is then correct — the assertion is about a hand with cards in it.
+          const theirs = shown.players[RB.opponentOf(me)].hand;
+          t.ok(!theirs.length || (known !== null && known.length === theirs.length),
             'a reveal is recorded as the whole hand');
           revealed++;
           if (JSON.stringify(RB.aiChoose(shown, 'competition')) !== seeing) differedAfterReveal++;
