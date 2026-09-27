@@ -86,4 +86,32 @@ export function run(t) {
     t.ok(!s.queue.length || !s.queue[0].options.includes(there), 'the unit already there is no option');
     t.ok(s.bf[0].units.includes(away), 'the unit from elsewhere was moved there');
   });
+
+  // --- unl-179 Rift Herald -------------------------------------------------------
+  t.test('Rift Herald looks at the three cards first, then asks which unit (if any) to draw', () => {
+    let s = game({ human: 0 });
+    const h = put(s, 'unl-179', 0, 'base');
+    const u1 = put(s, 'unl-145', 0, 'deck');              // Pyke
+    const sp = put(s, aSpell, 0, 'deck');
+    const u2 = put(s, 'unl-150', 0, 'deck');              // Vex — deck top: u2, sp, u1
+    resolve(s, [{ op: 'moveUnit', target: 'self', to: 'here' }],
+      { p: 0, source: h, event: { bf: 0 } });
+    const q = s.queue[0];
+    t.ok(q && q.kind === 'choose', 'one question, after looking: ' + JSON.stringify(q && q.kind));
+    t.eq(q.options.length, 3, 'draw the first unit, draw the second, or draw none: ' + JSON.stringify(q.options));
+    t.ok(q.options[1].includes('Pyke'), 'the options name the units seen');
+    s = RB.apply(s, { t: 'choose', ix: 1 });
+    t.ok(s.players[0].hand.includes(u1), 'the named unit was drawn');
+    t.eq(s.players[0].deck.slice(-2).sort(), [u2, sp].sort(), 'the rest recycled to the bottom');
+  });
+
+  t.test('Rift Herald draws nothing when the player says no, and recycles all three', () => {
+    let s = game({ human: 0 });
+    const h = put(s, 'unl-179', 0, 'base');
+    const look = [sized(s, 2, 0, 'deck'), put(s, aSpell, 0, 'deck'), sized(s, 3, 0, 'deck')];
+    resolve(s, [{ op: 'moveUnit', target: 'self', to: 'here' }], { p: 0, source: h, event: { bf: 0 } });
+    s = RB.apply(s, { t: 'choose', ix: s.queue[0].options.length - 1 });
+    t.eq(s.players[0].hand, []);
+    t.eq(s.players[0].deck.slice(-3).sort(), look.slice().sort());
+  });
 }

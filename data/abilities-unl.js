@@ -414,20 +414,14 @@ RB.registerAbilities({
   },
 
   // Rift Herald — a move trigger that digs 3 for a unit, and a Deathknell that puts a unit
-  // out of hand for free. The dig is `choose` and not `may` because BOTH answers recycle
-  // the cards that were looked at.
+  // out of hand for free. The dig looks FIRST and then asks which unit, if any, to draw;
+  // digUnit owns that question (a pre-look "reveal or recycle all?" asked the player to
+  // decide blind, and then took the biggest unit for them).
   'unl-179': {
     triggers: [
       { on: 'moved', effects: [{
         op: 'cond', test: { eventIsSelf: true, toBattlefield: true },
-        effects: [{
-          op: 'choose',
-          options: [
-            { label: 'Reveal a unit from the top 3, draw it, recycle the rest',
-              effects: [{ op: 'digUnit', n: 3, take: true }] },
-            { label: 'Recycle all three', effects: [{ op: 'digUnit', n: 3, take: false }] },
-          ],
-        }],
+        effects: [{ op: 'digUnit', n: 3, take: true }],
       }] },
       { on: 'deathknell', effects: [{ op: 'playFromHand', type: 'Unit', to: 'base', ignoreEnergy: true }] },
     ],

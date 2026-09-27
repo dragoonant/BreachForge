@@ -569,37 +569,57 @@
   RB.defineDescriber('firstEachTurn', e => 'The first time each turn, ' + lower(join(e.effects)));
 
   // --- digUnit --------------------------------------------------------------
-  // "Look at the top N of your Main Deck. [You may] reveal a unit from among them and draw
-  // it. Recycle the rest." Both branches recycle, which is why the card asks with `choose`
-  // rather than `may`.
+  // "Look at the top N of your Main Deck. You may reveal a unit from among them and draw it.
+  // Recycle the rest." (unl-179 Rift Herald.) LOOK FIRST, THEN CHOOSE: the card was authored
+  // as a `choose` between "reveal a unit" and "recycle all" asked before anything had been
+  // looked at, and the unit drawn was then the biggest one, never asked. Now the looked-at
+  // cards stay on top while ONE question is open — draw this unit, or that one, or none —
+  // and `digSettle` carries out the answer. A choose step is used rather than the targeting
+  // door because "none" is a legal answer the door cannot express (D-2), and it is the last
+  // effect of its trigger, so nothing resolves ahead of the answer.
   //
-  // "Reveal a unit from among them" is the player's pick, not the biggest one. Ordered
-  // biggest-first only to decide what a seat that is never asked takes; quiet, because a
-  // card in a deck is not an object on the board and has no Deflect to toll.
+  // The human seat's question names the cards it is looking at. Any other seat's labels do
+  // not: a choice's label is logged, and the cards not taken are never revealed.
   RB.defineOp('digUnit', (s, e, ctx) => {
     const P = s.players[ctx.p];
     const n = Math.min(n_(e), P.deck.length);
     if (!n) return;
-    const look = P.deck.splice(0, n);
+    const look = P.deck.slice(0, n);
     RB.log(s, 'look', { p: ctx.p, n: look.length });
-    let taken = null;
-    if (e.take) {
-      const units = look.filter(i => RB.cardOf(s, i).type === 'Unit');
-      if (units.length) {
-        units.sort((a, b) => (RB.cardOf(s, b).might || 0) - (RB.cardOf(s, a).might || 0));
-        taken = RB.offerChoice(s, units, 1, ctx, 'digUnit',
-          'Reveal a unit from among them and draw it', { quiet: true })[0] || null;
-      }
-      if (taken) {
-        P.hand.push(taken);
-        RB.log(s, 'draw', { p: ctx.p, iid: taken }, 'card.draw');
-      }
-    }
-    for (const iid of look) if (iid !== taken) P.deck.push(iid);
-    RB.log(s, 'dig', { p: ctx.p, n: n, took: taken ? 1 : 0 });
+    const units = e.take ? look.filter(i => RB.cardOf(s, i).type === 'Unit') : [];
+    if (!units.length) { RB.ops.digSettle(s, { look: look, take: null }, ctx); return; }
+    const named = ctx.p === s.humanSeat;
+    const name = i => RB.cardOf(s, i).name;
+    s.queue.push({
+      kind: 'choose', who: ctx.p, source: ctx.source,
+      prompt: named ? 'You look at ' + look.map(name).join(', ') +
+        '. Reveal a unit from among them and draw it?' : 'Reveal a unit from among them and draw it?',
+      options: units.map((i, k) => 'Reveal and draw ' + (named ? name(i) : 'unit ' + (k + 1)))
+        .concat(['Draw none — recycle all ' + look.length]),
+      ctx: { p: ctx.p, source: ctx.source, event: ctx.event, targets: ctx.targets },
+      onAnswer: units.map(i => [{ op: 'digSettle', look: look, take: i }])
+        .concat([[{ op: 'digSettle', look: look, take: null }]]),
+    });
   });
   RB.defineDescriber('digUnit', e => 'Look at the top ' + n_(e) + ' cards of your Main Deck. ' +
-    (e.take ? 'Reveal a unit from among them and draw it. ' : '') + 'Recycle the rest.');
+    (e.take ? 'You may reveal a unit from among them and draw it. ' : '') + 'Recycle the rest.');
+
+  // The answer: the rest go to the bottom in the order they were seen, and the unit taken
+  // is put back on top and DRAWN through RB.draw, so it counts as a draw ("the second card
+  // you draw each turn") rather than appearing in hand.
+  RB.defineOp('digSettle', (s, e, ctx) => {
+    const P = s.players[ctx.p];
+    const look = (e.look || []).filter(i => P.deck.includes(i));
+    for (const iid of look) RB.removeFrom(P.deck, iid);
+    for (const iid of look) if (iid !== e.take) P.deck.push(iid);
+    if (e.take && look.includes(e.take)) {
+      RB.log(s, 'reveal', { p: ctx.p, iid: e.take });
+      P.deck.unshift(e.take);
+      RB.draw(s, ctx.p);
+    }
+    RB.log(s, 'dig', { p: ctx.p, n: look.length, took: e.take && look.includes(e.take) ? 1 : 0 });
+  });
+  RB.defineDescriber('digSettle', () => '');
 
   // --- playFromHand ---------------------------------------------------------
   // "Play a unit from your hand to your base, ignoring its Energy cost." The Power cost is
