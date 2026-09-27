@@ -251,4 +251,15 @@ export function run(t) {
     t.eq(RB.legalActions(s).filter(a => a.iid === m).length, 0);
   });
 
+  // --- sfd-146 Vex --------------------------------------------------------------
+  t.test('Vex\'s extra [A] on an enemy spell is Power of ANY domain (sfd-146)', () => {
+    const s = game();
+    put(s, 'sfd-146', 0, 0);
+    s.showdown = { bf: 0, combat: true, attacker: 1, defender: 0 };
+    const spell = put(s, 'ogn-004', 1, 'hand');           // Fury, no Power of its own
+    const cost = RB.totalCost(s, spell, []);
+    t.eq(cost.power, 1, 'one more Power');
+    t.eq(cost.domains.slice().sort(), RB.DOMAINS.slice().sort(), 'of any domain');
+  });
+
 }
