@@ -8,6 +8,14 @@ export function run(t) {
     t.eq(missing.length, 0, missing.slice(0, 6).join('; '));
   });
 
+  // The page's own load gate (js/main.js) — the SAME filter, so a problem that stops the
+  // app on its first frame fails the suite too. A token authored with its Might swallowed
+  // by a trailing comment stopped index.html cold while every other test here was green.
+  t.test('nothing the page validates at load is wrong', () => {
+    const registered = RB.validate().filter(p => !/has no ability data|skeleton/.test(p));
+    t.eq(registered, []);
+  });
+
   t.test('no registered card carries a skeleton default a real value would replace', () => {
     const bad = RB.validate().filter(p => /skeleton/.test(p));
     t.eq(bad.length, 0, bad.slice(0, 6).join('; '));

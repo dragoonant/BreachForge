@@ -173,6 +173,11 @@
       brow.appendChild(c);
     }
     bz.appendChild(brow);
+    // The base is a destination like a battlefield. It had no click binding because a unit
+    // could once only be played to base — a single destination commits on the first click
+    // — so once "a battlefield you control" became a second choice, the base could not be
+    // chosen at all.
+    if (mine) RB.ui.bindDrop(bz, state, p);
     root.appendChild(bz);
 
     const rz = el('zone');

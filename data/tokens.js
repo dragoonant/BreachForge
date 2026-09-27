@@ -18,7 +18,8 @@ RB.tokenData = [
     domain: 'Calm', domains: ['Calm'], tags: ['Token'], energy: 0, power: 0, might: 1,
     rarity: 'Token', set: 'Token', artist: null },
   { id: 'tok-sprite', name: 'Sprite', nameId: 'sprite', type: 'Unit',
-    domain: 'Chaos', domains: ['Chaos'], tags: ['Fae', 'Token'],     // "Sprite (tag Fae)", rules.md energy: 0, power: 0, might: 1,
+    // "3 [M] Sprite with Temporary (tag Fae)" — rules.md, token list.
+    domain: 'Chaos', domains: ['Chaos'], tags: ['Fae', 'Token'], energy: 0, power: 0, might: 1,
     rarity: 'Token', set: 'Token', artist: null },
   // A battlefield token. Baron Nashor adds one to the game, so the board is not always
   // the two battlefields the mode deals out.

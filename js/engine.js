@@ -973,8 +973,10 @@
       if (bf.combatStaged !== cstage) { bf.combatStaged = cstage; changed = true; }
       if (!stage) { bf.contestedBy = null; changed = true; }
     }
-    // 8. In a neutral open state, a staged showdown opens now.
-    if (!s.showdown && !s.chain.length && !s.queue.length) {
+    // 8. In a neutral open state, a staged showdown opens now. The Beginning Phase is not
+    // one: while the turn start is waiting to score, a showdown staged last turn waits for
+    // the Main Phase rather than opening ahead of scoring, channel and draw.
+    if (!s.showdown && !s.chain.length && !s.queue.length && !s.turnStart) {
       const staged = s.bf.map((b, i) => b.showdownStaged ? i : -1).filter(i => i >= 0);
       if (staged.length === 1) { openShowdown(s, staged[0]); return true; }
       if (staged.length > 1) { s.queue.push({ kind: 'chooseShowdown', who: s.active, options: staged }); return true; }

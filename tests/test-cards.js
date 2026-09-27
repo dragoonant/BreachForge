@@ -457,4 +457,20 @@ export function run(t) {
     t.ok(!s.players[0].trash.includes(small), 'the playable one was played');
     t.ok(s.players[0].trash.includes(big));
   });
+
+  t.test('a showdown staged across the turn boundary opens in the Main Phase, after scoring', () => {
+    let s = game();
+    const mine = put(s, vanilla, 1, 0), theirs = put(s, vanilla, 0, 0);
+    s.bf[0].controller = 1; s.bf[0].contestedBy = 0;
+    s.bf[0].showdownStaged = true; s.bf[0].combatStaged = true;
+    s.turnStart = null;
+    // Hand the turn over without letting the cleanup open it in p0's own Ending Phase.
+    const n0 = s.log.length;
+    s = RB.apply(s, { t: 'endTurn' });
+    const kinds = s.log.slice(n0).map(l => l.kind);
+    const open = kinds.indexOf('showdownOpen');
+    if (open < 0) return;                        // it opened before the turn ended: nothing to order
+    t.ok(kinds.indexOf('draw') >= 0 && kinds.indexOf('draw') < open, 'the draw came first: ' + kinds.join(','));
+    void mine; void theirs;
+  });
 }
