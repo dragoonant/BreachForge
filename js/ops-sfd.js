@@ -1278,10 +1278,15 @@
 
   // The public door into this pack's set-local triggers, for a spend or reveal that
   // happens outside this file. Events: `buffSpent` { p } — "when you spend a buff"
-  // (sfd-101 Fae Dragon); `runeRecycle` { p, iid }; and `revealed` is per card and goes
-  // through fireOn. A buff spent by another pack's op (ogn.spendBuff) reaches Fae Dragon
-  // only if that op raises it here, or the core grows a `buffSpent` event this pack reads.
-  RB.sfdRaise = function (s, event, data) { fire(s, event, data); };
+  // (sfd-101 Fae Dragon); `runeRecycle` { p, iid }; `revealed` { p, iid } — "as I'm
+  // revealed from your deck" (sfd-175 Undertitan), asked of the revealed card itself,
+  // which is in a deck and so is no board source. A buff spent or a card revealed by
+  // another pack's op (ogn.spendBuff, ogn.playUnitFromDeck, unl revealTopSpell) reaches
+  // these cards only if that op raises it here, or the core grows the event.
+  RB.sfdRaise = function (s, event, data) {
+    if (event === 'revealed') fireOn(s, event, data, data.iid);
+    else fire(s, event, data);
+  };
   RB.sfdInstall = install;
   if (RB.registerCards) {
     const baseRegisterCards = RB.registerCards;

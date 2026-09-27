@@ -272,4 +272,13 @@ export function run(t) {
     RB.sfdRaise(s, 'buffSpent', { p: 1 });
     t.eq(s.players[0].base.length, before + 1, 'not for the opponent\'s spend');
   });
+
+  t.test('Undertitan\'s "as I\'m revealed from your deck" can be raised from outside the pack (sfd-175)', () => {
+    const s = game();
+    const u = RB.mint(s, 'sfd-175', 0);
+    s.players[0].deck.unshift(u);
+    const e = s.players[0].pool.energy;
+    RB.sfdRaise(s, 'revealed', { p: 0, iid: u });
+    t.eq(s.players[0].pool.energy, e + 2, '[Add] [2]');
+  });
 }
