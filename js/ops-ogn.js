@@ -82,12 +82,23 @@
     return RB.select(s, name, ctx);
   }
 
-  // A pick spec: { pick, n, at:'battlefield'|'base', maxMight, other:true, noBuff:true,
-  //                prefer:'enemy'|'mine', low:true }
-  function targets(s, spec, ctx) {
+  // A pick spec: { pick, n, upTo, at:'battlefield'|'base', maxMight, other:true, noBuff:true,
+  //                prefer:'enemy'|'mine', low:true, not:[iid…], movesTo }
+  //
+  // `upTo: N` is "up to N": the first is chosen, and each further one is a separate "you
+  // may" — `again` is the op to re-run for it. A target step carries a fixed count (D-2),
+  // so `n: 2` used to force a SECOND pick: ogn-105 Singularity spilled onto the caster's
+  // own unit when only one enemy stood, and ogs-011 Flash could not move just one unit.
+  //
+  // `movesTo` keeps only a unit that has somewhere to go: a unit with no legal
+  // destination is not a legal choice for a move (ogn-043 offered a unit already in base,
+  // ogn-067 one already here, and nothing happened).
+  function targets(s, spec, ctx, again) {
     if (!spec || typeof spec === 'string') return poolNamed(s, spec, ctx);
     let pool = poolNamed(s, spec.pick, ctx);
     if (spec.other) pool = pool.filter(i => i !== ctx.source);
+    if (spec.not) pool = pool.filter(i => !spec.not.includes(i));
+    if (spec.movesTo) pool = pool.filter(i => destinations(s, i, spec.movesTo, ctx).length > 0);
     if (spec.at === 'battlefield') pool = pool.filter(i => RB.locationOf(s, i).kind === 'bf');
     if (spec.at === 'base') pool = pool.filter(i => RB.locationOf(s, i).kind === 'base');
     if (spec.maxMight !== undefined) pool = pool.filter(i => RB.mightOf(s, i) <= spec.maxMight);
@@ -102,7 +113,20 @@
     }
     // The pool and its order are this card's own policy; how many are taken, and whether
     // the player is asked, belong to the one door every targeting decision goes through.
-    return RB.offerChoice(s, pool, spec.n || 1, ctx, spec.pick, spec.prompt);
+    const taken = RB.offerChoice(s, pool, spec.upTo ? 1 : (spec.n || 1), ctx, spec.pick, spec.prompt);
+    if (spec.upTo > 1 && again && taken.length) {
+      const rest = pool.filter(i => !taken.includes(i) && RB.canChoose(s, ctx.p, i));
+      if (rest.length) {
+        const next = Object.assign({}, again, { target: Object.assign({}, spec,
+          { upTo: spec.upTo - 1, not: (spec.not || []).concat(taken) }) });
+        const d = RB.describers[next.op];
+        s.queue.push({ kind: 'may', who: ctx.p, source: ctx.source,
+          prompt: RB.promptFromSentence(d(next)),
+          ctx: { p: ctx.p, source: ctx.source, event: ctx.event, targets: ctx.targets },
+          onAnswer: [[next], []] });
+      }
+    }
+    return taken;
   }
   RB.ognTargets = targets;
 
@@ -123,10 +147,11 @@
       const pair = NAMES[spec] || ['me', 'me'];
       return spec === 'self' || spec === 'eventUnit' ? pair[0] : pair[1];
     }
-    const n = spec.n || 1;
+    const n = spec.upTo || spec.n || 1;
     const pair = NAMES[spec.pick] || [String(spec.pick), String(spec.pick)];
     let t = n > 1 ? 'up to ' + n + ' ' + pluralOf(pair[0]) : pair[0];
     if (spec.other) t = t.replace(/^an? /, 'another ').replace(/^up to (\d+) /, 'up to $1 other ');
+    if (spec.not && spec.not.length) t = t.replace(/^an? /, 'another ').replace(/^up to (\d+) /, 'up to $1 more ');
     if (spec.at === 'battlefield') t += ' at a battlefield';
     if (spec.at === 'base') t += /^my/.test(spec.pick) ? ' in your base' : ' in a base';
     if (spec.maxMight !== undefined) t += ' with ' + spec.maxMight + ' Might or less';
@@ -239,10 +264,10 @@
   // play wrong without ever looking broken. `kind` is left at its default, 'effect':
   // everything this pack deals is spell and ability damage, never combat damage.
   def('damage', (s, e, ctx) => {
-    for (const iid of targets(s, e.target, ctx)) RB.dealDamage(s, iid, num(e, 'n', 1), ctx);
+    for (const iid of targets(s, e.target, ctx, e)) RB.dealDamage(s, iid, num(e, 'n', 1), ctx);
   });
   say('damage', e => 'Deal ' + num(e, 'n', 1) + ' to ' +
-    ((e.target && e.target.n > 1) ? 'each of ' : '') + selText(e.target) + '.');
+    ((e.target && (e.target.n > 1 || e.target.upTo > 1)) ? 'each of ' : '') + selText(e.target) + '.');
 
   def('kill', (s, e, ctx) => {
     for (const iid of targets(s, e.target, ctx)) {
@@ -363,8 +388,18 @@
 
   def('makeTemporary', (s, e, ctx) => {
     void e;
-    const iid = targets(s, { pick: 'allUnits', at: 'battlefield', prefer: 'enemy' }, ctx)[0]
-      || targets(s, { pick: 'gear', prefer: 'enemy' }, ctx)[0];
+    // ONE choice over units at battlefields AND gear. Asking units first and falling back
+    // to gear only when no unit stood anywhere meant a gear could never be chosen while any
+    // unit was at a battlefield. Ordered enemy units, enemy gear, then yours.
+    const foe = RB.opponentOf(ctx.p);
+    const units = RB.allUnits(s).filter(i => RB.locationOf(s, i).kind === 'bf')
+      .sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
+    const gear = allGear(s);
+    const theirs = i => RB.obj(s, i).controller === foe;
+    const pool = units.filter(theirs).concat(gear.filter(theirs),
+      units.filter(i => !theirs(i)), gear.filter(i => !theirs(i)));
+    const iid = RB.offerChoice(s, pool, 1, ctx, 'makeTemporary',
+      'Give which unit or gear Temporary?')[0];
     if (!iid) return;
     RB.obj(s, iid).temporary = true;
     RB.log(s, 'temporary', { iid: iid, p: RB.obj(s, iid).controller });
@@ -406,38 +441,68 @@
       bf: dest === 'base' ? undefined : dest, fromBf: from.kind === 'bf' ? from.bf : undefined });
   }
   const placeOf = loc => (loc.kind === 'bf' ? loc.bf : loc.kind === 'base' ? 'base' : null);
-  function destinationFor(s, iid, to, ctx) {
-    if (to === 'base') return RB.locationOf(s, iid).kind === 'base' ? null : 'base';
+
+  // Every place an EFFECT may move this unit to (rules.md §8.4: a move is defined by an
+  // origin and a destination, both locations; the Standard Move's base<->battlefield limit
+  // is the Standard Move's, so a spell may move battlefield to battlefield). Its own base
+  // is a destination only when it is not there and nothing pins it (RB.canMoveToBase).
+  //   'base' — to its base · 'here' — to my battlefield · 'battlefield' — to any other
+  //   battlefield · 'anywhere' — any location it is not already at.
+  function destinations(s, iid, to, ctx) {
+    const from = RB.locationOf(s, iid);
+    if (from.kind !== 'bf' && from.kind !== 'base') return [];
+    const home = from.kind !== 'base' && RB.canMoveToBase(s, iid) ? ['base'] : [];
+    if (to === 'base') return home;
     if (to === 'here') {
       const here = RB.locationOf(s, ctx.source);
-      if (here.kind !== 'bf') return null;
-      return RB.locationOf(s, iid).bf === here.bf ? null : here.bf;
+      return here.kind === 'bf' && !(from.kind === 'bf' && from.bf === here.bf) ? [here.bf] : [];
     }
-    // 'battlefield': the one where its controller already stands, else the first.
-    const p = RB.obj(s, iid).controller, from = RB.locationOf(s, iid);
-    let best = null, bestN = -1;
-    for (let i = 0; i < s.bf.length; i++) {
-      if (from.kind === 'bf' && from.bf === i) continue;
-      const n = RB.unitsAt(s, i, p).length;
-      if (n > bestN) { bestN = n; best = i; }
-    }
-    return best;
+    const bfs = s.bf.map((_, i) => i).filter(i => !(from.kind === 'bf' && from.bf === i));
+    return to === 'anywhere' ? bfs.concat(home) : bfs;
   }
+
+  // Where it goes is the PLAYER's (ogn-043 "Move an enemy unit", ogn-173 Ride the Wind,
+  // ogn-270 Showstopper). It used to be a stated rule — the battlefield with most of its
+  // controller's units — and base was never on offer. One destination is not a choice; more
+  // than one is a `choose` step, the same shape unl's moveChoosingDestination asks with.
+  function moveChoosing(s, iid, to, ctx, ready) {
+    const dests = destinations(s, iid, to, ctx);
+    if (!dests.length) return;
+    const step = d => [{ op: 'ogn.moveTo', iid: iid, dest: d, ready: !!ready }];
+    if (dests.length === 1) { RB.runEffects(s, step(dests[0]), ctx); return; }
+    s.queue.push({
+      kind: 'choose', who: ctx.p, source: ctx.source,
+      prompt: 'Move ' + RB.cardOf(s, iid).name + ' where?',
+      options: dests.map(d => d === 'base' ? 'To its base' : 'To ' + RB.card(s.bf[d].cardId).name),
+      ctx: { p: ctx.p, source: ctx.source, event: ctx.event, targets: ctx.targets },
+      onAnswer: dests.map(step),
+    });
+  }
+  def('moveTo', (s, e, ctx) => {
+    void ctx;
+    const o = s.objects[e.iid];
+    if (!o) return;
+    const from = RB.locationOf(s, e.iid);
+    if (from.kind !== 'bf' && from.kind !== 'base') return;       // gone since it was chosen
+    relocate(s, e.iid, e.dest);
+    if (e.ready && RB.locationOf(s, e.iid).kind !== 'nowhere') o.exhausted = false;
+  });
+  say('moveTo', e => 'Move it ' + (e.dest === 'base' ? 'to its base' : 'there') +
+    (e.ready ? ' and ready it' : '') + '.');
+
   def('moveUnit', (s, e, ctx) => {
-    for (const iid of targets(s, e.target, ctx)) {
+    const spec = typeof e.target === 'object' ? Object.assign({}, e.target, { movesTo: e.to }) : e.target;
+    for (const iid of targets(s, spec, ctx, e)) {
       // "Buff it, THEN move it" — one chosen unit, so the buff cannot wander to another.
       if (e.buff && !RB.obj(s, iid).counters) {
         RB.obj(s, iid).counters = 1;
         RB.log(s, 'buff', { p: ctx.p, iid: iid });
       }
-      const dest = destinationFor(s, iid, e.to, ctx);
-      if (dest === null) continue;
-      relocate(s, iid, dest);
-      if (e.ready && RB.locationOf(s, iid).kind !== 'nowhere') RB.obj(s, iid).exhausted = false;
+      moveChoosing(s, iid, e.to, ctx, e.ready);
     }
   });
   say('moveUnit', e => (e.buff ? 'Buff ' + selText(e.target) + ', then move it' : 'Move ' + selText(e.target)) +
-    (e.to === 'base' ? ' to base' : e.to === 'here' ? ' here' : ' to a battlefield') +
+    (e.to === 'base' ? ' to base' : e.to === 'here' ? ' here' : e.to === 'battlefield' ? ' to a battlefield' : '') +
     (e.ready ? ' and ready it' : '') + '.');
 
   // "Move me to its location and it to my original location." Both places are read before
@@ -464,17 +529,23 @@
 
   // "Ready another unit." Which one is the player's, and an exhausted unit is an object on
   // the board, so this is a full targeting decision — no `quiet`.
+  // The printed pool is ANY other unit (ogn-132 First Mate), yours first. It used to be
+  // yours only, and was built by a `targets` call with n: 99 that pushed every friendly
+  // unit through the door — announcing each as chosen — before the real choice was made.
+  // A ready unit is not a candidate: readying it does nothing.
   def('readyOther', (s, e, ctx) => {
     void e;
-    const pool = targets(s, { pick: 'myUnits', other: true, n: 99 }, ctx)
-      .filter(i => RB.obj(s, i).exhausted);
-    if (!pool.length) return;
-    for (const iid of RB.offerChoice(s, pool, 1, ctx, 'readyOther', 'Ready which unit?')) {
+    const pool = RB.allUnits(s)
+      .filter(i => i !== ctx.source && RB.obj(s, i).exhausted)
+      .sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
+    const mine = pool.filter(i => RB.obj(s, i).controller === ctx.p);
+    const ordered = mine.concat(pool.filter(i => RB.obj(s, i).controller !== ctx.p));
+    for (const iid of RB.offerChoice(s, ordered, 1, ctx, 'readyOther', 'Ready which unit?')) {
       RB.obj(s, iid).exhausted = false;
       RB.log(s, 'ready', { p: ctx.p, iid: iid });
     }
   });
-  say('readyOther', () => 'Ready another unit you control.');
+  say('readyOther', () => 'Ready another unit.');
 
   // --- decks, hands and trashes --------------------------------------------
   def('channelElseDraw', (s, e, ctx) => {
@@ -808,31 +879,35 @@
   // "Pay any amount of [C] to deal that much damage to all enemy units at a battlefield."
   // The X is the core's — `ctx.xPaid` is what was paid — but the shape of the damage is
   // not: the card picks a BATTLEFIELD and every enemy unit standing there is hit. None of
-  // those units is chosen, so none of them charges Deflect and none of them raises the
-  // `chosen` trigger; RB.offerChoice does both to everything handed to it, which is right
-  // for a unit and wrong for a battlefield. So this one choice is resolved by a stated
-  // rule, and the describer says which rule it is: the battlefield where the damage kills
-  // the most enemy units, and among those the one where it hits the most.
+  // those units is chosen, so none of them charges Deflect or raises the `chosen` trigger;
+  // the battlefield is asked as a `choose` step, not through RB.offerChoice. Which one used
+  // to be a stated rule (the most kills) and the player was never asked. A battlefield with
+  // no enemy unit is not offered: the damage there would reach nothing.
   def('damageXAtBattlefield', (s, e, ctx) => {
     void e;
     const n = ctx.xPaid || 0;
     if (n <= 0) return;                       // paying nothing deals no instance of damage
     const foe = RB.opponentOf(ctx.p);
-    let best = -1, bestKills = -1, bestHits = -1;
-    for (let i = 0; i < s.bf.length; i++) {
-      const units = RB.unitsAt(s, i, foe);
-      if (!units.length) continue;
-      const kills = units.filter(u => RB.obj(s, u).damage + n >= RB.mightOf(s, u)).length;
-      if (kills > bestKills || (kills === bestKills && units.length > bestHits)) {
-        best = i; bestKills = kills; bestHits = units.length;
-      }
-    }
-    if (best < 0) return;
-    for (const iid of RB.unitsAt(s, best, foe).slice()) RB.dealDamage(s, iid, n, ctx);
-    RB.log(s, 'damageAt', { p: ctx.p, bf: best, n: n });
+    const bfs = s.bf.map((_, i) => i).filter(i => RB.unitsAt(s, i, foe).length > 0);
+    if (!bfs.length) return;
+    const step = i => [{ op: 'ogn.damageEnemiesAt', bf: i, n: n }];
+    if (bfs.length === 1) { RB.runEffects(s, step(bfs[0]), ctx); return; }
+    s.queue.push({
+      kind: 'choose', who: ctx.p, source: ctx.source,
+      prompt: 'Deal ' + n + ' to all enemy units at which battlefield?',
+      options: bfs.map(i => RB.card(s.bf[i].cardId).name),
+      ctx: { p: ctx.p, source: ctx.source, event: ctx.event, targets: ctx.targets },
+      onAnswer: bfs.map(step),
+    });
   });
-  say('damageXAtBattlefield', () => 'Deal that much damage to all enemy units at a ' +
-    'battlefield — the one where it kills the most enemy units.');
+  say('damageXAtBattlefield', () => 'Deal that much damage to all enemy units at a battlefield.');
+
+  def('damageEnemiesAt', (s, e, ctx) => {
+    const foe = RB.opponentOf(ctx.p);
+    for (const iid of RB.unitsAt(s, e.bf, foe).slice()) RB.dealDamage(s, iid, e.n, ctx);
+    RB.log(s, 'damageAt', { p: ctx.p, bf: e.bf, n: e.n });
+  });
+  say('damageEnemiesAt', e => 'Deal ' + e.n + ' to all enemy units there.');
 
   // --- The Boss: an optional replacement with a cost ------------------------
   //

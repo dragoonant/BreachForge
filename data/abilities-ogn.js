@@ -55,7 +55,7 @@ RB.registerAbilities({
   'ogn-042': { vanilla: true },
 
   // Move an enemy unit.
-  'ogn-043': { effects: [{ op: 'ogn.moveUnit', target: { pick: 'enemyUnits' }, to: 'base' }] },
+  'ogn-043': { effects: [{ op: 'ogn.moveUnit', target: { pick: 'enemyUnits' }, to: 'anywhere' }] },
 
   // [Reaction] Counter a spell that costs no more than [4] and no more than [A].
   'ogn-045': {
@@ -155,7 +155,7 @@ RB.registerAbilities({
 
   // Deal 6 to each of up to two units.
   'ogn-105': {
-    effects: [{ op: 'ogn.damage', n: 6, target: { pick: 'allUnits', n: 2, prefer: 'enemy' } }],
+    effects: [{ op: 'ogn.damage', n: 6, target: { pick: 'allUnits', upTo: 2, prefer: 'enemy' } }],
   },
 
   // [Accelerate] · [Deathknell] — Recycle me to ready your runes.
@@ -227,7 +227,7 @@ RB.registerAbilities({
   // [Action] Move a friendly unit and ready it.
   'ogn-173': {
     keywords: ['Action'],
-    effects: [{ op: 'ogn.moveUnit', target: { pick: 'myUnits' }, to: 'battlefield', ready: true }],
+    effects: [{ op: 'ogn.moveUnit', target: { pick: 'myUnits' }, to: 'anywhere', ready: true }],
   },
 
   // [Action] Each player kills one of their gear.
@@ -411,7 +411,7 @@ RB.registerAbilities({
   'ogs-011': {
     keywords: ['Reaction'],
     effects: [{ op: 'ogn.moveUnit',
-      target: { pick: 'myUnits', at: 'battlefield', n: 2 }, to: 'base' }],
+      target: { pick: 'myUnits', at: 'battlefield', upTo: 2 }, to: 'base' }],
   },
 
   // At the end of your turn, ready 2 runes.
