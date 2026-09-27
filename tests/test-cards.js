@@ -324,4 +324,58 @@ export function run(t) {
     RB.answerQueue(s, { t: 'choose', ix: 1 });           // no again — already gone
     t.eq(s.chain.map(x => x.uid), ['c1'], 'only the ransomed spell left the chain');
   });
+
+  // --- combat (§464–466) ---------------------------------------------------------
+  const combatAt = (s, bf, attackers, defenders) => {
+    for (const u of attackers) s.bf[bf].units.push(u);
+    for (const u of defenders) s.bf[bf].units.push(u);
+    s.bf[bf].controller = 1;
+    s.bf[bf].contestedBy = 0;
+    s.bf[bf].combatStaged = true;
+    RB.openShowdown(s, bf);
+    return s;
+  };
+  const sized = (s, id, p, might) => {
+    const u = RB.mint(s, id, p);
+    RB.obj(s, u).permBuffs = might - RB.mightOf(s, u);
+    return u;
+  };
+
+  t.test('[Backline] is assigned combat damage last (Pyke behind a bigger unit)', () => {
+    const s = game();
+    const atk = sized(s, vanilla, 0, 4);
+    const pyke = sized(s, 'unl-145', 1, 3), wall = sized(s, vanilla, 1, 5);
+    combatAt(s, 0, [atk], [pyke, wall]);
+    RB.closeShowdown(s);
+    t.ok(s.bf[0].units.includes(pyke), 'Pyke survives: all 4 went to the front unit');
+  });
+
+  t.test('a unit that arrives mid-combat takes its controller\'s designation (Rengar\'s Assault)', () => {
+    let s = game();
+    const atk = sized(s, vanilla, 0, 3), def = sized(s, vanilla, 1, 3);
+    combatAt(s, 0, [atk], [def]);
+    const rengar = put(s, 'sfd-025', 0, 0);
+    s = RB.settle(s);
+    t.eq(RB.obj(s, rengar).role, 'attacker');
+    t.eq(RB.mightOf(s, rengar), RB.card('sfd-025').might + 2, 'Assault 2 applies');
+  });
+
+  t.test('attackers recalled because defenders survived is No Result, not a defender win', () => {
+    const s = game();
+    const atk = sized(s, vanilla, 0, 1), def = sized(s, vanilla, 1, 5);
+    RB.obj(s, def).stunned = true;                 // deals nothing: both sides survive
+    combatAt(s, 0, [atk], [def]);
+    RB.closeShowdown(s);
+    t.ok(s.players[0].base.includes(atk), 'the attacker was recalled');
+    t.ok(s.log.some(l => l.kind === 'combatNoResult'), 'no result');
+    t.ok(!s.log.some(l => l.kind === 'combatResult'), 'and no winner');
+  });
+
+  t.test('a showdown at an empty battlefield is not a combat: no attacker, no attack trigger', () => {
+    const s = game();
+    const u = put(s, vanilla, 0, 0);
+    s.bf[0].contestedBy = 0;
+    RB.openShowdown(s, 0);
+    t.eq(RB.obj(s, u).role, undefined);
+  });
 }

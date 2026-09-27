@@ -902,6 +902,24 @@
         changed = true;
       } else if (o.wasReady !== ready) o.wasReady = ready;
     }
+    // 2. Designations. Units arriving at the combat battlefield take their controller's
+    // designation in the cleanup after the action that brought them; a unit that is no
+    // longer there loses its own (§464 step 2, cleanup step 2). Stamped only as a combat
+    // opened, a unit played in as a Reaction — sfd-025 Rengar, every [Ambush] unit — was
+    // never an attacker, and its [Assault] never applied.
+    const sd = s.showdown;
+    if (sd && sd.combat) {
+      for (const iid of RB.allUnits(s)) {
+        const o = s.objects[iid];
+        const here = RB.locationOf(s, iid);
+        const want = here.kind === 'bf' && here.bf === sd.bf
+          ? (o.controller === sd.attacker ? 'attacker' : 'defender') : undefined;
+        if (o.role !== want) {
+          if (want) o.role = want; else delete o.role;
+          changed = true;
+        }
+      }
+    }
     // 3. Lethal damage.
     for (let i = 0; i < s.bf.length; i++)
       for (const iid of s.bf[i].units.slice())
@@ -956,15 +974,22 @@
     s.showdown = { bf: i, attacker: attacker, defender: defender, combat: bf.combatStaged };
     // The Attacker gains Focus, and a player who gains Focus also gains Priority. Rule 315.4.
     s.focus = attacker; s.priority = attacker; s.passes = 0;
-    for (const iid of RB.unitsAt(s, i, attacker)) RB.obj(s, iid).role = 'attacker';
-    for (const iid of RB.unitsAt(s, i, defender)) RB.obj(s, iid).role = 'defender';
+    // Attacker and Defender are COMBAT designations (§464 step 2). A showdown at an empty
+    // battlefield has neither, and neither does it fire "when I attack" / "when you defend"
+    // — sfd-215 Ravenbloom paid out when a unit merely walked onto an empty battlefield.
+    if (s.showdown.combat) {
+      for (const iid of RB.unitsAt(s, i, attacker)) RB.obj(s, iid).role = 'attacker';
+      for (const iid of RB.unitsAt(s, i, defender)) RB.obj(s, iid).role = 'defender';
+    }
     RB.log(s, 'showdownOpen', { bf: i, attacker: attacker, defender: defender, combat: s.showdown.combat }, 'showdown.start');
     // Three events fire here, and cards want all three: the showdown beginning at this
     // battlefield, and each side taking its designation. Roles are stamped above, so a
     // trigger asking "am I a defender" already reads true.
     RB.runTriggers(s, 'showdownBegins', { p: attacker, bf: i, attacker: attacker, defender: defender });
-    RB.runTriggers(s, 'attack', { p: attacker, bf: i });
-    RB.runTriggers(s, 'defend', { p: defender, bf: i });
+    if (s.showdown.combat) {
+      RB.runTriggers(s, 'attack', { p: attacker, bf: i });
+      RB.runTriggers(s, 'defend', { p: defender, bf: i });
+    }
   }
   RB.openShowdown = openShowdown;
 })(window.RB = window.RB || {});
