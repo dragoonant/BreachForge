@@ -70,4 +70,20 @@ export function run(t) {
     t.ok(s.players[1].base.includes(a), 'the unit damaged by its own controller survives');
     t.ok(!s.players[1].base.includes(b), 'the unit I damaged dies');
   });
+
+  // --- unl-198 Moonfall ----------------------------------------------------------
+  t.test('Moonfall moves an enemy unit TO the battlefield — never one already there', () => {
+    let s = game({ human: 0 });
+    rich(s, 0);
+    put(s, vanilla, 0, 0);
+    const there = sized(s, 5, 1, 0);
+    const away = sized(s, 2, 1, 'base');
+    const m = put(s, 'unl-198', 0, 'hand');
+    s = passChain(RB.apply(s, plays(s, m)[0]));
+    t.eq(s.queue[0] && s.queue[0].kind, 'choose');
+    s = RB.apply(s, { t: 'choose', ix: 0 });
+    // The only legal enemy is in its base: nothing to ask, and it arrives.
+    t.ok(!s.queue.length || !s.queue[0].options.includes(there), 'the unit already there is no option');
+    t.ok(s.bf[0].units.includes(away), 'the unit from elsewhere was moved there');
+  });
 }

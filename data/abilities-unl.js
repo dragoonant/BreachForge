@@ -461,7 +461,9 @@ RB.registerAbilities({
         options: [
           { label: 'Move an enemy unit there, then give enemy units there -2 Might this turn',
             effects: [
-              { op: 'moveUnit', target: { pick: 'enemyUnits' }, to: 'here' },
+              // `notHere`: a unit already at the battlefield cannot be moved to it, and
+              // choosing one spent the pull on nothing (and tolled its Deflect).
+              { op: 'moveUnit', target: { pick: 'enemyUnits', notHere: true }, to: 'here' },
               { op: 'debuff', n: 2, target: 'hereEnemy' },
             ] },
           { label: 'Move no one; give enemy units there -2 Might this turn',
