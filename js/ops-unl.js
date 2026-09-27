@@ -437,12 +437,15 @@
   // --- discardByType --------------------------------------------------------
   // "Discard 1. Then, do the following based on the discarded card's type." The core
   // discard op reports nothing back, so the branch needs its own handler. Which card is
-  // discarded follows the core op's own rule — the last card in hand, which after a draw
-  // is the card just drawn.
+  // discarded is the player's (§422.1.a); it was `hand.pop()`, always the card just drawn.
+  // The last card in hand stays first in the pool, so a seat that is never asked keeps the
+  // old answer.
   RB.defineOp('discardByType', (s, e, ctx) => {
     const P = s.players[ctx.p];
     if (!P.hand.length) return;
-    const iid = P.hand.pop();
+    const iid = RB.offerChoice(s, P.hand.slice().reverse(), 1, ctx, 'discardByType',
+      'Discard which card?', { quiet: true })[0];
+    RB.removeFrom(P.hand, iid);
     P.trash.push(iid);
     const type = RB.cardOf(s, iid).type;
     RB.log(s, 'discard', { p: ctx.p, iid: iid, type: type });

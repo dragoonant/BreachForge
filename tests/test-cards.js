@@ -36,6 +36,11 @@ export function run(t) {
     }
     return s;
   };
+  // Pass until the chain is empty or a question is waiting — never answers one.
+  const passChain = s => {
+    for (let k = 0; k < 20 && s.chain.length && !s.queue.length; k++) s = RB.apply(s, { t: 'pass' });
+    return s;
+  };
   const passAll = s => {
     for (let k = 0; k < 20 && (s.chain.length || s.queue.length); k++)
       s = s.queue.length ? RB.apply(s, RB.legalActions(s)[0]) : RB.apply(s, { t: 'pass' });
@@ -191,5 +196,78 @@ export function run(t) {
     RB.obj(s, f).permBuffs = 5;
     t.ok(RB.isMighty(s, f), 'Mighty');
     t.eq(RB.deflectCost(s, 0, f), 1);
+  });
+
+  // --- asking the human seat (CARD-LOG-AND-TARGETING-SPEC §10) --------------------
+  t.test('a Deathknell that chooses asks its human controller (Ruined Rex)', () => {
+    const s = game({ human: 0 });
+    const rex = put(s, 'unl-067', 0, 'base');
+    const a = put(s, vanilla, 1, 'base'), b = put(s, vanilla, 1, 'base');
+    RB.kill(s, rex);
+    const q = s.queue[0];
+    t.ok(q && q.kind === 'target' && q.who === 0, 'a target question for seat 0');
+    t.eq(q.options.slice().sort(), [a, b].sort());
+    const done = RB.apply(s, { t: 'choose', selection: [b] });
+    t.eq([RB.obj(done, a).damage, RB.obj(done, b).damage || (done.players[1].trash.includes(b) ? 4 : 0)], [0, 4]);
+  });
+
+  t.test('a choice inside a "you may" answer is asked, not taken (Grim Apothecary)', () => {
+    let s = game({ human: 0 });
+    rich(s, 0);
+    put(s, vanilla, 1, 0);
+    const a = put(s, vanilla, 0, 0), b = put(s, vanilla, 0, 0);
+    const g = put(s, 'unl-021', 0, 'hand');
+    s = RB.apply(s, plays(s, g).find(x => x.to === 'bf0') || plays(s, g)[0]);
+    t.eq(s.queue[0] && s.queue[0].kind, 'may');
+    s = RB.apply(s, { t: 'choose', ix: 0 });
+    const q = s.queue[0];
+    t.ok(q && q.kind === 'target', 'which unit is asked: ' + JSON.stringify(q && q.kind));
+    t.ok(q.options.includes(a) && q.options.includes(b));
+    s = RB.apply(s, { t: 'choose', selection: [a] });
+    t.ok(s.players[0].hand.includes(a) && !s.players[0].hand.includes(b), 'the chosen one returned');
+  });
+
+  t.test('Atakhan\'s "the defender kills one of their units here" asks the human defender on a real attack', () => {
+    let s = game({ human: 1 });
+    const mine = [put(s, vanilla, 1, 0), put(s, vanilla, 1, 0)];
+    s.bf[0].controller = 1;
+    const at = put(s, 'unl-170', 0, 'base');
+    RB.obj(s, at).exhausted = false;
+    s = RB.apply(s, RB.legalActions(s).find(a => a.t === 'move' && a.to === 'bf0' && a.iids.length === 1));
+    const q = s.queue[0];
+    t.ok(q && q.kind === 'target' && q.who === 1, 'the defender is asked: ' + JSON.stringify(q && [q.kind, q.who]));
+    t.eq(q.options.slice().sort(), mine.slice().sort());
+  });
+
+  t.test('"each player kills one of their units" asks a human who did not cast it (Cull the Weak)', () => {
+    let s = game({ human: 1 });
+    rich(s, 0);
+    put(s, vanilla, 0, 'base');
+    const mine = [put(s, vanilla, 1, 'base'), put(s, 'unl-113', 1, 'base')];
+    const cull = put(s, 'ogn-209', 0, 'hand');
+    s = passChain(RB.apply(s, plays(s, cull)[0]));
+    const q = s.queue[0];
+    t.ok(q && q.kind === 'target' && q.who === 1, 'seat 1 is asked for its own unit');
+    t.eq(q.options.slice().sort(), mine.slice().sort());
+  });
+
+  t.test('"each player banishes one of their top five" asks a human who did not cast it (Promising Future)', () => {
+    let s = game({ human: 1 });
+    rich(s, 0);
+    const pf = put(s, 'ogn-115', 0, 'hand');
+    s = RB.apply(s, plays(s, pf)[0]);
+    s = passAll(s);
+    t.ok(s.log.some(l => l.kind === 'target' && l.data.p === 1) || (s.queue[0] && s.queue[0].who === 1),
+      'seat 1 chose its own card');
+  });
+
+  t.test('Hwei\'s "discard 1" is the player\'s choice, not the card just drawn', () => {
+    const s = game({ human: 0 });
+    const a = put(s, vanilla, 0, 'hand'), b = put(s, 'ogn-009', 0, 'hand');
+    RB.resolveAsking(s, { kind: 'effects', effects: [{ op: 'discardByType', spell: [], gear: [], unit: [] }],
+      ctx: { p: 0, source: a } });
+    const q = s.queue[0];
+    t.ok(q && q.kind === 'target', 'asked');
+    t.eq(q.options.slice().sort(), [a, b].sort());
   });
 }

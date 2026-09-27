@@ -59,6 +59,30 @@
     for (const x of extras) if (x.effects) RB.runEffects(s, x.effects, ctx);
   };
 
+  // What a parked resolution IS, so it can be run again from the top once a question is
+  // answered. A card or an ability names itself; a bare list of effects — the branch a
+  // "you may" or "choose one" answer picked, or a triggered ability that fired outside any
+  // resolution — carries its effects and context with it.
+  RB.runPendingItem = function (s, item) {
+    if (item.kind === 'ability') return RB.resolveAbilityNow(s, item);
+    if (item.kind === 'effects') {
+      const prev = s.via;
+      if (item.via) s.via = { iid: item.via };
+      RB.runEffects(s, item.effects || [], Object.assign({}, item.ctx));
+      s.via = prev;
+      return;
+    }
+    return RB.resolveCardNow(s, item);
+  };
+
+  // Run a list of effects as its own resolution: it may stop to ask the human seat. This
+  // is how a triggered ability and a "you may" answer resolve, because both happen
+  // outside the card resolution that the asking machinery used to wrap — and every choice
+  // inside them was made for the player by the engine's own ordering.
+  RB.runAsking = function (s, effects, ctx, via) {
+    RB.resolveAsking(s, { kind: 'effects', effects: effects, ctx: ctx, via: via });
+  };
+
   RB.resolveAbilityNow = function (s, item) {
     const ab = RB.cardOf(s, item.iid).abilities.activated[item.ix];
     RB.runEffects(s, ab.effects || [], { p: item.controller, source: item.iid, targets: item.targets || [] });
@@ -80,13 +104,9 @@
           if (st.deathknellExtra) times += st.deathknellExtra;
     for (const t of ab.triggers) {
       if (t.on !== 'deathknell') continue;
-      for (let k = 0; k < times; k++) {
-        const prev = s.via;
-        s.via = { iid: iid };
-        RB.runEffects(s, t.effects, { p: o.controller, source: iid,
-          event: { p: o.controller, iid: iid, bf: loc.kind === 'bf' ? loc.bf : undefined } });
-        s.via = prev;
-      }
+      for (let k = 0; k < times; k++)
+        RB.runAsking(s, t.effects, { p: o.controller, source: iid,
+          event: { p: o.controller, iid: iid, bf: loc.kind === 'bf' ? loc.bf : undefined } }, iid);
     }
   };
 
@@ -110,10 +130,7 @@
         if (d.on !== event) continue;
         if (d.mine !== false && d.watch === 'mine' && data.p !== d.p) continue;
         if (d.once) s.delayed.splice(s.delayed.indexOf(d), 1);
-        const prev = s.via;
-        s.via = { iid: d.source };
-        RB.runEffects(s, d.effects, { p: d.p, source: d.source, event: data, delayed: d.data });
-        s.via = prev;
+        RB.runAsking(s, d.effects, { p: d.p, source: d.source, event: data, delayed: d.data }, d.source);
       }
     }
     const sources = [];
@@ -139,10 +156,7 @@
           const at = owner === null ? s.bf.findIndex(b => b.iid === iid) : RB.locationOf(s, iid).bf;
           if (at !== data.bf) continue;
         }
-        const prev = s.via;
-        s.via = { iid: iid };
-        RB.runEffects(s, t.effects, { p: p, source: iid, event: data });
-        s.via = prev;
+        RB.runAsking(s, t.effects, { p: p, source: iid, event: data }, iid);
       }
     }
   };
@@ -165,16 +179,13 @@
   RB.answerQueue = function (s, a) {
     const step = s.queue.shift();
     if (step.kind === 'target') {
-      s.chosen = s.chosen || {};
-      s.chosen[step.key] = (a.selection || []).slice();
-      RB.log(s, 'target', { p: step.who, key: step.key, chose: s.chosen[step.key] });
-      const item = s.pendingItem;
-      if (item) {
-        // Run the whole resolution again from the top with this answer pre-filled. It may
-        // stop again on the next question; the loop ends when nothing is left to ask.
-        if (item.kind === 'ability') RB.resolveAsking(s, item, st => RB.resolveAbilityNow(st, item));
-        else RB.resolveAsking(s, item, st => RB.resolveCardNow(st, item));
-      }
+      const item = step.item;
+      item.chosen = item.chosen || {};
+      item.chosen[step.key] = (a.selection || []).slice();
+      RB.log(s, 'target', { p: step.who, key: step.key, chose: item.chosen[step.key] });
+      // Run the whole resolution again from the top with this answer pre-filled. It may
+      // stop again on the next question; the loop ends when nothing is left to ask.
+      RB.resolveAsking(s, item);
       return;
     }
     if (step.kind !== 'may' && step.kind !== 'choose') return;
@@ -182,8 +193,10 @@
     if (step.source) s.via = { iid: step.source };
     RB.log(s, 'choice', { p: step.who, ix: a.ix,
       label: step.options ? step.options[a.ix] : (a.ix === 0 ? 'yes' : 'no') });
-    if (step.onAnswer) RB.runEffects(s, step.onAnswer[a.ix] || [], step.ctx);
     s.via = prev;
+    // The branch is a resolution of its own. Run bare, "you may return a unit" and
+    // "choose one — move an enemy unit" took the engine's first candidate for the player.
+    if (step.onAnswer) RB.runAsking(s, step.onAnswer[a.ix] || [], step.ctx, step.source);
   };
 
   // --- the ops --------------------------------------------------------------
@@ -712,27 +725,37 @@
   // real state, on the final pass. This is the payment solver's rewind, applied to
   // targeting.
   RB.resolveAsking = function (s, item, run) {
-    if (s.humanSeat === null || s.humanSeat === undefined) return run(s);
+    run = run || (st => RB.runPendingItem(st, item));
+    // Inside a probe, or inside a resolution that is already asking, a nested one simply
+    // runs: its questions are collected by — and its answers belong to — the outer one.
+    if (s.humanSeat === null || s.humanSeat === undefined || s.collecting || s.resolving)
+      return run(s);
+    // Answers live on the item, not on the state: two resolutions can be parked at once
+    // (a trigger that fired mid-combat, then the card that combat was for), and one
+    // global answer sheet let the first to finish wipe the other's.
+    item.chosen = item.chosen || {};
     for (let guard = 0; guard < 12; guard++) {
       const probe = RB.clone(s);
       probe.collecting = [];
-      probe.chosen = Object.assign({}, s.chosen || {});
+      probe.chosen = Object.assign({}, item.chosen);
+      probe.resolving = 0;
       try { run(probe); }
       catch (e) { break; }               // a probe that throws is not a reason not to play
       // The question goes to whoever is CHOOSING, which is not always the player who
       // played the card: a discard forced on you by the opponent's spell is still your
       // choice (§422.1.a), and asking the caster would be the wrong player entirely.
       const open = (probe.collecting || []).find(c =>
-        c.p === s.humanSeat && !(s.chosen || {})[c.key] && c.pool.length > c.n && c.n > 0);
+        c.p === s.humanSeat && !item.chosen[c.key] && c.pool.length > c.n && c.n > 0);
       if (!open) break;
-      s.pendingItem = item;
       s.queue.unshift({ kind: 'target', who: open.p, key: open.key, source: open.source,
-        options: open.pool, n: open.n, label: open.label });
+        options: open.pool, n: open.n, label: open.label, item: item });
       return;                            // the resolution resumes when the question is answered
     }
-    run(s);
-    s.chosen = {};
-    s.pendingItem = null;
+    const prev = s.chosen;
+    s.chosen = item.chosen;
+    s.resolving = (s.resolving || 0) + 1;
+    try { run(s); }
+    finally { s.resolving--; s.chosen = prev || {}; }
   };
 
   // The Deflect toll: what an opposing chooser must pay to choose this unit, in Power of

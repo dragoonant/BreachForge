@@ -277,7 +277,11 @@
       for (let q = 0; q < 2; q++) {
         const p = (s.active + q) % 2;                        // the turn player chooses first
         const mine = allGear(s).filter(i => RB.obj(s, i).controller === p);
-        if (mine.length) killGear(s, mine[0]);               // the oldest gear they control
+        // Each player chooses their own (§422.1.a). The engine used to take the oldest gear
+        // of both, a human caster's included.
+        const g = RB.offerChoice(s, mine, 1, Object.assign({}, ctx, { p: p }),
+          'eachKillsGear' + p, 'Kill which of your gear?', { quiet: p !== ctx.p })[0];
+        if (g) killGear(s, g);
       }
       return;
     }
@@ -288,19 +292,19 @@
     : e.scope === 'each' ? 'Each player kills one of their gear.'
       : 'Kill ' + selText({ pick: 'gear', n: num(e, 'n', 1) }) + '.');
 
-  // "Each player kills one of their units." MINE is my choice and goes through the door;
-  // theirs is theirs, and this engine can only ask the seat that is resolving, so it takes
-  // their cheapest — the same rule unl's eachPlayerKills meets the same wall with.
+  // "Each player kills one of their units." Each is that player's choice, and the question
+  // goes to the seat that is choosing (RB.resolveAsking reads the chooser off the pool).
+  // Theirs used to be taken for them — their cheapest — on the belief the engine could only
+  // ask the seat that was resolving. The tag carries the seat: one key for both halves made
+  // the second player's answer the first's.
   def('eachKillsUnit', (s, e, ctx) => {
     void e;
     for (let q = 0; q < 2; q++) {
       const p = (s.active + q) % 2;
       const mine = unitsOf(s, p).sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b));
       if (!mine.length) continue;
-      const taken = p === ctx.p
-        ? RB.offerChoice(s, mine, 1, Object.assign({}, ctx, { p: p }), 'eachKillsUnit',
-                         'Kill which of your units?')
-        : [mine[0]];                                         // each player keeps their best
+      const taken = RB.offerChoice(s, mine, 1, Object.assign({}, ctx, { p: p }),
+        'eachKillsUnit' + p, 'Kill which of your units?', { quiet: p !== ctx.p });
       if (taken[0]) RB.kill(s, taken[0]);
     }
   });
@@ -673,12 +677,10 @@
       RB.log(s, 'look', { p: p, n: top.length });
       const order = top.slice().sort((a, b) =>
         (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0));
-      // My five are mine to choose from; theirs is theirs, and the engine can only ask the
-      // seat that is resolving, so their half keeps the stated rule.
-      const best = p === ctx.p
-        ? (RB.offerChoice(s, order, 1, ctx, 'eachBanishTopAndPlay',
-                          'Banish which of them to play for free?', { quiet: true })[0] || order[0])
-        : order[0];
+      // Each player banishes one of their OWN five, and is asked (the chooser is on the
+      // pool). Only the caster's half used to be asked.
+      const best = RB.offerChoice(s, order, 1, Object.assign({}, ctx, { p: p }),
+        'eachBanishTopAndPlay' + p, 'Banish which of them to play for free?', { quiet: true })[0] || order[0];
       RB.removeFrom(top, best);
       P.banished.push(best);
       picked[p] = best;
