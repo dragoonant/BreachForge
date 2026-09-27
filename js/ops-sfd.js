@@ -663,7 +663,7 @@
       RB.pay(s, ctx.p, plan);
     }
     RB.log(s, 'play', { p: ctx.p, iid: iid, card: RB.cardOf(s, iid).id, from: 'trash' }, 'card.play');
-    RB.resolveCard(s, { iid: iid, controller: ctx.p, to: e.to || 'base', kind: 'card' });
+    RB.playCard(s, { iid: iid, controller: ctx.p, to: e.to || 'base', kind: 'card', immediate: true });
     // A spell resolves straight to the trash; recycling it is the printed clause that stops
     // the same spell being replayed from there every turn.
     if (e.recycleAfter && RB.removeFrom(P.trash, iid)) P.deck.push(iid);
@@ -970,7 +970,7 @@
     RB.pay(s, ctx.p, plan);
     RB.removeFrom(P.banished, take);
     RB.log(s, 'play', { p: ctx.p, iid: take, card: RB.cardOf(s, take).id, from: 'banished' }, 'card.play');
-    RB.resolveCard(s, { iid: take, controller: ctx.p, to: 'base', kind: 'card' });
+    RB.playCard(s, { iid: take, controller: ctx.p, to: 'base', kind: 'card', immediate: true });
   });
   say('burrowTake', () => 'Banish one and play it.');
 

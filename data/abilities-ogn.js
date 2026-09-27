@@ -573,10 +573,10 @@ RB.registerAbilities({
       { op: 'when', test: 'ogn.here', then: [{ op: 'ogn.lookAndRecycle', n: 2 }] }] }],
   },
 
-  // Units can't move from here to base. `ognNoRetreat` is what js/ops-ogn.js reads in
+  // Units can't move from here to base. `noMoveToBase` is what RB.canMoveToBase reads in
   // legalActions; the granted keyword beside it is there so the restriction has a name on
   // the board and a line in the audit — a bespoke static flag has no prose hook yet.
-  'ogn-295': { statics: [{ ognNoRetreat: true, grant: 'No Retreat', scope: 'here' }] },
+  'ogn-295': { statics: [{ noMoveToBase: true, grant: 'No Retreat', scope: 'here' }] },
 
   // Spells and abilities deal 1 Bonus Damage to units here. `bonusDamage` is read inside
   // RB.dealDamage for `effect` damage only, so combat damage here is unchanged — which is

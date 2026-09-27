@@ -360,18 +360,17 @@
       // permBuffs — `buffs` expires in the Ending Cleanup and would shrink it.
       if (e.might != null) o.permBuffs = e.might - (RB.card(e.cardId).might || 0);
       if (e.temporary) o.temporary = true;
-      // NOTE: o.granted is the this-turn channel and is cleared in the Ending Cleanup, so
-      // a keyword printed ON the token ("Bird tokens with [Deflect]") lasts the turn it is
-      // made. There is no permanent granted-keyword channel to write instead; flagged.
-      for (const k of e.keywords || []) o.granted.push(k);
+      // A keyword printed ON the token is a characteristic of it (o.keywords, read by
+      // RB.grantedOn). Written to o.granted — the this-turn channel — unl-044's and
+      // unl-153's Birds lost [Deflect] at the first Ending Cleanup.
+      o.keywords = (e.keywords || []).slice();
       if (e.to === 'here' && ctx.event && ctx.event.bf !== undefined) {
         s.bf[ctx.event.bf].units.push(iid);
         RB.applyContested(s, ctx.event.bf, ctx.p);
       } else s.players[ctx.p].base.push(iid);
       RB.log(s, 'token', { p: ctx.p, iid: iid, card: e.cardId }, 'unit.deploy');
       // "Play a token" is playing it, so a unit token raises unitPlayed — which is what a
-      // card like Lillia ("when you play a token unit") reads. NOTE: the core `token` op
-      // does not raise it, so tokens made by other packs do not reach those triggers.
+      // card like Lillia ("when you play a token unit") reads.
       if (RB.card(e.cardId).type === 'Unit') RB.runTriggers(s, 'unitPlayed', { p: ctx.p, iid: iid });
     }
   });
@@ -483,6 +482,7 @@
       const from = RB.locationOf(s, iid);
       if (dest !== 'base' && from.kind === 'bf' && from.bf === dest) continue;
       if (dest === 'base' && from.kind === 'base') continue;
+      if (dest === 'base' && !RB.canMoveToBase(s, iid)) continue;
       if (!pluck(s, iid)) continue;
       if (dest === 'base') s.players[o.controller].base.push(iid);
       else {
@@ -624,7 +624,7 @@
       RB.pay(s, ctx.p, plan);
       RB.removeFrom(P.hand, iid);
       RB.log(s, 'play', { p: ctx.p, iid: iid, card: RB.cardOf(s, iid).id, to: 'base' }, 'unit.deploy');
-      RB.resolveCard(s, { iid: iid, controller: ctx.p, to: 'base', kind: 'card', targets: [] });
+      RB.playCard(s, { iid: iid, controller: ctx.p, to: 'base', kind: 'card', immediate: true, targets: [] });
       return;
     }
   });
@@ -752,7 +752,7 @@
     if (!iid) return;
     RB.removeFrom(P.trash, iid);
     RB.log(s, 'play', { p: ctx.p, iid: iid, card: RB.obj(s, iid).cardId, to: 'base' }, 'unit.deploy');
-    RB.resolveCard(s, { iid: iid, controller: ctx.p, to: 'base', kind: 'card', targets: [] });
+    RB.playCard(s, { iid: iid, controller: ctx.p, to: 'base', kind: 'card', immediate: true, targets: [] });
   });
   RB.defineDescriber('resurrectWithin', () =>
     'Play a unit from your trash that costs no more Energy and no more Power than the ' +
@@ -960,7 +960,7 @@
       .filter(i => RB.obj(s, i).controller === foe)
       .filter(i => {
         const l = RB.locationOf(s, i);
-        return dest === null ? l.kind !== 'base' : !(l.kind === 'bf' && l.bf === dest);
+        return dest === null ? l.kind !== 'base' && RB.canMoveToBase(s, i) : !(l.kind === 'bf' && l.bf === dest);
       })
       // Smallest first: "any number" wants as many as the cap allows.
       .sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b));
@@ -997,13 +997,23 @@
     const b = RB.offerChoice(s, others, 1, ctx, 'swapWith', 'Choose a unit at a different location')[0];
     if (!b) return;
     const la = RB.locationOf(s, a), lb = RB.locationOf(s, b);
-    if (!pluck(s, a) || !pluck(s, b)) return;
-    const place = (iid, loc) => {
+    // Each half is a move: one that may not go to base stays where it is (do as much as
+    // you can), and each that does move raises `moved` — the swap raised none, so
+    // unl-112 Irresistible Faefolk swapped onto a battlefield never offered its pull.
+    const goes = (iid, loc) => loc.kind !== 'base' || RB.canMoveToBase(s, iid);
+    const moveA = goes(a, lb), moveB = goes(b, la);
+    const place = (iid, loc, from) => {
+      if (!pluck(s, iid)) return;
       if (loc.kind === 'bf') { s.bf[loc.bf].units.push(iid); RB.applyContested(s, loc.bf, ctx.p); }
       else s.players[ctx.p].base.push(iid);
       RB.log(s, 'move', { p: ctx.p, iid: iid, to: loc.kind === 'bf' ? 'bf' + loc.bf : 'base' }, 'unit.move');
     };
-    place(a, lb); place(b, la);
+    if (moveA) place(a, lb);
+    if (moveB) place(b, la);
+    const fire = (iid, loc, from) => RB.runTriggers(s, 'moved', { p: ctx.p, iid: iid,
+      bf: loc.kind === 'bf' ? loc.bf : undefined, fromBf: from.kind === 'bf' ? from.bf : undefined });
+    if (moveA) fire(a, lb, la);
+    if (moveB) fire(b, la, lb);
   });
   RB.defineDescriber('swapMyUnits', () =>
     'Choose a unit you control and another unit you control at a different location. ' +
@@ -1060,7 +1070,7 @@
     if (!RB.removeFrom(s.players[owner].banished, iid)) { src.unlBlink = null; return; }
     src.unlBlink = null;
     RB.log(s, 'play', { p: owner, iid: iid, card: RB.obj(s, iid).cardId, to: 'bf' + ctx.event.bf }, 'unit.deploy');
-    RB.resolveCard(s, { iid: iid, controller: owner, to: 'bf' + ctx.event.bf, kind: 'card', targets: [] });
+    RB.playCard(s, { iid: iid, controller: owner, to: 'bf' + ctx.event.bf, kind: 'card', immediate: true, targets: [] });
   });
   RB.defineDescriber('landBanished', () => '');
 

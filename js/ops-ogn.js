@@ -391,6 +391,7 @@
   // and it raises `moved` exactly as the Standard Move does.
   function relocate(s, iid, dest) {
     const o = RB.obj(s, iid), from = RB.locationOf(s, iid);
+    if (dest === 'base' && !RB.canMoveToBase(s, iid)) return;
     if (from.kind === 'bf') RB.removeFrom(s.bf[from.bf].units, iid);
     else if (from.kind === 'base') RB.removeFrom(s.players[from.p].base, iid);
     else return;
@@ -551,7 +552,7 @@
     P.deck.push(...revealed);
     RB.removeFrom(P.banished, unit);
     RB.log(s, 'play', { p: ctx.p, iid: unit, card: RB.obj(s, unit).cardId, to: 'base' }, 'unit.deploy');
-    RB.resolveCard(s, { iid: unit, controller: ctx.p, to: 'base', kind: 'card', targets: [] });
+    RB.playCard(s, { iid: unit, controller: ctx.p, to: 'base', kind: 'card', immediate: true, targets: [] });
   });
   say('playUnitFromDeck', () => 'Reveal cards from the top of your Main Deck until you reveal ' +
     'a unit and banish it. Play it, ignoring its cost, and recycle the rest.');
@@ -699,7 +700,7 @@
       RB.pay(s, p, plan);
       RB.removeFrom(s.players[p].banished, iid);
       RB.log(s, 'play', { p: p, iid: iid, card: RB.obj(s, iid).cardId, to: 'base' }, 'card.play');
-      RB.resolveCard(s, { iid: iid, controller: p, to: 'base', kind: 'card', targets: [] });
+      RB.playCard(s, { iid: iid, controller: p, to: 'base', kind: 'card', immediate: true, targets: [] });
     }
   });
   say('eachBanishTopAndPlay', e => 'Each player looks at the top ' + num(e, 'look', 5) +
@@ -731,7 +732,7 @@
       RB.pay(s, ctx.p, plan);
       RB.removeFrom(P.trash, iid);
       RB.log(s, 'play', { p: ctx.p, iid: iid, card: RB.obj(s, iid).cardId, to: '-' }, 'spell.cast');
-      RB.resolveCard(s, { iid: iid, controller: ctx.p, to: '-', kind: 'card', targets: [] });
+      RB.playCard(s, { iid: iid, controller: ctx.p, to: '-', kind: 'card', immediate: true, targets: [] });
       RB.removeFrom(P.trash, iid);                       // …then recycle it
       P.deck.push(iid);
       RB.log(s, 'recycle', { p: ctx.p, iid: iid, n: 1 });
@@ -1070,9 +1071,9 @@
   RB.definePlayWhere('to an open battlefield', (s, p, i) => { void p; return isOpen(s, i); });
 
   // Two board-wide permissions this pack grants, both read by the legalActions wrapper
-  // below: a battlefield that holds its units (`ognNoRetreat`), and a unit that lets
+  // below: a battlefield that holds its units (`noMoveToBase`), and a unit that lets
   // every friendly unit be played to open battlefields (`ognOpenPlay`).
-  const noRetreat = (s, iid) => RB.staticsOn(s, iid).some(st => st.ognNoRetreat);
+  const noRetreat = (s, iid) => !RB.canMoveToBase(s, iid);
   function grantsOpenPlay(s, p) {
     for (const iid of RB.allUnits(s)) {
       const o = RB.obj(s, iid);

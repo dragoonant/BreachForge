@@ -474,6 +474,14 @@
       const c = RB.cardOf(s, iid);
       if (e.type && c.type !== e.type) return false;
       if (e.maxEnergy != null && (c.energy || 0) > e.maxEnergy) return false;
+      // A card whose remaining cost cannot be paid is not a card you can play (§13.4 step
+      // 5). Left in the pool, the biggest was taken first and fizzled — ogn-198 The
+      // Harrowing played nothing when its top candidate cost Power the player lacked.
+      if (!e.ignoreCost) {
+        const cost = RB.costOf(s, iid);
+        if (e.ignoreEnergy) cost.energy = 0;
+        if (!RB.canPay(s, ctx.p, cost)) return false;
+      }
       return true;
     });
     if (!pool.length) return;
@@ -498,7 +506,7 @@
     }
     RB.log(s, 'play', { p: ctx.p, iid: iid, card: RB.cardOf(s, iid).id,
       from: e.zone || 'trash' }, 'card.play');
-    RB.resolveCard(s, { iid: iid, controller: ctx.p, to: e.to || 'base', kind: 'card' });
+    RB.playCard(s, { iid: iid, controller: ctx.p, to: e.to || 'base', kind: 'card', immediate: true });
   });
 
   // A unit's Might is swapped, held for the turn. RB.mightOf derives Might on demand, so

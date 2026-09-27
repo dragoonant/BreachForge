@@ -282,7 +282,7 @@
     if (from.kind === 'base') {
       for (let i = 0; i < state.bf.length; i++) out.push('bf' + i);
     } else if (from.kind === 'bf') {
-      if (!RB.obj(state, iid).noMoveToBase) out.push('base');
+      if (RB.canMoveToBase(state, iid)) out.push('base');
       if (RB.hasKeyword(state, iid, 'Ganking') || RB.bfGrantsGanking(state, from.bf))
         for (let j = 0; j < state.bf.length; j++) if (j !== from.bf) out.push('bf' + j);
     }
@@ -494,27 +494,47 @@
     RB.pay(s, p, plan);
     for (const x of extras) RB.payExtra(s, p, iid, x);
     if (a.from === 'champion') P.champion = null; else RB.removeFrom(P.hand, iid);
-    // Count it before anything resolves: a card that asks "is this my second card this
-    // turn" is asking about itself, and a counter bumped afterwards answers one too low.
-    P.playedThisTurn.push(card.id);
-    if ((card.tags || []).includes('Equipment') || card.type === 'Gear') P.turnFlags.equipment = true;
     RB.log(s, 'play', { p: p, iid: iid, card: card.id, to: a.to,
-      nth: P.playedThisTurn.length }, soundFor(card));
-    RB.runTriggers(s, 'cardPlayed', { p: p, iid: iid, nth: P.playedThisTurn.length,
-      type: card.type });
+      nth: P.playedThisTurn.length + 1 }, soundFor(card));
     // Units and Gear resolve immediately on finalization and never sit on the chain
     // (rules §356); only spells and non-Add abilities linger there.
     const item = { iid: iid, controller: p, to: a.to, kind: 'card', targets: a.targets,
       paid: (a.pay || []).slice(), fromZone: zone, xPaid: xPaid,
       cardId: card.id, energy: card.energy || 0 };
-    // Relevant choices are made as the card is played (§349 step 2), so a card that
-    // declares what it chooses records it on the chain item. That is what lets a counter
-    // read "a spell that chose exactly one of my units" instead of countering anything.
-    if (card.type === 'Unit' || card.type === 'Gear') { RB.resolveCard(s, item); return; }
-    pushDeclared(s, item);
+    RB.playCard(s, item, {});
+    if (card.type === 'Unit' || card.type === 'Gear') return;
     s.priority = RB.opponentOf(p);
     s.passes = 0;
   }
+
+  // EVERY play, from a hand, a facedown card, the Champion Zone, or an effect ("play a
+  // unit from your trash", Aurora, Promising Future, a blink). Playing is one event:
+  // the card is counted as played this turn and "when you play a card" is told. The
+  // effect plays used to call RB.resolveCard directly, so they were never counted — ogn-012
+  // [Legion] and ogn-027 Darius missed them.
+  //
+  // Count it before anything resolves: a card that asks "is this my second card this turn"
+  // is asking about itself. The TRIGGER is another matter: a unit or gear is on the board
+  // the moment it is finalized, and trigger conditions are evaluated after the event (§13.3,
+  // "an object ... triggers if it enters that zone at the same time its condition is met"),
+  // so it is told after the permanent has entered — Darius played as your second card sees
+  // himself. A spell is told as it goes on the chain.
+  RB.playCard = function (s, item, extra) {
+    const p = item.controller, iid = item.iid;
+    const card = RB.cardOf(s, iid);
+    const P = s.players[p];
+    P.playedThisTurn.push(card.id);
+    if ((card.tags || []).includes('Equipment') || card.type === 'Gear') P.turnFlags.equipment = true;
+    const event = Object.assign({ p: p, iid: iid, nth: P.playedThisTurn.length, type: card.type }, extra || {});
+    if (card.type === 'Unit' || card.type === 'Gear') {
+      RB.resolveCard(s, item);
+      RB.runTriggers(s, 'cardPlayed', event);
+      return;
+    }
+    RB.runTriggers(s, 'cardPlayed', event);
+    if (item.immediate) { RB.resolveCard(s, item); return; }
+    pushDeclared(s, item);
+  };
 
   // A spell or ability on the chain has made its choices (§349 step 2): it is given an
   // identity of its own and declared. See RB.declareChoices.
@@ -534,11 +554,8 @@
     bf.hidden.splice(bf.hidden.indexOf(h), 1);
     const card = RB.cardOf(s, a.iid);
     const P = s.players[p];
-    P.playedThisTurn.push(card.id);
     RB.log(s, 'play', { p: p, iid: a.iid, card: card.id, to: a.to, from: 'hidden',
-      nth: P.playedThisTurn.length }, soundFor(card));
-    RB.runTriggers(s, 'cardPlayed', { p: p, iid: a.iid, nth: P.playedThisTurn.length,
-      type: card.type, fromHidden: true });
+      nth: P.playedThisTurn.length + 1 }, soundFor(card));
     // A facedown play ignores the BASE cost; additional costs the player chose still get
     // paid, which is why they were offered.
     const extras = (a.pay || []).map(id => RB.additionalCost(s, a.iid, id, 'hidden'));
@@ -553,8 +570,8 @@
     const item = { iid: a.iid, controller: p, to: a.to, kind: 'card', fromHidden: true,
       cardId: card.id, energy: card.energy || 0,
       paid: (a.pay || []).slice(), fromZone: 'hidden' };
-    if (card.type === 'Unit' || card.type === 'Gear') { RB.resolveCard(s, item); return; }
-    pushDeclared(s, item);
+    RB.playCard(s, item, { fromHidden: true });
+    if (card.type === 'Unit' || card.type === 'Gear') return;
     s.priority = RB.opponentOf(p);
     s.passes = 0;
   }

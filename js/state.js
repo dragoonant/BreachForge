@@ -203,6 +203,15 @@
   };
 
   // --- derived predicates: one home each ------------------------------------
+  // "I can't move to base" (unl-111) and "units can't move from here to base" (ogn-295)
+  // restrict every MOVE to base — the standard move and every effect that moves a unit.
+  // Asked only by the standard move before, so Charm, Moonfall, Tricksy Tentacles and a
+  // swap all walked a pinned unit home.
+  RB.canMoveToBase = function (state, iid) {
+    if (RB.obj(state, iid).noMoveToBase) return false;
+    return !RB.staticsOn(state, iid).some(st => st.noMoveToBase);
+  };
+
   RB.mightOf = function (state, iid) {
     const o = RB.obj(state, iid);
     const c = RB.card(o.cardId);
@@ -355,7 +364,10 @@
 
   RB.grantedOn = function (state, iid) {
     const o = RB.obj(state, iid);
-    const out = (o.granted || []).slice();
+    // `keywords` are printed ON a token by the card that made it ("Bird tokens with
+    // [Deflect]") — characteristics, not this-turn grants, so the Ending Cleanup that
+    // clears `granted` leaves them alone.
+    const out = (o.granted || []).concat(o.keywords || []);
     for (const st of RB.staticsOn(state, iid))
       if (st.grant) out.push(st.grantValue != null ? { name: st.grant, value: st.grantValue } : st.grant);
     return out;

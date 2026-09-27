@@ -408,4 +408,53 @@ export function run(t) {
     RB.kill(s, dr);
     t.eq(s.players[1].points, before);
   });
+
+  // --- what counts as playing a card ------------------------------------------
+  t.test('Darius played as your second card sees himself: +2 and ready', () => {
+    let s = game();
+    rich(s, 0);
+    const first = put(s, vanilla, 0, 'hand');
+    const dar = put(s, 'ogn-027', 0, 'hand');
+    s = RB.apply(s, plays(s, first).find(a => a.to === 'base'));
+    rich(s, 0);
+    s = RB.apply(s, plays(s, dar).find(a => a.to === 'base'));
+    t.ok(!RB.obj(s, dar).exhausted, 'readied');
+    t.eq(RB.mightOf(s, dar), RB.card('ogn-027').might + 2);
+  });
+
+  t.test('a card played by an effect is a card played this turn', () => {
+    const s = game();
+    rich(s, 0);
+    put(s, vanilla, 0, 'trash');
+    const n = s.players[0].playedThisTurn.length;
+    RB.ops.playFromZone(s, { zone: 'trash', type: 'Unit', ignoreCost: true }, { p: 0, source: null });
+    t.eq(s.players[0].playedThisTurn.length, n + 1);
+  });
+
+  t.test('a Bird token keeps its printed [Deflect] past the Ending Cleanup', () => {
+    let s = game();
+    RB.ops.keywordToken(s, { cardId: 'tok-bird', n: 1, might: 1, keywords: ['Deflect'] }, { p: 0, source: null });
+    const bird = s.players[0].base[s.players[0].base.length - 1];
+    s = RB.apply(s, { t: 'endTurn' });
+    t.ok(RB.hasKeyword(s, bird, 'Deflect'));
+  });
+
+  t.test('"I can\'t move to base" holds against an effect move too (Determined Sentry)', () => {
+    const s = game();
+    const sentry = put(s, vanilla, 1, 0);
+    RB.obj(s, sentry).noMoveToBase = true;
+    RB.ops['ogn.moveUnit'](s, { target: { pick: 'enemyUnits' }, to: 'base' }, { p: 0, source: null });
+    t.ok(s.bf[0].units.includes(sentry), 'still at the battlefield');
+  });
+
+  t.test('play-from-trash skips a card whose Power cost cannot be paid (The Harrowing)', () => {
+    const s = game();
+    s.players[0].runes = [];
+    const dear = RB.allCards().find(c => c.type === 'Unit' && c.power >= 1);
+    const big = put(s, dear.id, 0, 'trash');
+    const small = put(s, vanilla, 0, 'trash');
+    RB.ops.playFromZone(s, { zone: 'trash', type: 'Unit', ignoreEnergy: true }, { p: 0, source: null });
+    t.ok(!s.players[0].trash.includes(small), 'the playable one was played');
+    t.ok(s.players[0].trash.includes(big));
+  });
 }
