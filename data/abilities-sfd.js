@@ -145,7 +145,7 @@
     'sfd-128': {
       triggers: [{ on: 'defend', mine: true, here: true, effects: [{ op: 'may', effects: [
         { op: 'kill', target: 'self' },
-        { op: 'sfd.recallAttacker' },
+        { op: 'sfd.moveAttacker' },
       ] }] }],
     },
 

@@ -619,23 +619,24 @@
   say('damageThere', e => 'Deal ' + n_(e) + ' to a unit at a battlefield.');
 
   // --- movement, zones --------------------------------------------------------
-  // Recall: relocate a permanent to its base without it being a Move (§444) — no move
-  // triggers, no exhaustion, damage and statuses preserved.
-  def('recallAttacker', (s, e, ctx) => {
-    const here = eventBf(s, ctx);
-    if (here < 0) return;
-    const foe = RB.opponentOf(ctx.p);
-    const pool = RB.unitsAt(s, here, foe).filter(u => RB.obj(s, u).role === 'attacker');
-    const take = (pool.length ? pool : RB.unitsAt(s, here, foe)).slice()
+  // "Move an attacking unit to its base." A MOVE (§144), not a Recall: it raises `moved`,
+  // so "when I move" triggers fire, and a unit that can't move to base is not moved. The
+  // pool is the attackers and nothing else — with none, there is nothing to move. (This
+  // was a Recall with no `moved` event, and it fell back to any enemy unit.)
+  def('moveAttacker', (s, e, ctx) => {
+    const pool = RB.allUnits(s).filter(u => RB.obj(s, u).role === 'attacker' &&
+      RB.locationOf(s, u).kind === 'bf' && RB.canMoveToBase(s, u))
       .sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
-    const iid = RB.offerChoice(s, take, 1, ctx, 'recall', 'Send which attacker home?')[0];
+    const iid = RB.offerChoice(s, pool, 1, ctx, 'moveAttacker', 'Move which attacker to its base?')[0];
     if (!iid) return;
-    RB.removeFrom(s.bf[here].units, iid);
-    delete RB.obj(s, iid).role;
-    s.players[RB.obj(s, iid).controller].base.push(iid);
-    RB.log(s, 'recall', { p: ctx.p, iid: iid, bf: here }, 'unit.move');
+    const o = RB.obj(s, iid), from = RB.locationOf(s, iid);
+    RB.removeFrom(s.bf[from.bf].units, iid);
+    delete o.role;
+    s.players[o.controller].base.push(iid);
+    RB.log(s, 'move', { p: o.controller, iid: iid, to: 'base' }, 'unit.move');
+    RB.runTriggers(s, 'moved', { p: o.controller, iid: iid, bf: undefined, fromBf: from.bf });
   });
-  say('recallAttacker', () => 'Move an attacking unit to its base.');
+  say('moveAttacker', () => 'Move an attacking unit to its base.');
 
   def('readyLegend', (s, e, ctx) => {
     const l = s.players[ctx.p].legend;

@@ -154,4 +154,27 @@ export function run(t) {
     t.eq(s.queue[0].options.slice().sort(), [own, theirs].sort());
   });
 
+  // --- sfd-128 Overzealous Fan --------------------------------------------------
+  t.test('Overzealous Fan MOVES the attacker (its "when I move" fires) and takes only an attacker', () => {
+    let s = game();
+    const fan = put(s, 'sfd-128', 1, 0);
+    s.bf[0].controller = 1;
+    const mover = put(s, 'sfd-048', 0, 'base');           // "When I move, draw 1."
+    const hand = s.players[0].hand.length;
+    s = RB.apply(s, { t: 'move', iids: [mover], to: 'bf0' });
+    t.ok(s.players[0].hand.length === hand + 1, 'the move in drew one');
+    for (let k = 0; k < 10 && !(s.queue[0] && s.queue[0].kind === 'may' && s.queue[0].who === 1); k++)
+      s = RB.apply(s, s.queue.length ? RB.legalActions(s)[0] : { t: 'pass' });
+    t.ok(s.queue[0] && s.queue[0].who === 1, 'the Fan asks');
+    s = RB.apply(s, { t: 'choose', ix: 0 });
+    t.ok(s.players[0].base.includes(mover), 'the attacker is home');
+    t.ok(!s.bf[0].units.includes(fan), 'the Fan paid with its life');
+    t.eq(s.players[0].hand.length, hand + 2, 'and the move home drew another');
+
+    const s2 = game();
+    const u = put(s2, vanilla, 0, 0);                      // at the battlefield, not attacking
+    RB.ops['sfd.moveAttacker'](s2, { op: 'sfd.moveAttacker' }, { p: 1, source: 'x' });
+    t.ok(s2.bf[0].units.includes(u), 'a unit that is not attacking is not taken');
+  });
+
 }
