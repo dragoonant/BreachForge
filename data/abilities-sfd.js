@@ -199,15 +199,19 @@
     },
 
     // "[Equip] — [C], Recycle 2 cards from your trash".
-    // DEVIATION: an activated ability's cost may only be Energy, Power, exhausting or
-    // killing the source, so the recycle is enforced on resolution instead. With fewer than
-    // two cards in the trash the ability is still offered and does nothing — it is never
-    // free to actually equip, but it can waste the [C]. Same shape as unl-158.
+    // The recycle is part of the COST. The core pays an activated ability's Energy, Power,
+    // exhaust and kill-self only, so the rest is split in two: the `when` gate means the
+    // ability is not offered unless the trash holds two cards, and the first thing the
+    // ability does is recycle the two the player picks — all or nothing, and nothing is
+    // attached without it. Weaponmaster (sfd.weaponmaster) runs these same effects, so the
+    // recycle is paid on that path too.
     'sfd-150': {
-      activated: [{ keyword: 'Equip', power: 1, domains: ['Chaos'], effects: [{
-        op: 'sfd.when', cond: 'trashAtLeast', n: 2,
-        effects: [{ op: 'sfd.recycleFromTrash', n: 2 }, { op: 'sfd.attach' }],
-      }] }],
+      activated: [{ keyword: 'Equip', power: 1, domains: ['Chaos'],
+        when: { kind: 'sfd.trashAtLeast', n: 2 },
+        effects: [{
+          op: 'sfd.when', cond: 'trashAtLeast', n: 2,
+          effects: [{ op: 'sfd.recycleFromTrash', n: 2 }, { op: 'sfd.attach' }],
+        }] }],
     },
 
     // ---------------------------------------------------------------- Order

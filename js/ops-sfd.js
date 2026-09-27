@@ -267,6 +267,15 @@
   // adds an attached gear's printed Might Bonus, so the bonus itself needs no data.
   def('attach', (s, e, ctx) => {
     const gear = ctx.source;
+    // Weaponmaster runs an Equip ability's own effects on behalf of the unit it is
+    // attaching to, so the host is already chosen; that is also the one case in which an
+    // already-attached Equipment is moved ("even if it's already attached").
+    if (ctx.sfdHost) {
+      if (!s.objects[ctx.sfdHost] || RB.locationOf(s, ctx.sfdHost).kind === 'nowhere') return;
+      detach(s, gear);
+      attachTo(s, gear, ctx.sfdHost, ctx.p);
+      return;
+    }
     if (RB.obj(s, gear).attachedTo) return;          // already placed by the play destination
     const hosts = unitsOf(s, ctx.p).sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
     const host = RB.offerChoice(s, hosts, 1, ctx, 'equipHost', 'Attach to which unit?')[0];
@@ -340,24 +349,48 @@
   // [Weaponmaster] — "choose a card you control with the Equipment tag; pay the cost of its
   // Equip ability, reduced by [A], to attach it to this unit" — "even if it's already
   // attached" (sfd-116), so an attached Equipment is a legal choice and is taken off its
-  // host. The reduction applies to that ability's own printed cost, and nothing is attached
-  // if the rest cannot be paid.
+  // host. The reduction applies to that ability's own printed cost, and the WHOLE cost is
+  // paid: an Equip gated on something beyond Energy and Power (sfd-150's "Recycle 2 cards
+  // from your trash") is a candidate only when that part is payable too, and its own
+  // effects are what pay it. Only an Equipment whose cost the player can pay is offered —
+  // and nothing is taken off its old host unless it is attached to the new one.
   def('weaponmaster', (s, e, ctx) => {
+    const reduced = gear => {
+      const eq = equipOf(s, gear) || {};
+      return { energy: eq.energy || 0, power: Math.max(0, (eq.power || 0) - 1),
+        domains: eq.domains || RB.DOMAINS.slice(), each: false };
+    };
+    const payable = gear => {
+      const eq = equipOf(s, gear);
+      if (eq && eq.when && !RB.testCondition(s, eq.when, { p: ctx.p, source: gear })) return false;
+      return RB.canPay(s, ctx.p, reduced(gear));
+    };
     const mine = allGear(s).filter(i => RB.obj(s, i).controller === ctx.p &&
       RB.obj(s, i).attachedTo !== ctx.source &&
-      (RB.cardOf(s, i).tags || []).includes('Equipment'));
+      (RB.cardOf(s, i).tags || []).includes('Equipment') && payable(i));
     mine.sort((a, b) => bonusOf(s, b) - bonusOf(s, a));
     const gear = RB.offerChoice(s, mine, 1, ctx, 'weaponmaster', 'Attach which Equipment?')[0];
     if (!gear) return;
-    detach(s, gear);
-    const eq = ((abOf(s, gear) || {}).activated || [])[0] || {};
-    const cost = { energy: Math.max(0, (eq.energy || 0) - 0), power: Math.max(0, (eq.power || 0) - 1),
-      domains: eq.domains || RB.DOMAINS.slice(), each: false };
-    const plan = RB.planPayment(s, ctx.p, cost);
+    const plan = RB.planPayment(s, ctx.p, reduced(gear));
     if (!plan) return;
     RB.pay(s, ctx.p, plan);
+    const eq = equipOf(s, gear);
+    // This pack's Equip abilities attach through sfd.attach, which honours the named host;
+    // their other effects (the recycle) run as they would on activation. Another pack's
+    // Equip op cannot be told the host, so it is attached directly.
+    if (eq && usesSfdAttach(eq.effects)) {
+      RB.runEffects(s, eq.effects, Object.assign(plainCtx(ctx), { source: gear, sfdHost: ctx.source }));
+      return;
+    }
+    detach(s, gear);
     attachTo(s, gear, ctx.source, ctx.p);
   });
+  function equipOf(s, gear) {
+    return ((abOf(s, gear) || {}).activated || []).find(a => a.keyword === 'Equip') || null;
+  }
+  function usesSfdAttach(fx) {
+    return (fx || []).some(x => x.op === 'sfd.attach' || usesSfdAttach(x.effects));
+  }
   say('weaponmaster', () => 'Attach an Equipment you control to me, paying the cost of its ' +
     'Equip ability reduced by 1 Power.');
 
@@ -668,9 +701,18 @@
   say('revealTop', () => "Reveal the top card of your Main Deck. If it's a spell, put it in " +
     'your hand. Otherwise, recycle it.');
 
+  // Which cards go is the player's choice (cheapest first when nobody is asked), and it is
+  // all or nothing: "Recycle 2" is a cost on sfd-150, and a cost is paid in full or not at
+  // all. It used to pop the two most recent cards, whichever they were.
   def('recycleFromTrash', (s, e, ctx) => {
     const P = s.players[ctx.p];
-    for (let i = 0; i < n_(e) && P.trash.length; i++) P.deck.push(P.trash.pop());
+    if (P.trash.length < n_(e)) return;
+    const pool = P.trash.slice().sort((a, b) =>
+      (RB.cardOf(s, a).energy || 0) - (RB.cardOf(s, b).energy || 0));
+    const took = RB.offerChoice(s, pool, n_(e), ctx, 'recycleFromTrash',
+      'Recycle which ' + n_(e) + ' cards from your trash?', { quiet: true });
+    for (const iid of took) { RB.removeFrom(P.trash, iid); P.deck.push(iid); }
+    RB.log(s, 'recycle', { p: ctx.p, iids: took.slice() });
   });
   say('recycleFromTrash', e => 'Recycle ' + n_(e) + ' cards from your trash.');
 
@@ -1075,6 +1117,12 @@
 
     // The gate on sfd-248, registered into the core's condition table (and its prose into
     // the core's, or the auditor reads back a camelCase identifier).
+    // The gate on sfd-150's Equip: "Recycle 2 cards from your trash" is part of its cost,
+    // so with fewer than two cards there the ability is not offered at all.
+    RB.defineCondition('sfd.trashAtLeast', (s, ctx, a) =>
+      s.players[ctx.p].trash.length >= (a.n || 1));
+    if (RB.defineWhenText)
+      RB.defineWhenText('sfd.trashAtLeast', () => 'if your trash holds enough cards to recycle');
     RB.defineCondition('sfd.chosenEnemyTwice', (s, ctx, a) => {
       const o = s.objects[ctx.source];
       return !!o && o.sfdChoiceTurn === s.turn && (o.sfdChoices || 0) >= (a.n || 2);

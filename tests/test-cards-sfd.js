@@ -195,4 +195,39 @@ export function run(t) {
     t.ok(s.players[0].trash.includes(star), 'the unpayable one is still in the trash');
   });
 
+  // --- sfd-150 Last Rites -------------------------------------------------------
+  t.test('Last Rites: "Recycle 2 cards from your trash" is COST — not offered without them, and the player picks', () => {
+    let s = game({ human: 0 });
+    rich(s, 0);
+    const u = put(s, vanilla, 0, 'base');
+    const g = put(s, 'sfd-150', 0, 'base');
+    const t1 = put(s, vanilla, 0, 'trash');
+    const equip = st => RB.legalActions(st).filter(a => a.t === 'activate' && a.iid === g);
+    t.eq(equip(s).length, 0, 'one card in the trash: no Equip');
+    const t2 = put(s, vanilla, 0, 'trash'), t3 = put(s, vanilla, 0, 'trash');
+    t.eq(equip(s).length, 1, 'three: Equip is offered');
+    s = playUntilAsked(s, equip(s)[0]);
+    s = RB.apply(s, { t: 'choose', selection: [t1, t3] });   // which to recycle — may come first or second
+    s = settle(s.queue.length && s.queue[0].options.includes(u) ? RB.apply(s, { t: 'choose', selection: [u] }) : s);
+    t.eq(s.players[0].trash, [t2], 'the two chosen went, the other stayed');
+    t.eq(RB.obj(s, g).attachedTo, u, 'and it is attached');
+  });
+
+  t.test('Weaponmaster pays Last Rites\' recycle too, and cannot take it without two cards in the trash', () => {
+    for (const trash of [1, 2]) {
+      let s = game();
+      rich(s, 0);
+      const g = put(s, 'sfd-150', 0, 'base');
+      for (let k = 0; k < trash; k++) put(s, vanilla, 0, 'trash');
+      const y = put(s, 'sfd-116', 0, 'hand');
+      s = RB.apply(s, plays(s, y).find(a => a.to === 'base'));
+      s = settle(s);
+      if (trash === 1) t.eq(RB.obj(s, g).attachedTo, null, 'one card: not attached');
+      else {
+        t.eq(RB.obj(s, g).attachedTo, y, 'two cards: attached');
+        t.eq(s.players[0].trash.length, 0, 'and both recycled');
+      }
+    }
+  });
+
 }
