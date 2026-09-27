@@ -209,4 +209,31 @@ export function run(t) {
     t.ok(s.bf[0].units.includes(baron), 'Baron stays');
     t.ok(s.players[1].base.includes(small), 'the other goes');
   });
+
+  // --- unl-141 Evelynn, unl-145 Pyke --------------------------------------------------
+  t.test('Evelynn from face down pulls an enemy from ANOTHER location to her battlefield', () => {
+    let s = game({ human: 0 });
+    put(s, vanilla, 0, 1);
+    s.bf[1].controller = 0;
+    const there = sized(s, 5, 1, 1);
+    const away = sized(s, 2, 1, 0);
+    const ev = RB.mint(s, 'unl-141', 0);
+    s.bf[1].hidden.push({ iid: ev, owner: 0, turnHidden: s.turn - 1 });
+    s = RB.apply(s, RB.legalActions(s).find(a => a.t === 'play' && a.iid === ev));
+    s = passChain(s);
+    t.eq(s.queue[0] && s.queue[0].kind, 'may');
+    s = RB.apply(s, { t: 'choose', ix: 0 });
+    t.ok(s.bf[1].units.includes(away) && s.bf[1].units.includes(there), 'pulled from bf0; ' +
+      JSON.stringify(s.queue[0] && s.queue[0].options));
+  });
+
+  t.test('Pyke at a battlefield makes one Gold when an enemy unit dies', () => {
+    const s = game();
+    const p = put(s, 'unl-145', 0, 0);
+    const a = put(s, vanilla, 1, 'base'), b = put(s, vanilla, 1, 'base');
+    RB.kill(s, a); RB.kill(s, b);
+    const gold = s.players[0].base.filter(i => RB.obj(s, i).cardId === 'tok-gold');
+    t.eq(gold.length, 1, 'once each turn');
+    t.ok(p);
+  });
 }
