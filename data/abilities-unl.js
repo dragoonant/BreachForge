@@ -216,11 +216,13 @@ RB.registerAbilities({
     }],
   },
 
-  // Elder Dragon — any damage kills enemy units, and a ping at every location on the way
-  // in. `anyDamageKills` is read by RB.isLethalDamage, the one home for lethality; the
-  // scope is every unit that is not mine, which is what `enemyOfSource` asks.
+  // Elder Dragon — any amount of YOUR damage kills enemy units, and a ping at every
+  // location on the way in. `anyDamageKills` is read by RB.isLethalDamage, the one home for
+  // lethality; `enemyDamagedBySource` narrows it to enemy units this card's controller has
+  // damaged this turn (js/ops-unl.js records who dealt each hit). `enemyOfSource` read
+  // "your damage" as any damage, so a unit hurt only by its own side died too.
   'unl-118': {
-    statics: [{ anyDamageKills: true, scope: 'all', when: 'enemyOfSource' }],
+    statics: [{ anyDamageKills: true, scope: 'all', when: 'enemyDamagedBySource' }],
     triggers: [{ on: 'played', effects: [{ op: 'damageEachLocation', n: 1 }] }],
   },
 

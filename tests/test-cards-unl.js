@@ -58,4 +58,16 @@ export function run(t) {
     t.eq(copies.length, 2, 'two Reflection copies');
     t.ok(copies.every(i => RB.obj(s, i).temporary), 'each copy is Temporary');
   });
+
+  // --- unl-118 Elder Dragon ------------------------------------------------------
+  t.test('Elder Dragon: only YOUR damage is always enough — an enemy hurt by its own side lives', () => {
+    const s = game();
+    put(s, 'unl-118', 0, 'base');
+    const a = sized(s, 3, 1, 'base'), b = sized(s, 3, 1, 'base');
+    RB.dealDamage(s, a, 1, { p: 1 }, 'effect');       // their own damage
+    RB.dealDamage(s, b, 1, { p: 0 }, 'effect');       // mine
+    RB.settle(s);
+    t.ok(s.players[1].base.includes(a), 'the unit damaged by its own controller survives');
+    t.ok(!s.players[1].base.includes(b), 'the unit I damaged dies');
+  });
 }

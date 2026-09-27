@@ -1243,6 +1243,24 @@
   RB.defineStaticWhen('weakerEnemyThanSource', (state, iid, w, src) =>
     RB.obj(state, iid).controller !== RB.obj(state, src).controller &&
     RB.mightOf(state, iid) < RB.mightOf(state, src));
+  // "Any amount of YOUR damage is enough to kill enemy units" (unl-118 Elder Dragon). The
+  // core reads `anyDamageKills` in RB.isLethalDamage, which knows the unit but not who hurt
+  // it — so an enemy unit damaged only by its own side (or by the other player's spell on
+  // it) died too. Who dealt damage is recorded through the core's damage-layer hook, which
+  // sees every hit, combat and effect alike, with the dealing player as info.p; the record
+  // is keyed to the turn because damage is removed in every Ending Cleanup.
+  RB.defineDamageLayer((s, info) => {
+    if (info.p === undefined || info.p === null || !s.objects[info.iid]) return;
+    const o = s.objects[info.iid];
+    if (!o.unlDamagedBy || o.unlDamagedBy.turn !== s.turn) o.unlDamagedBy = { turn: s.turn, by: [] };
+    if (!o.unlDamagedBy.by.includes(info.p)) o.unlDamagedBy.by.push(info.p);
+  });
+  RB.defineStaticWhen('enemyDamagedBySource', (state, iid, w, src) => {
+    const o = RB.obj(state, iid);
+    const me = RB.obj(state, src).controller;
+    const d = o.unlDamagedBy;
+    return o.controller !== me && !!d && d.turn === state.turn && d.by.includes(me);
+  });
   RB.defineStaticWhen('isToken', (state, iid) => !!RB.obj(state, iid).token);
   RB.defineStaticWhen('isTemporary', (state, iid) => !!RB.obj(state, iid).temporary);
   // "+1 Might for each of your units with Temporary at my battlefield." Reads no Might, so
@@ -1282,6 +1300,7 @@
   // camelCase identifier. A condition nobody can read is a clause nobody can check.
   if (RB.defineWhenText) {
     RB.defineWhenText('enemyOfSource', () => 'for enemy units');
+    RB.defineWhenText('enemyDamagedBySource', () => 'for enemy units');
     RB.defineWhenText('weakerEnemyThanSource', () => 'for enemy units with less Might than me');
     RB.defineWhenText('isToken', () => 'while they are tokens');
     RB.defineWhenText('isTemporary', () => 'while they have Temporary');
