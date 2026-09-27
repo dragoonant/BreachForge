@@ -198,4 +198,15 @@ export function run(t) {
     t.ok(s.players[0].base.includes(g) && !RB.obj(s, g).attachedTo, 'its gear fell to base');
     t.eq(RB.obj(s, u).attached, []);
   });
+
+  // --- unl-054 Tricksy Tentacles -------------------------------------------------
+  t.test('Tricksy Tentacles chooses its units: an untargetable one is never moved', () => {
+    const s = game();
+    const baron = put(s, 'unl-147', 1, 0);                 // can't be chosen by enemy spells
+    const small = sized(s, 2, 1, 0);
+    RB.obj(s, baron).permBuffs = -10;                      // small enough to fit the cap
+    resolve(s, [{ op: 'gatherEnemies', maxMight: 8, bf: null }], { p: 0, source: small });
+    t.ok(s.bf[0].units.includes(baron), 'Baron stays');
+    t.ok(s.players[1].base.includes(small), 'the other goes');
+  });
 }

@@ -1034,31 +1034,45 @@
     'Move any number of enemy units with the same controller and a total Might of ' +
     e.maxMight + ' or less to a single location.');
 
+  // "Move any number of enemy units" CHOOSES them, so each goes through the targeting door:
+  // an untargetable unit is no candidate, a [Deflect] one is tolled, `chosen` fires. The
+  // pool was built and walked here directly, so Tricksy Tentacles moved Baron Nashor ("I
+  // can't be chosen by enemy spells") and never paid a Deflect. One question per unit, each
+  // offering only what still fits under the cap, smallest first — which is also the unasked
+  // default, as many as fit. (A human cannot stop early: "up to" is D-2.) All the chosen
+  // units then move together.
   RB.defineOp('gatherEnemies', (s, e, ctx) => {
     const foe = RB.opponentOf(ctx.p);
     const dest = e.bf;
-    const cand = RB.allUnits(s)
-      .filter(i => RB.obj(s, i).controller === foe)
-      .filter(i => {
-        const l = RB.locationOf(s, i);
-        return dest === null ? l.kind !== 'base' && RB.canMoveToBase(s, i) : !(l.kind === 'bf' && l.bf === dest);
-      })
-      // Smallest first: "any number" wants as many as the cap allows.
-      .sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b));
-    let total = 0;
-    for (const iid of cand) {
-      const m = RB.mightOf(s, iid);
-      if (total + m > e.maxMight) continue;
-      total += m;
+    const movable = i => {
+      if (RB.obj(s, i).controller !== foe) return false;
+      const l = RB.locationOf(s, i);
+      return dest === null ? l.kind !== 'base' && RB.canMoveToBase(s, i) : !(l.kind === 'bf' && l.bf === dest);
+    };
+    const taken = [];
+    let room = e.maxMight;
+    for (let k = 0; k < 20; k++) {
+      const pool = RB.allUnits(s)
+        .filter(i => !taken.includes(i) && movable(i) && RB.mightOf(s, i) <= room)
+        .sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b));
+      const pick = RB.offerChoice(s, pool, 1, ctx, 'gather' + k,
+        'Choose an enemy unit to move (total Might ' + e.maxMight + ' or less)')[0];
+      if (!pick) break;
+      taken.push(pick);
+      room -= RB.mightOf(s, pick);
+    }
+    const moved = [];
+    for (const iid of taken) {
       const o = RB.obj(s, iid);
       const from = RB.locationOf(s, iid);
       if (!pluck(s, iid)) continue;
       if (dest === null) s.players[o.controller].base.push(iid);
       else { s.bf[dest].units.push(iid); RB.applyContested(s, dest, o.controller); }
       RB.log(s, 'move', { p: o.controller, iid: iid, to: dest === null ? 'base' : 'bf' + dest }, 'unit.move');
-      RB.runTriggers(s, 'moved', { p: o.controller, iid: iid,
+      moved.push({ p: o.controller, iid: iid,
         bf: dest === null ? undefined : dest, fromBf: from.kind === 'bf' ? from.bf : undefined });
     }
+    for (const ev of moved) RB.runTriggers(s, 'moved', ev);   // after the whole group has moved
   });
   RB.defineDescriber('gatherEnemies', () => '');
 
