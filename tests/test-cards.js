@@ -171,4 +171,25 @@ export function run(t) {
     s = RB.apply(s, { t: 'endTurn' });
     t.eq(RB.mightOf(s, v), pumped - 2, 'the +2 is gone on the opponent\'s turn');
   });
+
+  // --- choosing (§809 Deflect) --------------------------------------------------
+  t.test('a Deflect unit whose toll the caster cannot pay is not a legal choice (Hextech Ray on Vex)', () => {
+    let s = game();
+    s.players[0].runes = [];
+    s.players[0].pool.energy = 1; s.players[0].pool.power.Fury = 1;   // exactly the Ray
+    const vex = put(s, 'unl-150', 1, 1);             // "a unit at a battlefield"
+    const other = put(s, vanilla, 1, 1);
+    const ray = put(s, 'ogn-009', 0, 'hand');
+    s = passAll(RB.apply(s, plays(s, ray)[0]));
+    t.eq(RB.obj(s, vex).damage, 0, 'Vex untouched');
+    t.ok(RB.obj(s, other).damage > 0 || !s.bf[1].units.includes(other), 'the other unit took it');
+  });
+
+  t.test('a static-granted Deflect costs one [A], not two (Fiora while Mighty)', () => {
+    const s = game();
+    const f = put(s, 'ogn-232', 1, 'base');
+    RB.obj(s, f).permBuffs = 5;
+    t.ok(RB.isMighty(s, f), 'Mighty');
+    t.eq(RB.deflectCost(s, 0, f), 1);
+  });
 }

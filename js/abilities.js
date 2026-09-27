@@ -683,6 +683,12 @@
   // which card to keep. Deflect and the `chosen` trigger are about choosing an object on
   // the board, and firing them for a card in hand would be a rule invented here.
   RB.offerChoice = function (s, pool, n, ctx, tag, label, opts) {
+    // A targeting choice may only take what the chooser CAN choose: an untargetable unit
+    // is not a candidate, and neither is a [Deflect] unit whose toll the chooser cannot
+    // pay (§809). The core's autoPick filtered its own pool; the three packs build theirs
+    // and hand them straight here, and announceChoice then skipped an unpayable toll and
+    // took the unit for free. Filtering at the door covers every pack at once.
+    if (!(opts && opts.quiet)) pool = pool.filter(i => !s.objects[i] || RB.canChoose(s, ctx.p, i));
     if (!pool.length || !n) return [];
     // The identity of the question is (source, position in the effect tree, selector), so
     // the probe run and the real run agree which clause an answer belongs to.
@@ -735,8 +741,10 @@
     const o = RB.obj(s, iid);
     if (o.controller === chooser) return 0;
     let n = 0;
+    // keywordValue already reads static grants (RB.grantedOn). A second loop over the
+    // statics here charged ogn-232 Fiora and unl-041 Allay's neighbours [A][A] for one
+    // Deflect.
     if (RB.hasKeyword(s, iid, 'Deflect')) n += Math.max(1, RB.keywordValue(s, iid, 'Deflect'));
-    for (const st of RB.staticsOn(s, iid)) if (st.grant === 'Deflect') n += 1;
     return n;
   };
   RB.canChoose = function (s, chooser, iid) {
