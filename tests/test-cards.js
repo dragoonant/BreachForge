@@ -522,4 +522,25 @@ export function run(t) {
     t.ok(RB.obj(s, near).damage > 0 || !s.bf[0].units.includes(near), 'the unit at its battlefield was hit');
     t.eq(RB.obj(s, far).damage, 0, 'not the bigger one elsewhere');
   });
+
+  t.test('units can move to the Baron Pit from another battlefield (unl-147)', () => {
+    const s = game();
+    RB.ops.addBattlefield(s, { cardId: 'tok-baron-pit' }, { p: 1 });
+    const u = put(s, vanilla, 0, 1);
+    RB.obj(s, u).exhausted = false;
+    const dests = RB.legalActions(s).filter(a => a.t === 'move' && a.iids.length === 1 && a.iids[0] === u).map(a => a.to);
+    t.ok(dests.includes('bf2'), 'the Pit is offered: ' + dests);
+    t.ok(!dests.includes('bf0'), 'but not an ordinary battlefield');
+  });
+
+  t.test('Vilemaw compares Might WITH modifiers: an enemy raised past it still deals damage (unl-060)', () => {
+    const s = game();
+    const vm = put(s, 'unl-060', 0, 0);
+    const vmMight = RB.mightOf(s, vm);
+    const e = sized(s, vanilla, 1, vmMight - 1);                // just under Vilemaw on its own
+    s.bf[0].units.push(e);
+    put(s, 'unl-147', 1, 'base');                              // +2 to its controller's units
+    t.eq(RB.mightOf(s, e), vmMight + 1, 'Baron lifts it past Vilemaw');
+    t.eq(RB.combatMightOf(s, e), vmMight + 1, 'so it is not weaker, and deals its damage');
+  });
 }

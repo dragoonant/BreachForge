@@ -283,8 +283,12 @@
       for (let i = 0; i < state.bf.length; i++) out.push('bf' + i);
     } else if (from.kind === 'bf') {
       if (RB.canMoveToBase(state, iid)) out.push('base');
-      if (RB.hasKeyword(state, iid, 'Ganking') || RB.bfGrantsGanking(state, from.bf))
-        for (let j = 0; j < state.bf.length; j++) if (j !== from.bf) out.push('bf' + j);
+      const gank = RB.hasKeyword(state, iid, 'Ganking') || RB.bfGrantsGanking(state, from.bf);
+      // "Units can move here from anywhere" (unl-147's Baron Pit) is a permission held by
+      // the DESTINATION; only the battlefield being left was ever asked.
+      for (let j = 0; j < state.bf.length; j++)
+        if (j !== from.bf && (gank || RB.battlefieldStatics(state, j).some(st => st.arriveFromAnywhere)))
+          out.push('bf' + j);
     }
     return out;
   }

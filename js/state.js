@@ -250,9 +250,18 @@
     return fn(state, iid, v) * (v.per == null ? 1 : v.per);
   };
 
+  // A conditional static may ask a question that itself reads statics — unl-060 Vilemaw's
+  // "enemy units with less Might than me" compares two Mights. The guard used to answer
+  // EVERY nested read with nothing, so the comparison ignored every modifier: an enemy
+  // raised from 7 to 9 by Baron's +2 still counted as weaker than an 8. The dependency
+  // order (rules §-layers: apply the depended-on effect first) is approximated one level
+  // down: a nested read applies the UNCONDITIONAL statics, which cannot depend on the
+  // question being asked, and skips only the conditional ones. Deeper than that it still
+  // answers nothing, so a cycle cannot recurse.
   let staticsDepth = 0;
   RB.staticsOn = function (state, iid) {
-    if (staticsDepth > 0) return [];
+    if (staticsDepth > 1) return [];
+    const nested = staticsDepth > 0;
     staticsDepth++;
     try {
       const out = [];
@@ -264,7 +273,7 @@
           if (sourceIid === iid && !st.includeSelf && st.scope !== 'self') continue;
           if (!inScope(st, sourceBf, sourceP, sourceIid)) continue;
           if (st.tag && !(RB.card(target.cardId).tags || []).includes(st.tag)) continue;
-          if (st.when && !whenHolds(state, iid, st.when, sourceIid)) continue;
+          if (st.when && (nested || !whenHolds(state, iid, st.when, sourceIid))) continue;
           out.push(st);
         }
       };

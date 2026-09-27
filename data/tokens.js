@@ -44,5 +44,7 @@ RB.tokenAbilities = {
   'tok-bird': { vanilla: true },
   'tok-sprite': { vanilla: true },
   'tok-mech': { vanilla: true },
-  'tok-baron-pit': { vanilla: true },
+  // "Units can move here from anywhere." (printed on unl-147 Baron Nashor, as the token's
+  // own text). Read by moveDestinations as a permission held by the destination.
+  'tok-baron-pit': { statics: [{ arriveFromAnywhere: true }] },
 };
