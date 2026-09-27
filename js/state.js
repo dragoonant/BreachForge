@@ -34,7 +34,7 @@
       iid: iid, cardId: cardId, owner: owner, controller: owner,
       exhausted: false, damage: 0, buffs: 0, permBuffs: 0, granted: [], attached: [],
       attachedTo: null, temporary: false, movedThisTurn: 0, enteredTurn: -1,
-      wasMighty: false, wasReady: false, counters: 0, untargetable: false,
+      wasMighty: null, wasReady: false, counters: 0, untargetable: false,
       replaces: null, noMoveToBase: false, banished: false,
     };
     return iid;

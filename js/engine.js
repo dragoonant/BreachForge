@@ -101,7 +101,7 @@
   RB.grantedExtras = function (state, p, iid, fromZone) {
     const out = [];
     const card = RB.cardOf(state, iid);
-    for (const src of RB.allUnits(state).concat(state.players.map(P => P.legend)).filter(Boolean)) {
+    for (const src of RB.permanents(state).concat(state.players.map(P => P.legend)).filter(Boolean)) {
       if (RB.obj(state, src).controller !== p) continue;
       if (src === iid) continue;                    // a card does not grant to itself
       for (const st of (RB.card(RB.obj(state, src).cardId).abilities || {}).statics || []) {
@@ -814,7 +814,7 @@
       // the dying unit's own is asked first — "if it would die this turn, banish it
       // instead" is about that unit, not about whoever is watching.
       const sources = [iid].concat(
-        RB.allUnits(s).filter(u => u !== iid),
+        RB.permanents(s).filter(u => u !== iid),        // gear too: ogn-077 Zhonya's
         s.players.map(P => P.legend)).filter(Boolean);
       for (const src of sources) {
         const ab = RB.card(RB.obj(s, src).cardId).abilities;

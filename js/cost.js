@@ -186,11 +186,22 @@
       }
     },
   });
+  // Spending a buff is one event however it is spent — as an additional cost, or by an
+  // op that spends one ("Spend my buff:", ogn-164; ogn-282 Hirana). "When you spend a buff"
+  // (sfd-101 Fae Dragon) listened only to the additional-cost path, through a pack wrapper,
+  // and never heard the others.
+  RB.spendBuff = function (s, iid) {
+    const o = RB.obj(s, iid);
+    if (!(o.counters > 0)) return false;
+    o.counters--;
+    RB.runTriggers(s, 'buffSpent', { p: o.controller, iid: iid });
+    return true;
+  };
   RB.defineExtraCost('spendBuff', {
     available: (s, p, iid, x) => buffPool(s, p).length >= (x.n || 1),
     pay: (s, p, iid, x) => {
       const pool = buffPool(s, p);
-      for (let i = 0; i < (x.n || 1) && i < pool.length; i++) RB.obj(s, pool[i]).counters--;
+      for (let i = 0; i < (x.n || 1) && i < pool.length; i++) RB.spendBuff(s, pool[i]);
     },
   });
   function buffPool(s, p) {

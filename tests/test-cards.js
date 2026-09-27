@@ -473,4 +473,40 @@ export function run(t) {
     t.ok(kinds.indexOf('draw') >= 0 && kinds.indexOf('draw') < open, 'the draw came first: ' + kinds.join(','));
     void mine; void theirs;
   });
+
+  t.test('"kill all units" does not kill gear in a base (The Ruination)', () => {
+    const s = game();
+    const g = put(s, 'ogn-186', 0, 'base');
+    const u = put(s, vanilla, 1, 'base');
+    RB.ops.kill(s, { target: 'allUnits' }, { p: 0 });
+    t.ok(s.players[0].base.includes(g), 'the gear is untouched');
+    t.ok(!s.players[1].base.includes(u), 'the unit died');
+    t.ok(!RB.select(s, 'myUnits', { p: 0 }).includes(g), 'and a gear is never "a friendly unit"');
+  });
+
+  t.test('a gear\'s death replacement is still asked (Zhonya\'s Hourglass)', () => {
+    const s = game();
+    const z = put(s, 'ogn-077', 0, 'base');
+    const u = put(s, vanilla, 0, 'base');
+    RB.kill(s, u);
+    t.ok(s.players[0].base.includes(u) || s.players[0].trash.includes(z), 'Zhonya stood in: ' +
+      JSON.stringify([RB.locationOf(s, u), RB.locationOf(s, z)]));
+  });
+
+  t.test('a unit that enters at 5+ Might did not BECOME Mighty (Grand Duelist stays quiet)', () => {
+    let s = game();
+    rich(s, 0);
+    put(s, 'sfd-205', 0, 'base');
+    const big = RB.allCards().find(c => c.type === 'Unit' && c.might >= 5 && c.abilities && c.abilities.vanilla)
+      || RB.allCards().find(c => c.type === 'Unit' && c.might >= 5 && !(c.abilities.triggers || []).length);
+    const b = put(s, big.id, 0, 'hand');
+    s = RB.apply(s, plays(s, b).find(a => a.to === 'base'));
+    t.eq(s.queue.length, 0, 'no "exhaust me to channel" offered');
+    // …but growing into 5 is the crossing.
+    const u = put(s, vanilla, 0, 'base');
+    s = RB.settle(s);
+    RB.obj(s, u).permBuffs = 5;
+    s = RB.settle(s);
+    t.eq(s.queue.length && s.queue[0].kind, 'may', 'crossing to 5 is offered');
+  });
 }

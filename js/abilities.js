@@ -40,6 +40,9 @@
       // ready" triggers do not fire for it (rules.md, Accelerate). The crossing detector in
       // the cleanup compares against wasReady, which a fresh object seeds as false.
       RB.obj(s, iid).wasReady = entersReady;
+      // Nor is entering at 5+ Might BECOMING Mighty (rules.md, Mighty: a crossing from
+      // below 5 to 5+). Seeded false, sfd-205 Grand Duelist fired for any big unit played.
+      RB.obj(s, iid).wasMighty = null;
       RB.obj(s, iid).enteredTurn = s.turn;
       if (item.to && item.to.startsWith('bf')) {
         const i = +item.to.slice(2);
@@ -112,7 +115,7 @@
     // how often another card's trigger fires, so the count is asked here rather than
     // written into the trigger.
     let times = 1;
-    for (const u of RB.allUnits(s).concat([s.players[o.controller].legend]))
+    for (const u of RB.permanents(s).concat([s.players[o.controller].legend]))
       if (u && RB.obj(s, u).controller === o.controller)
         for (const st of (RB.cardOf(s, u).abilities || {}).statics || [])
           if (st.deathknellExtra) times += st.deathknellExtra;
@@ -316,6 +319,7 @@
     if (e.might != null) o.buffs = e.might - (RB.card(e.cardId).might || 0);
     if (e.temporary) o.temporary = true;
     o.wasReady = !o.exhausted;
+    o.wasMighty = null;
     if (e.to === 'here' && ctx.event && ctx.event.bf !== undefined) { s.bf[ctx.event.bf].units.push(iid); RB.applyContested(s, ctx.event.bf, ctx.p); }
     else s.players[ctx.p].base.push(iid);
     RB.log(s, 'token', { p: ctx.p, iid: iid, card: e.cardId }, 'unit.deploy');
@@ -700,12 +704,21 @@
     if (typeof sel === 'object' && sel.pick) return RB.autoPick(s, sel, ctx);
     return [];
   };
-  function allUnits(s) {
+  // A base holds gear as well as units (§8.2), so walking the bases is "every permanent
+  // on the board", not "every unit". allUnits read the bases raw, and every selector built
+  // on it — "kill all units" (unl-180 The Ruination), "a friendly unit" — took gear too.
+  // RB.permanents is the old walk, for the few callers that do mean gear as well: the
+  // sources of replacements and statics.
+  function permanents(s) {
     const out = [];
     for (let p = 0; p < 2; p++) for (const i of s.players[p].base) out.push(i);
     for (const bf of s.bf) for (const i of bf.units) out.push(i);
     return out;
   }
+  function allUnits(s) {
+    return permanents(s).filter(i => RB.card(s.objects[i].cardId).type === 'Unit');
+  }
+  RB.permanents = permanents;
   RB.allUnits = allUnits;
 
   // A "choose a unit" clause resolves against the best candidate by a stated rule rather

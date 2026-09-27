@@ -855,7 +855,7 @@
   // about where the card stands. A Chosen Champion waiting in the Champion Zone is not on
   // the board and is not asked.
   function discountOnExtras(s, p) {
-    for (const src of RB.allUnits(s).concat(s.players.map(P => P.legend)).filter(Boolean)) {
+    for (const src of RB.permanents(s).concat(s.players.map(P => P.legend)).filter(Boolean)) {
       if (RB.obj(s, src).controller !== p) continue;
       for (const st of ((RB.cardOf(s, src).abilities || {}).statics) || [])
         if (st.optionalExtraDiscount) return st.optionalExtraDiscount;
@@ -1163,15 +1163,9 @@
       return out.length ? out : [{ t: 'pass' }];
     };
 
-    // "When you spend a buff" (sfd-101). A buff is spent as an additional cost, which is a
-    // hook-table entry — so the raise is registered there, delegating to whatever the entry
-    // already did. A buff spent by another pack's own op does not come through here; a core
-    // `buffSpent` event would close that.
-    const spend = RB.extraAvailable && RB.extraAvailable.spendBuff;
-    if (spend) RB.defineExtraCost('spendBuff', {
-      available: spend.available,
-      pay: (st, p, iid, x) => { spend.pay(st, p, iid, x); fire(st, 'buffSpent', { p: p }); },
-    });
+    // "When you spend a buff" (sfd-101) is the core `buffSpent` event now (RB.spendBuff in
+    // js/cost.js), raised however the buff is spent; this pack no longer re-registers the
+    // spendBuff additional cost to hear it.
 
     // WRAPPER 1 of 3. There is no event for a rune being recycled, and sfd-203 triggers on
     // exactly that. Raised into this pack's own table (see note 3), never into RB.runTriggers.

@@ -263,13 +263,17 @@ export function run(t) {
   });
 
   // --- sfd-101 Fae Dragon ---------------------------------------------------------
-  t.test('Fae Dragon\'s "when you spend a buff" can be raised from outside the pack (RB.sfdRaise)', () => {
+  t.test('Fae Dragon hears a buff spent by ANY path — an ogn op as well as an additional cost', () => {
     const s = game();
     put(s, 'sfd-101', 0, 'base');
+    const u = put(s, vanilla, 0, 'base');
+    RB.obj(s, u).counters = 2;
     const before = s.players[0].base.length;
-    RB.sfdRaise(s, 'buffSpent', { p: 0 });
-    t.eq(s.players[0].base.length, before + 1, 'a Gold token');
-    RB.sfdRaise(s, 'buffSpent', { p: 1 });
+    RB.ops['ogn.spendBuff'](s, { target: 'self' }, { p: 0, source: u });
+    t.eq(s.players[0].base.length, before + 1, 'a Gold token from ogn.spendBuff');
+    const theirs = put(s, vanilla, 1, 'base');
+    RB.obj(s, theirs).counters = 1;
+    RB.spendBuff(s, theirs);
     t.eq(s.players[0].base.length, before + 1, 'not for the opponent\'s spend');
   });
 

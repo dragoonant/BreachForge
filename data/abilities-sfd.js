@@ -489,8 +489,8 @@
     // "When you play me, buff up to four friendly units."
     // "When you spend a buff, play a Gold gear token exhausted."
     'sfd-101': {
-      triggers: [{ on: 'played', effects: [{ op: 'sfd.buff', n: 4 }] }],
-      sfdTriggers: [{ on: 'buffSpent', mine: true,
+      triggers: [{ on: 'played', effects: [{ op: 'sfd.buff', n: 4 }] },
+        { on: 'buffSpent', mine: true,
         effects: [{ op: 'sfd.playToken', cardId: 'tok-gold', exhausted: true }] }],
     },
 

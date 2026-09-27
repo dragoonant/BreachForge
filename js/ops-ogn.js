@@ -248,8 +248,8 @@
       iid = RB.offerChoice(s, got, 1, ctx, 'spendBuff', 'Spend which unit\'s buff?')[0];
     }
     if (!iid) return;
-    RB.obj(s, iid).counters--;
     RB.log(s, 'spendBuff', { p: ctx.p, iid: iid });
+    RB.spendBuff(s, iid);
   });
   say('spendBuff', e => e.target === 'self' ? 'Spend my buff.' : 'Spend a buff.');
 
@@ -996,7 +996,7 @@
     if (!plan || src.exhausted || !(o.counters > 0)) { RB.ops['ogn.finishDeath'](s, {}, ctx); return; }
     RB.pay(s, ctx.p, plan);
     src.exhausted = true;                            // …exhaust me…
-    o.counters--;                                    // …and spend its buff…
+    RB.spendBuff(s, iid);                            // …and spend its buff…
     delete o.ognLimbo;
     o.damage = 0;                                    // heal it,
     o.exhausted = true;                              // exhaust it,
