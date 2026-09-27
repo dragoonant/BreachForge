@@ -1276,6 +1276,12 @@
   const ORDINAL = { 1: 'first', 2: 'second', 3: 'third', 4: 'fourth' };
   const ZONE_TEXT = { hand: 'a hand', champion: 'the Champion Zone', hidden: 'face down' };
 
+  // The public door into this pack's set-local triggers, for a spend or reveal that
+  // happens outside this file. Events: `buffSpent` { p } — "when you spend a buff"
+  // (sfd-101 Fae Dragon); `runeRecycle` { p, iid }; and `revealed` is per card and goes
+  // through fireOn. A buff spent by another pack's op (ogn.spendBuff) reaches Fae Dragon
+  // only if that op raises it here, or the core grows a `buffSpent` event this pack reads.
+  RB.sfdRaise = function (s, event, data) { fire(s, event, data); };
   RB.sfdInstall = install;
   if (RB.registerCards) {
     const baseRegisterCards = RB.registerCards;

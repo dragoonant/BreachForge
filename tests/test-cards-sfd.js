@@ -262,4 +262,14 @@ export function run(t) {
     t.eq(cost.domains.slice().sort(), RB.DOMAINS.slice().sort(), 'of any domain');
   });
 
+  // --- sfd-101 Fae Dragon ---------------------------------------------------------
+  t.test('Fae Dragon\'s "when you spend a buff" can be raised from outside the pack (RB.sfdRaise)', () => {
+    const s = game();
+    put(s, 'sfd-101', 0, 'base');
+    const before = s.players[0].base.length;
+    RB.sfdRaise(s, 'buffSpent', { p: 0 });
+    t.eq(s.players[0].base.length, before + 1, 'a Gold token');
+    RB.sfdRaise(s, 'buffSpent', { p: 1 });
+    t.eq(s.players[0].base.length, before + 1, 'not for the opponent\'s spend');
+  });
 }
