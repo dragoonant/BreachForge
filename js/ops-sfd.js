@@ -302,18 +302,17 @@
   });
   say('bounceGear', () => "Return a gear to its owner's hand.");
 
-  // Auto-resolution for "a gear": the opponent's biggest, else your own smallest. The POOL
-  // is every gear the card may legally choose; this only orders it, the way RB.autoPick
-  // orders units, because the player does not pick yet (D-2).
+  // "A gear" is any gear on the board, yours included — returning your own Equipment to
+  // hand is a real play. The pool is every gear; the ORDER is the auto-resolution policy:
+  // the opponent's biggest first, then your own smallest. It used to drop your own gear
+  // whenever the opponent had any, and `side: 'enemy'` dropped it outright.
   function pickGear(s, e, ctx, tag) {
     const all = allGear(s);
-    const theirs = all.filter(i => RB.obj(s, i).controller !== ctx.p);
-    // Ordered best-first — the opponent's biggest, else your own smallest — and then handed
-    // to the one door, which asks a human seat and fires the `chosen` trigger.
-    const pool = theirs.length ? theirs.sort((a, b) => bonusOf(s, b) - bonusOf(s, a))
-      : e.side === 'enemy' ? []
-      : all.filter(i => RB.obj(s, i).controller === ctx.p).sort((a, b) => bonusOf(s, a) - bonusOf(s, b));
-    const got = RB.offerChoice(s, pool, 1, ctx, tag || 'gear', 'Which gear?');
+    const theirs = all.filter(i => RB.obj(s, i).controller !== ctx.p)
+      .sort((a, b) => bonusOf(s, b) - bonusOf(s, a));
+    const mine = all.filter(i => RB.obj(s, i).controller === ctx.p)
+      .sort((a, b) => bonusOf(s, a) - bonusOf(s, b));
+    const got = RB.offerChoice(s, theirs.concat(mine), 1, ctx, tag || 'gear', 'Which gear?');
     return got.length ? got[0] : null;
   }
   const bonusOf = (s, iid) => RB.cardOf(s, iid).might || 0;
@@ -474,8 +473,33 @@
   });
   say('giveMight', e => 'Give ' + selPhrase(e.target, e.other) + ' +' + n_(e) + ' Might this turn.');
 
-  const pickFor = (s, e, ctx) =>
-    RB.select(s, e.target, ctx).filter(i => !e.other || i !== ctx.source);
+  // A chosen target. `{ pick, prefer }` is "a unit" read literally: the POOL is every unit
+  // the selector names, of either side, and `prefer` only ORDERS it — the side the clause
+  // helps first, biggest-first, then the other side smallest-first — because that order is
+  // the auto-resolution policy and the pool is what the card may legally choose.
+  // `another` is "another unit": not one this same card has already chosen.
+  const pickFor = (s, e, ctx) => {
+    const sel = e.target;
+    if (!(sel && typeof sel === 'object' && sel.prefer)) {
+      const got = RB.select(s, sel, ctx).filter(i => !e.other || i !== ctx.source);
+      ctx.sfdPicked = (ctx.sfdPicked || []).concat(got);
+      return got;
+    }
+    let pool = RB.select(s, sel.pick, ctx).filter(i => RB.cardOf(s, i).type === 'Unit');
+    if (e.other) pool = pool.filter(i => i !== ctx.source);
+    if (sel.another) pool = pool.filter(i => !(ctx.sfdPicked || []).includes(i));
+    const got = RB.offerChoice(s, preferOrder(s, pool, ctx, sel.prefer), sel.n || 1, ctx,
+      String(sel.pick), sel.prompt);
+    ctx.sfdPicked = (ctx.sfdPicked || []).concat(got);
+    return got;
+  };
+  // The side a clause is FOR, biggest first; then the other side, smallest first.
+  function preferOrder(s, pool, ctx, prefer) {
+    const want = prefer === 'enemy' ? RB.opponentOf(ctx.p) : ctx.p;
+    const big = (a, b) => RB.mightOf(s, b) - RB.mightOf(s, a);
+    return pool.filter(i => RB.obj(s, i).controller === want).sort(big)
+      .concat(pool.filter(i => RB.obj(s, i).controller !== want).sort((a, b) => big(b, a)));
+  }
 
   def('weaken', (s, e, ctx) => {
     for (const iid of pickFor(s, e, ctx)) RB.obj(s, iid).buffs -= n_(e);
@@ -485,7 +509,8 @@
   function selPhrase(sel, other) {
     if (!sel || sel === 'self') return 'me';
     if (sel === 'eventUnit') return 'that unit';
-    if (sel && typeof sel === 'object' && sel.pick) return 'a chosen ' + selPhrase(sel.pick);
+    if (sel && typeof sel === 'object' && sel.pick)
+      return (sel.another ? 'another chosen ' : 'a chosen ') + selPhrase(sel.pick);
     if (sel === 'myUnits' && other) return 'your other units';
     return ({
       myUnits: 'friendly unit', enemyUnits: 'enemy unit', allUnits: 'unit',
@@ -526,28 +551,38 @@
   say('buffPerEnemyAt', e =>
     'Give a friendly unit at a battlefield +' + n_(e) + ' Might this turn for each enemy unit there.');
 
-  // "Swap the Might of two units at the same battlefield." The pair taken is the one the
-  // card is played for: your smallest against their biggest, wherever that gap is widest.
+  // "Swap the Might of two units at the same battlefield." Any two: yours and theirs, both
+  // theirs or both yours — the only constraint printed is that they stand together. Each
+  // half is its own question. The ORDER is the auto-resolution policy: the pair worth most
+  // to the chooser (your smallest against their biggest) comes first.
   def('swapMightThere', (s, e, ctx) => {
-    // Every enemy unit standing where you also stand, biggest first: the pair is what the
-    // card is played for, and each half is its own question.
-    const foe = RB.opponentOf(ctx.p);
-    const theirs = [];
-    for (let i = 0; i < s.bf.length; i++)
-      if (RB.unitsAt(s, i, ctx.p).length)
-        for (const u of RB.unitsAt(s, i, foe)) if (RB.canChoose(s, ctx.p, u)) theirs.push(u);
-    theirs.sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
-    const them = RB.offerChoice(s, theirs, 1, ctx, 'swapThem', 'Swap with which enemy unit?')[0];
-    if (!them) return;
-    const at = RB.locationOf(s, them).bf;
-    const ours = RB.unitsAt(s, at, ctx.p).slice()
-      .sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b));
-    const us = RB.offerChoice(s, ours, 1, ctx, 'swapUs', 'Swap which of your units?')[0];
-    if (!us) return;
-    const ma = RB.mightOf(s, us), mb = RB.mightOf(s, them);
-    RB.obj(s, us).buffs += mb - ma;
-    RB.obj(s, them).buffs += ma - mb;
-    RB.log(s, 'swapMight', { a: us, b: them });
+    const worth = (a, b) => {                 // what swapping a and b gains the chooser
+      const ma = RB.mightOf(s, a), mb = RB.mightOf(s, b);
+      const sgn = i => (RB.obj(s, i).controller === ctx.p ? 1 : -1);
+      return sgn(a) * (mb - ma) + sgn(b) * (ma - mb);
+    };
+    const choosable = i => RB.canChoose(s, ctx.p, i);
+    const firsts = [];
+    for (let i = 0; i < s.bf.length; i++) {
+      const here = s.bf[i].units.filter(choosable);
+      if (here.length < 2) continue;
+      for (const u of here)
+        firsts.push([u, Math.max(...here.filter(v => v !== u).map(v => worth(u, v)))]);
+    }
+    firsts.sort((a, b) => b[1] - a[1] ||
+      (RB.obj(s, a[0]).controller === ctx.p) - (RB.obj(s, b[0]).controller === ctx.p) ||
+      RB.mightOf(s, b[0]) - RB.mightOf(s, a[0]));
+    const one = RB.offerChoice(s, firsts.map(f => f[0]), 1, ctx, 'swapThem', 'Swap which unit?')[0];
+    if (!one) return;
+    const at = RB.locationOf(s, one).bf;
+    const partners = s.bf[at].units.filter(v => v !== one)
+      .sort((a, b) => worth(one, b) - worth(one, a));
+    const two = RB.offerChoice(s, partners, 1, ctx, 'swapUs', 'Swap its Might with which unit?')[0];
+    if (!two) return;
+    const ma = RB.mightOf(s, one), mb = RB.mightOf(s, two);
+    RB.obj(s, one).buffs += mb - ma;
+    RB.obj(s, two).buffs += ma - mb;
+    RB.log(s, 'swapMight', { a: one, b: two });
   });
   say('swapMightThere', () => 'Swap the Might of two units at the same battlefield this turn.');
 
@@ -572,13 +607,13 @@
   // through RB.dealDamage, the one door: a direct write to `obj.damage` would step over
   // "prevent all spell and ability damage this turn" and "spells deal 1 bonus damage to
   // units here", and the card reading those plays wrong without ever looking broken.
+  // "A unit" is either side's: the enemy's come first only because that is the order the
+  // engine answers in for a seat nobody is asking.
   def('damageThere', (s, e, ctx) => {
     const pool = [];
-    for (let i = 0; i < s.bf.length; i++)
-      for (const u of RB.unitsAt(s, i, RB.opponentOf(ctx.p)))
-        if (RB.canChoose(s, ctx.p, u)) pool.push(u);
-    pool.sort((a, b) => RB.mightOf(s, b) - RB.mightOf(s, a));
-    const got = RB.offerChoice(s, pool, 1, ctx, 'damageThere', 'Deal the damage to which unit?');
+    for (let i = 0; i < s.bf.length; i++) for (const u of s.bf[i].units) pool.push(u);
+    const got = RB.offerChoice(s, preferOrder(s, pool, ctx, 'enemy'), 1, ctx, 'damageThere',
+      'Deal the damage to which unit?');
     for (const iid of got) RB.dealDamage(s, iid, n_(e), ctx);
   });
   say('damageThere', e => 'Deal ' + n_(e) + ' to a unit at a battlefield.');
@@ -826,23 +861,64 @@
   say('buffEventUnit', () => 'Buff it.');
 
   // "Deal N to up to three units at the same location." A location is a battlefield or a
-  // base; the one taken is where the most enemy units stand, ordered by what N damage
-  // actually finishes off.
+  // base, and it is the PLAYER's: the first unit chosen — any unit, either side — names it,
+  // and every further one is optional ("up to") and must stand there too. Each further pick
+  // is a yes/no followed by its own choice, so "up to" is honoured without a variable-count
+  // question (D-2), and the damage lands on all of them at once when the choosing stops.
+  // The ORDER is the auto-resolution policy: enemy units where the most enemies stand,
+  // the ones N finishes off first; your own last.
   def('damageAtLocation', (s, e, ctx) => {
-    const foe = RB.opponentOf(ctx.p);
-    const locs = [];
-    for (let i = 0; i < s.bf.length; i++) locs.push(RB.unitsAt(s, i, foe));
-    locs.push(s.players[foe].base.filter(i => RB.cardOf(s, i).type === 'Unit'));
-    let best = [];
-    for (const L of locs) {
-      const ok = L.filter(u => RB.canChoose(s, ctx.p, u));
-      if (ok.length > best.length) best = ok;
-    }
-    best = best.slice().sort((a, b) =>
-      (RB.mightOf(s, a) - RB.obj(s, a).damage) - (RB.mightOf(s, b) - RB.obj(s, b).damage));
-    for (const iid of RB.offerChoice(s, best, e.upTo || 1, ctx, 'damageAtLocation', 'Damage which units?'))
-      RB.dealDamage(s, iid, n_(e), ctx);
+    const units = RB.allUnits(s).filter(i => RB.cardOf(s, i).type === 'Unit');
+    const enemiesAt = key => unitsAtKey(s, key)
+      .filter(u => RB.obj(s, u).controller !== ctx.p && RB.canChoose(s, ctx.p, u)).length;
+    const theirs = units.filter(i => RB.obj(s, i).controller !== ctx.p)
+      .sort((a, b) => enemiesAt(locKey(s, b)) - enemiesAt(locKey(s, a)) || health(s, a) - health(s, b));
+    const mine = units.filter(i => RB.obj(s, i).controller === ctx.p)
+      .sort((a, b) => health(s, b) - health(s, a));
+    const first = RB.offerChoice(s, theirs.concat(mine), 1, ctx, 'damageAtLocation',
+      'Deal ' + n_(e) + ' to which unit? (up to ' + (e.upTo || 1) + ' at one location)')[0];
+    if (!first) return;
+    moreAtLocation(s, e, ctx, locKey(s, first), [first]);
   });
+  def('damageAlsoThere', (s, e, ctx) => {
+    const chosen = (ctx.sfdChosen || []).filter(i => s.objects[i]);
+    const pool = othersAt(s, ctx, ctx.sfdLoc, chosen);
+    const next = RB.offerChoice(s, pool, 1, ctx, 'damageAlsoThere', 'Deal ' + n_(e) + ' to which unit there?')[0];
+    moreAtLocation(s, e, ctx, ctx.sfdLoc, next ? chosen.concat([next]) : chosen);
+  });
+  say('damageAlsoThere', e => 'Deal ' + n_(e) + ' to another unit there.');
+  def('damageChosen', (s, e, ctx) => {
+    for (const iid of ctx.sfdChosen || [])
+      if (s.objects[iid] && RB.locationOf(s, iid).kind !== 'nowhere') RB.dealDamage(s, iid, n_(e), ctx);
+  });
+  say('damageChosen', e => 'Deal ' + n_(e) + ' to each of them.');
+
+  function moreAtLocation(s, e, ctx, key, chosen) {
+    const c = Object.assign(plainCtx(ctx), { sfdLoc: key, sfdChosen: chosen.slice() });
+    const done = { op: 'sfd.damageChosen', n: n_(e) };
+    if (chosen.length >= (e.upTo || 1) || !othersAt(s, ctx, key, chosen).length) {
+      RB.ops['sfd.damageChosen'](s, done, c);
+      return;
+    }
+    s.queue.push({ kind: 'may', who: ctx.p, source: ctx.source,
+      prompt: 'Deal ' + n_(e) + ' to another unit there as well? (' + chosen.length + ' chosen)',
+      ctx: c, onAnswer: [[{ op: 'sfd.damageAlsoThere', n: n_(e), upTo: e.upTo }], [done]] });
+  }
+  function othersAt(s, ctx, key, chosen) {
+    return unitsAtKey(s, key).filter(u => !chosen.includes(u) && RB.canChoose(s, ctx.p, u))
+      .sort((a, b) => (RB.obj(s, a).controller === ctx.p) - (RB.obj(s, b).controller === ctx.p) ||
+        health(s, a) - health(s, b));
+  }
+  function locKey(s, iid) {
+    const l = RB.locationOf(s, iid);
+    return l.kind === 'bf' ? 'bf' + l.bf : l.kind === 'base' ? 'base' + l.p : null;
+  }
+  function unitsAtKey(s, key) {
+    if (!key) return [];
+    if (key.startsWith('bf')) return s.bf[+key.slice(2)].units.slice();
+    return s.players[+key.slice(4)].base.filter(i => RB.cardOf(s, i).type === 'Unit');
+  }
+  const health = (s, i) => RB.mightOf(s, i) - RB.obj(s, i).damage;
   say('damageAtLocation', e => 'Deal ' + n_(e) + ' to up to ' +
     (COUNTWORD[e.upTo || 1] || e.upTo) + ' units at the same location.');
 

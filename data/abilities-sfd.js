@@ -8,9 +8,11 @@
 // clause and shipping the rest unmarked — is the defect this marker exists to prevent.
 //
 // Two conventions used throughout:
-//   * "choose a unit" resolves through RB.autoPick (D-2: the player does not pick yet), so a
-//     beneficial clause is pointed at `myUnits` and a harmful one at `enemyUnits`. That is
-//     the auto-resolution rule, not a narrowing of what the card may legally target.
+//   * "a unit" is read literally: the pool is every unit, of either side. `prefer` only
+//     ORDERS it — a beneficial clause offers your units first, a harmful one the enemy's —
+//     which is the auto-resolution policy. Pointing a clause at `myUnits` or `enemyUnits`
+//     to say the same thing narrowed what the card may legally choose (Punch First could
+//     not be given to an enemy, Defiant Dance could not weaken your own).
 //   * Every Might change here is printed "this turn", so all of them write the this-turn
 //     buff channel; none of them is permanent.
 (function (RB) {
@@ -60,7 +62,7 @@
     // "When you play me, you may kill a gear."
     'sfd-032': {
       triggers: [{ on: 'played',
-        effects: [{ op: 'may', effects: [{ op: 'sfd.killGear', side: 'enemy' }] }] }],
+        effects: [{ op: 'may', effects: [{ op: 'sfd.killGear' }] }] }],
     },
 
     // "[Equip] [C]"
@@ -116,7 +118,7 @@
     // "Give a unit +5 [S] this turn."
     'sfd-097': {
       keywords: ['Action'],
-      effects: [{ op: 'sfd.giveMight', n: 5, target: { pick: 'myUnits' } }],
+      effects: [{ op: 'sfd.giveMight', n: 5, target: { pick: 'allUnits', prefer: 'mine' } }],
     },
 
     // "I can't be chosen by enemy spells and abilities." Read by RB.canChoose.
@@ -161,7 +163,7 @@
     // "Return a gear to its owner's hand."
     'sfd-135': {
       keywords: ['Action'],
-      effects: [{ op: 'sfd.bounceGear', side: 'enemy' }],
+      effects: [{ op: 'sfd.bounceGear' }],
     },
 
     // "[Reaction] [Repeat] [2] Counter a spell unless its controller pays [2]."
@@ -288,8 +290,8 @@
     'sfd-196': {
       keywords: ['Reaction'],
       effects: [
-        { op: 'sfd.giveMight', n: 2, target: { pick: 'myUnits' } },
-        { op: 'sfd.weaken', n: 2, target: { pick: 'enemyUnits' } },
+        { op: 'sfd.giveMight', n: 2, target: { pick: 'allUnits', prefer: 'mine' } },
+        { op: 'sfd.weaken', n: 2, target: { pick: 'allUnits', prefer: 'enemy', another: true } },
       ],
     },
 
@@ -410,8 +412,10 @@
     'sfd-003': {
       keywords: ['Action'],
       additionalCosts: [{ id: 'repeat', energy: 1, effects: [
-        { op: 'sfd.grantKeyword', keyword: 'Assault', value: 2, target: { pick: 'myUnits' } }] }],
-      effects: [{ op: 'sfd.grantKeyword', keyword: 'Assault', value: 2, target: { pick: 'myUnits' } }],
+        { op: 'sfd.grantKeyword', keyword: 'Assault', value: 2,
+          target: { pick: 'allUnits', prefer: 'mine' } }] }],
+      effects: [{ op: 'sfd.grantKeyword', keyword: 'Assault', value: 2,
+        target: { pick: 'allUnits', prefer: 'mine' } }],
     },
 
     // "If you have two or fewer cards in your hand, I enter ready."
