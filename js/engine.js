@@ -567,7 +567,7 @@
       RB.pay(s, p, plan);
       for (const x of extras) RB.payExtra(s, p, a.iid, x);
     }
-    const item = { iid: a.iid, controller: p, to: a.to, kind: 'card', fromHidden: true,
+    const item = { iid: a.iid, controller: p, to: a.to, kind: 'card', fromHidden: true, hiddenBf: a.bf,
       cardId: card.id, energy: card.energy || 0,
       paid: (a.pay || []).slice(), fromZone: 'hidden' };
     RB.playCard(s, item, { fromHidden: true });

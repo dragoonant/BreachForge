@@ -509,4 +509,17 @@ export function run(t) {
     s = RB.settle(s);
     t.eq(s.queue.length && s.queue[0].kind, 'may', 'crossing to 5 is offered');
   });
+
+  t.test('a spell played from face down chooses its target at its own battlefield (Wages of Pain)', () => {
+    let s = game();
+    put(s, vanilla, 0, 0);
+    s.bf[0].controller = 0;
+    const near = sized(s, vanilla, 1, 3), far = sized(s, vanilla, 1, 9);
+    s.bf[0].units.push(near); s.bf[1].units.push(far);
+    const w = RB.mint(s, 'sfd-070', 0);
+    s.bf[0].hidden.push({ iid: w, owner: 0, turnHidden: s.turn - 1 });
+    s = passChain(RB.apply(s, RB.legalActions(s).find(a => a.iid === w)));
+    t.ok(RB.obj(s, near).damage > 0 || !s.bf[0].units.includes(near), 'the unit at its battlefield was hit');
+    t.eq(RB.obj(s, far).damage, 0, 'not the bigger one elsewhere');
+  });
 }

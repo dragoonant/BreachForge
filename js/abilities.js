@@ -26,7 +26,7 @@
     const card = RB.cardOf(s, iid);
     const ab = card.abilities || {};
     const ctx = { p: p, source: iid, to: item.to, targets: item.targets || [],
-      fromHidden: !!item.fromHidden, paid: item.paid || [], xPaid: item.xPaid || 0 };
+      fromHidden: !!item.fromHidden, hiddenBf: item.hiddenBf, paid: item.paid || [], xPaid: item.xPaid || 0 };
 
     // An additional cost may change how the card enters or add its own clause —
     // [Accelerate] is "pay more and I enter ready", which is a property of the play, not
@@ -765,6 +765,15 @@
     // and hand them straight here, and announceChoice then skipped an unpayable toll and
     // took the unit for free. Filtering at the door covers every pack at once.
     if (!(opts && opts.quiet)) pool = pool.filter(i => !s.objects[i] || RB.canChoose(s, ctx.p, i));
+    // A card played from face down chooses its targets at that battlefield, "unless the
+    // targeting restriction makes that impossible" (§811 Hidden) — so the pool narrows to
+    // the battlefield only when something there qualifies. Nothing recorded which
+    // battlefield a facedown play came from, and sfd-070 / sfd-145 / unl-042 / unl-083
+    // reached across the board.
+    if (ctx.hiddenBf !== undefined && !(opts && opts.quiet)) {
+      const there = pool.filter(i => { const l = RB.locationOf(s, i); return l.kind === 'bf' && l.bf === ctx.hiddenBf; });
+      if (there.length) pool = there;
+    }
     if (!pool.length || !n) return [];
     // The identity of the question is (source, position in the effect tree, selector), so
     // the probe run and the real run agree which clause an answer belongs to.
