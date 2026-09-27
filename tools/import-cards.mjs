@@ -55,8 +55,21 @@ const cards = pool.map(c => ({
   artist: c.artist,
 })).sort((a, b) => a.id.localeCompare(b.id));
 
+// The source's text field is not always clean. A card whose NAME contains a period had
+// the tail of its name leak into the start of its text — sfd-161 B.F. Sword's face read
+// "F. Sword. [Equip] [C] …" — and one line ends in a doubled period. Both are repaired
+// here, where the pack is generated, never by hand in data/printed.js.
+function cleanText(c) {
+  let t = (c.abilityEffective || '').trim();
+  const name = c.name || '';
+  for (let k = name.indexOf('.'); k >= 0; k = name.indexOf('.', k + 1)) {
+    const tail = name.slice(k + 1).trim() + '.';
+    if (tail.length > 1 && t.startsWith(tail)) { t = t.slice(tail.length).trim(); break; }
+  }
+  return t.replace(/([^.])\.\.$/, '$1.');
+}
 const printed = {};
-for (const c of pool) printed[id(c)] = (c.abilityEffective || '').trim();
+for (const c of pool) printed[id(c)] = cleanText(c);
 
 const decks = sel.map((d, i) => {
   // The source lists a card once per printing (a foil and a normal row both resolve to the

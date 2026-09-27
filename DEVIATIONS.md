@@ -41,6 +41,14 @@ a deck or a trash, which the board does not draw — the surface for those is th
 (CARD-LOG-AND-TARGETING-SPEC.md §10). The last two send the question to the seat that is
 CHOOSING rather than the seat that is resolving, so a human defender answers for their own unit.
 
+Routed 2026-09-27, after a card-by-card audit of every registered id: the branch a `may` or
+`choose` answer picks, and every triggered, Deathknell and delayed ability, resolve through
+`RB.runAsking` — they ran bare, so every choice inside them was the engine's first candidate.
+A spell or ability's own choices are now DECLARED as it is played (`RB.declareChoices`,
+§349 step 2) and ride the chain item, which is what lets "counter a spell that chooses X"
+read what it chose. `ogn.eachKillsUnit`, `ogn.killGear` (each), `ogn.eachBanishTopAndPlay`
+and `unl.discardByType` ask each seat for its own card.
+
 **What remains, and why each one is not the same one-line change:**
 
 1. *The payment path.* `RB.defineExtraCost`'s `pay` runs inside `apply`, not inside
@@ -57,6 +65,14 @@ CHOOSING rather than the seat that is resolving, so a human defender answers for
    of those; HOW MANY is still the maximum, and the third still gathers greedily smallest-first.
    *Fix:* a `min`/`max` on the target step instead of a single `n`, and a Confirm button on the
    panel — CARD-LOG-AND-TARGETING-SPEC.md §9 and §12 describe both.
+   Since 2026-09-27 ogn-105 Singularity, ogs-011 Flash, sfd-080 Bellows Breath and unl-054's
+   gathering ask one pick at a time with a "you may" before each further one, so a player
+   can stop early — but the FIRST pick is still required, so choosing none is not offered.
+3. *Non-object choices are made at resolution, not declared.* A move destination (ogn-043,
+   ogn-173, ogn-270, unl `moveChoosingDestination`) and a battlefield (ogn-268 Bullet Time)
+   are asked as a `choose` step when the card resolves. §349 step 2 lists both among the
+   choices made as the card is played. The target step's options are card ids, and a base
+   has none. *Fix:* labelled, non-object options on the target step.
 Owner: unassigned.
 
 **D-3 — Rune decks are reconstructed to twelve.**
@@ -98,7 +114,11 @@ Cards appear and disappear between renders. The structured log already carries e
 animation layer would need.
 Owner: unassigned.
 
-**D-8 — Mostly retired. Two wrappers remain, both load-bearing.**
+**D-8 — Mostly retired. Three wrappers remain, all load-bearing.** (2026-09-27: sfd-216
+Rockfall Path added a third, over `RB.legalActions`, installed after every pack so it sits
+outside ogn's — it strips a unit play to a battlefield marked "units can't be played here",
+including ogn-193 Miss Fortune's open-battlefield play. The missing hook is a play-action
+filter table.)
 Unleashed wraps nothing; Origins keeps three (`RB.mightOf` for Buff counters and the
 Assault/Shield keywords, `RB.kill` for a self-dispatched "when I leave the board", and
 `RB.legalActions` for one play restriction); Spiritforged keeps two (`RB.recycleRune`, because no
@@ -152,3 +172,65 @@ is a real, if unlikely, loss of legal actions. The bound is far outside anything
 battlefields, so the worst case measured is 31 subsets per destination against a ceiling of 1,023.
 *Fix:* generate the subsets lazily, so the bound can be removed without the action list growing.
 Owner: unassigned.
+
+---
+
+The entries below were found by the card-by-card audit of 2026-09-27 (every registered id read
+literally against `data/printed.js` and run on the engine) and are not yet fixed. Everything
+else that audit found is fixed, by commit, on the branch that carries this text.
+
+**D-13 — A spell or ability with no legal choice can still be played.**
+§13.4 step 5: a card whose required targets do not exist cannot be played. `legalActions` asks
+only cost and timing, so ogn-045 Defy, unl-131 Abandon and unl-190 Lilting Lullaby ("counter a
+spell") are playable with nothing on the chain, unl-106 Repulse with no friendly unit at a
+battlefield, and an [Equip] ability with no unit to attach to — each spends its cost for
+nothing. Related: the counters only ever consider the TOP of the chain, where "a spell" may be
+any spell on it. *Fix:* legalActions probes the declaration (`RB.declareChoices` already runs
+it) and withholds a play whose mandatory choice has an empty pool.
+Owner: unassigned.
+
+**D-14 — Additional costs of ACTIVATED abilities are not paid at activation.**
+sfd-150 Last Rites' "[Equip] — [C], Recycle 2 cards from your trash": the recycle is an effect
+of the ability, gated on two cards being there, not a cost paid on activation — so it could be
+countered after the [C] was spent and before the recycle. unl-158 Shepherd's Heirloom's
+"Spend 1 XP" is not spent on the Weaponmaster path. *Fix:* `ab.extra` checked in
+`legalActions` and paid in `doActivate` through `RB.payExtra`, with the `recycleFromTrash`
+extra cost asking which cards.
+Owner: unassigned.
+
+**D-15 — A token is always played to its controller's base.**
+sfd-154 Guards!, sfd-198 Arise! and the ogn Recruit tokens print "play a … token" with no
+location, while sfd-197 prints "to your base" — which suggests the bare form lets the player
+choose any location a unit could be played to. Unconfirmed against a ruling. The core `token`
+op with `to:'here'` also ignores sfd-216 Rockfall Path's "units can't be played here".
+Owner: unassigned.
+
+**D-16 — Leaving the board through another pack's op skips ogn's layer.**
+`RB.leaveBoard` clears the core's modifications and raises `leftBoard`, but not ops-ogn's own
+layers (`ognMods`, `ognKw`) nor the leaving card's own "when I leave" (`fireLeave`), which run
+only on ogn's own kill and bounce. A unit carrying an ogn might modifier that is bounced by an
+unl or sfd op keeps it into its hand. *Fix:* a leave-hook table called from `RB.leaveBoard`.
+Owner: unassigned.
+
+**D-17 — sfd-146 Vex: the extra [A] follows the spell's domain when the spell already costs
+Power.** A cost carries one domain list for all of its Power, so on a spell that already costs
+Power the extra [A] can only be paid in that spell's domains. On a spell with no Power cost it
+is exact (any domain).
+Owner: unassigned.
+
+**D-18 — A spell played by an effect resolves at once rather than going on the chain.**
+sfd-140 Fizz, ogn Kai'Sa's play-from-trash and the core `playFromZone` resolve the played spell
+immediately (`immediate: true`), so no player gets priority to respond to it.
+Owner: unassigned.
+
+**D-19 — Two readings awaiting a ruling.** ogn-193 Miss Fortune's "open battlefield" is read as
+*uncontrolled* (rules.md's Battlefield row says "open (both)", which is ambiguous; the official
+page could not be reached from here). sfd-248 Prodigal Explorer's "chosen enemy units and/or
+gear twice this turn" counts each object chosen, so one spell choosing two counts as twice.
+Owner: unassigned.
+
+**D-20 — Small known edges.** unl-118 Elder Dragon records "your damage" before prevention, so
+a fully prevented hit still counts as yours on a unit holding other damage. `counterToHand`
+and the core `counter` return or trash to the CONTROLLER, where the cards say owner.
+Owner: unassigned.
+
