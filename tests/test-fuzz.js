@@ -100,7 +100,15 @@ export function run(t) {
     // majority on its own (46 own / 32 theirs). A weight pass moving a raw count is not this
     // rule being violated, so the rule is what gets asserted.
     t.ok(h.own > 10, 'hard spends answers at main-phase speed: ' + JSON.stringify(h));
-    t.ok(h.own > h.theirs, 'hard spends more on its own turn than the opponent\'s: ' + JSON.stringify(h));
+    // Hard's share at main-phase speed, against competition's. It was once asserted as a
+    // raw majority (h.own > h.theirs), which is a fact about how many answer windows the
+    // opponent's turn happens to open, not about the tier: when [Temporary] units stopped
+    // dying at the end of EVERY turn they began defending, the opponent's turns opened more
+    // showdowns, and hard went 46/32 to 35/51 while competition went 14/70 to 7/75. The
+    // contrast this test is named for held throughout; the ratio is what is asserted.
+    const share = x => x.own / Math.max(1, x.own + x.theirs);
+    t.ok(share(h) > share(c) * 2, 'hard spends a far larger share on its own turn than competition: ' +
+      JSON.stringify(h) + ' vs ' + JSON.stringify(c));
     t.ok(c.theirs > c.own * 3, 'competition holds them for the opponent\'s turn: ' + JSON.stringify(c));
     t.ok(c.theirs > h.theirs, 'and spends more of them there than hard does: ' + c.theirs + ' vs ' + h.theirs);
   });

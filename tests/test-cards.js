@@ -103,4 +103,72 @@ export function run(t) {
     RB.kill(s, u);
     t.ok(s.players[0].base.includes(g), 'the gear is in base: ' + JSON.stringify(RB.locationOf(s, g)));
   });
+
+  // --- the Beginning Phase (§316.3, [Temporary]) ------------------------------
+  t.test('a Temporary unit survives its opponent\'s turn and dies at the start of its controller\'s', () => {
+    let s = game();
+    const u = put(s, vanilla, 0, 'base');
+    RB.obj(s, u).temporary = true;
+    s = RB.apply(s, { t: 'endTurn' });
+    t.eq(s.active, 1);
+    t.ok(s.players[0].base.includes(u), 'still in base on the opponent\'s turn');
+    s = RB.apply(s, { t: 'endTurn' });
+    t.eq(s.active, 0);
+    t.ok(!s.players[0].base.includes(u), 'killed as its controller\'s turn began');
+  });
+
+  t.test('Frozen Fortress kills before scoring: a battlefield whose last unit dies is not held', () => {
+    let s = game({ bfs: ['unl-212'] });
+    const u = RB.mint(s, 'tok-recruit', 1);          // 1 Might: the Fortress's 1 is lethal
+    s.bf[0].units.push(u);
+    s.bf[0].controller = 1;
+    const before = s.players[1].points;
+    s = RB.apply(s, { t: 'endTurn' });
+    t.ok(!s.bf[0].units.includes(u), 'the unit died');
+    t.eq(s.players[1].points, before, 'and nothing was held');
+  });
+
+  t.test('Dusk Rose Lab asks its "you may" before scoring, not after', () => {
+    let s = game({ bfs: ['unl-209'] });
+    const u = RB.mint(s, vanilla, 1);
+    s.bf[0].units.push(u);
+    s.bf[0].controller = 1;
+    const before = s.players[1].points;
+    s = RB.apply(s, { t: 'endTurn' });
+    t.eq(s.queue.length && s.queue[0].kind, 'may', 'the question is open');
+    t.eq(s.phase, 'beginning', 'still in the Beginning Phase');
+    t.eq(s.players[1].points, before, 'nothing scored yet');
+    s = answerAll(s);     // yes: kill it, draw 1
+    t.eq(s.phase, 'main');
+    t.eq(s.players[1].points, before, 'the unit was killed first, so nothing is held');
+  });
+
+  t.test('a battlefield\'s own "when you hold here" fires (Amateur Recital)', () => {
+    let s = game({ bfs: ['unl-207'] });
+    const u = RB.mint(s, vanilla, 1);
+    s.bf[0].units.push(u);
+    s.bf[0].controller = 1;
+    put(s, vanilla, 0, 1);
+    s = RB.apply(s, { t: 'endTurn' });
+    t.ok(s.queue.length && s.queue[0].kind === 'may', 'its "you may move a unit" is asked');
+  });
+
+  t.test('a Conquer trigger fires even when the point is replaced by a draw (Master Yi, Hunt)', () => {
+    const s = game();
+    const y = put(s, 'unl-113', 0, 0);
+    s.players[0].points = s.victoryScore - 1;
+    s.players[0].xp = 0;
+    RB.score(s, 0, 0, 'conquer');
+    t.eq(s.players[0].points, s.victoryScore - 1, 'the point was replaced');
+    t.eq(s.players[0].xp, 2, 'but Hunt 2 still gained XP');
+  });
+
+  t.test('"spent [A][A] this turn" counts only this turn, whoever\'s it is (Sivir)', () => {
+    let s = game();
+    const v = put(s, 'sfd-143', 0, 'base');
+    s.players[0].powerSpentThisTurn = 2;
+    const pumped = RB.mightOf(s, v);
+    s = RB.apply(s, { t: 'endTurn' });
+    t.eq(RB.mightOf(s, v), pumped - 2, 'the +2 is gone on the opponent\'s turn');
+  });
 }

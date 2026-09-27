@@ -1027,15 +1027,17 @@
       return r;
     };
 
-    // WRAPPER 2 of 2. A battlefield that locks scoring (sfd-209). Blocking the call blocks
-    // the point and the Conquer/Hold triggers with it, which is the rule: the scoring never
-    // happens, so there is nothing for them to fire on. Scoring has no hook table.
+    // WRAPPER 2 of 2. A battlefield that locks scoring (sfd-209). "Can't score" negates
+    // the POINT; the conquest or hold still happened, and Conquer and Hold effects fire
+    // "even if the point gain is negated or replaced" (rules.md §13.2). Blocking the whole
+    // call used to drop them too. Scoring has no hook table.
     const baseScore = RB.score;
     RB.score = function (s, p, i, how) {
       const ab = RB.card(s.bf[i].cardId).abilities;
       const lock = ab && ab.statics && ab.statics.find(x => x.scoreLockUntilTurn);
       if (lock && turnsTaken(s, p) < lock.scoreLockUntilTurn) {
         RB.log(s, 'scoreDenied', { p: p, bf: i, how: how });
+        RB.runTriggers(s, how === 'conquer' ? 'conquer' : 'hold', { p: p, bf: i });
         return;
       }
       return baseScore(s, p, i, how);

@@ -132,7 +132,13 @@
         if (t.on !== event) continue;
         const p = owner === null ? data.p : owner;
         if (t.mine && p !== data.p) continue;
-        if (t.here !== undefined && data.bf !== undefined && t.here && RB.locationOf(s, iid).bf !== data.bf) continue;
+        // "Here" is the source's own battlefield. A battlefield card is not IN a location —
+        // it is one — so its index is asked directly; locationOf reads 'nowhere' for it and
+        // every "when you hold here" on a battlefield was skipped.
+        if (t.here && data.bf !== undefined) {
+          const at = owner === null ? s.bf.findIndex(b => b.iid === iid) : RB.locationOf(s, iid).bf;
+          if (at !== data.bf) continue;
+        }
         const prev = s.via;
         s.via = { iid: iid };
         RB.runEffects(s, t.effects, { p: p, source: iid, event: data });

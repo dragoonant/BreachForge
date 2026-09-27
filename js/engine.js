@@ -657,7 +657,6 @@
     RB.runTriggers(s, 'endOfTurn', { p: s.active });
     for (const iid of Object.keys(s.objects)) {
       const o = s.objects[iid];
-      if (o.temporary) { RB.kill(s, iid); continue; }
       o.damage = 0;                // 3c. Heal all Units
       o.buffs = 0;                 // 3d. "this turn" effects expire
       o.granted = [];
@@ -686,7 +685,10 @@
     s.players[p].playedThisTurn = [];
     s.players[p].drawsThisTurn = 0;
     s.players[p].turnFlags = {};
-    s.players[p].powerSpentThisTurn = 0;
+    // "If you've spent at least [A][A] this turn" is asked on either player's turn, so
+    // the count restarts for both — resetting only the turn player's let sfd-143 Sivir
+    // keep last turn's +2 and Ganking through the opponent's whole turn.
+    for (let q = 0; q < 2; q++) s.players[q].powerSpentThisTurn = 0;
     RB.log(s, 'turnStart', { p: p, turn: s.turn }, 'turn.start');
 
     // Awaken Phase — ready everything you control. Rule 316.2.
@@ -702,8 +704,30 @@
 
     // Beginning Phase — start-of-turn effects, then the Scoring Step: the turn player
     // HOLDS every battlefield they control. Rule 316.3.
+    //
+    // [Temporary] is "at the start of this permanent's controller's Beginning Phase, before
+    // scoring, kill this" — the controller's, not every player's. It used to be swept in
+    // endTurn, on every turn, so a Temporary unit never saw the opponent's turn: it could
+    // not defend, and "Temporary units here have Shield" had nothing to protect.
     s.phase = 'beginning';
+    for (const iid of Object.keys(s.objects)) {
+      const o = s.objects[iid];
+      if (!o.temporary || o.controller !== p) continue;
+      if (RB.locationOf(s, iid).kind === 'nowhere' && !o.attachedTo) continue;
+      RB.kill(s, iid);
+    }
     RB.runTriggers(s, 'beginningPhase', { p: p });
+    // "This happens before scoring." The rest of the turn start waits for the cleanup to
+    // settle what the Beginning Phase did — a unit dealt lethal damage dies before its
+    // battlefield is held — and for any question it asked to be answered. advance()
+    // resumes it; scoring straight away scored a battlefield whose last unit was already
+    // dead and answered Dusk Rose Lab's "you may" after the point was in.
+    s.turnStart = { p: p };
+  }
+
+  function finishTurnStart(s) {
+    const p = s.turnStart.p;
+    s.turnStart = null;
     for (let i = 0; i < s.bf.length; i++)
       if (s.bf[i].controller === p) RB.score(s, p, i, 'hold');
 
@@ -739,6 +763,10 @@
       if (how === 'conquer' && !all) {
         RB.log(s, 'scoreDenied', { p: p, bf: i, how: how }, 'card.draw');
         RB.draw(s, p);
+        // The conquest still happened: a Conquer trigger fires even when the point it
+        // would score is replaced (rules.md, trigger table). unl-113 Master Yi's Hunt
+        // gained no XP at match point.
+        RB.runTriggers(s, 'conquer', { p: p, bf: i });
         return;
       }
     }
@@ -834,6 +862,7 @@
       if (s.winner !== null) return;
       if (cleanup(s)) continue;
       if (s.chain.length && s.passes >= 2) { resolveTop(s); s.passes = 0; continue; }
+      if (s.turnStart && !s.queue.length && !s.chain.length) { finishTurnStart(s); continue; }
       return;
     }
     throw new Error('cleanup did not settle');
