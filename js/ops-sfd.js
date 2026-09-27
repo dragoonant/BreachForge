@@ -155,7 +155,11 @@
     trashAtLeast: (s, ctx, e) => s.players[ctx.p].trash.length >= n_(e),
     handAtMost: (s, ctx, e) => s.players[ctx.p].hand.length <= n_(e),
     // "in combat": a combat showdown is open, which is the window combat kills happen in.
-    inCombat: s => !!s.showdown && !!s.showdown.combat,
+    // "When I die IN combat": a combat is open AND I died at its battlefield. A combat
+    // elsewhere is not mine — sfd-148 Draven, killed in his base during a fight at the
+    // other battlefield, handed the opponent a point.
+    inCombat: (s, ctx) => !!s.showdown && !!s.showdown.combat &&
+      !!ctx.event && ctx.event.bf === s.showdown.bf,
     // "an OPEN battlefield" is one that was occupied and UNCONTROLLED before you took it.
     // The conquer event does not carry the previous controller, so sfd.noteOpen records it
     // at the showdown that led here — a trigger, not a wrapper.

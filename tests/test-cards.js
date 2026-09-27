@@ -378,4 +378,34 @@ export function run(t) {
     RB.openShowdown(s, 0);
     t.eq(RB.obj(s, u).role, undefined);
   });
+
+  t.test('Azir\'s "when I attack" does not fire when he defends', () => {
+    let s = game();
+    const az = sized(s, 'sfd-177', 1, 3);
+    const atk = sized(s, vanilla, 0, 3);
+    s.bf[0].units.push(az); s.bf[0].controller = 1;
+    s.bf[0].units.push(atk); s.bf[0].contestedBy = 0; s.bf[0].combatStaged = true;
+    RB.openShowdown(s, 0);
+    t.ok(!s.queue.some(q => q.kind === 'may' && q.who === 1), 'no "move your tokens" question');
+  });
+
+  t.test('a unit token played this turn is a friendly unit played (Rally the Troops buffs it)', () => {
+    let s = game();
+    rich(s, 0);
+    const r = put(s, 'sfd-166', 0, 'hand');
+    s = passAll(RB.apply(s, plays(s, r)[0]));
+    RB.ops.token(s, { cardId: 'tok-recruit' }, { p: 0, source: r });
+    const tok = s.players[0].base[s.players[0].base.length - 1];
+    t.eq(RB.obj(s, tok).counters, 1, 'buffed');
+  });
+
+  t.test('Draven dying in his base during a combat elsewhere did not die in combat', () => {
+    const s = game();
+    const dr = put(s, 'sfd-148', 0, 'base');
+    const atk = sized(s, vanilla, 0, 3), def = sized(s, vanilla, 1, 3);
+    combatAt(s, 1, [atk], [def]);
+    const before = s.players[1].points;
+    RB.kill(s, dr);
+    t.eq(s.players[1].points, before);
+  });
 }

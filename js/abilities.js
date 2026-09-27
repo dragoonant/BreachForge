@@ -36,6 +36,10 @@
 
     if (card.type === 'Unit') {
       RB.obj(s, iid).exhausted = !entersReady;     // units enter the board exhausted
+      // Entering ready is not BECOMING ready: [Accelerate] is a replacement, and "becomes
+      // ready" triggers do not fire for it (rules.md, Accelerate). The crossing detector in
+      // the cleanup compares against wasReady, which a fresh object seeds as false.
+      RB.obj(s, iid).wasReady = entersReady;
       RB.obj(s, iid).enteredTurn = s.turn;
       if (item.to && item.to.startsWith('bf')) {
         const i = +item.to.slice(2);
@@ -311,9 +315,14 @@
     // might wins over the token's own.
     if (e.might != null) o.buffs = e.might - (RB.card(e.cardId).might || 0);
     if (e.temporary) o.temporary = true;
+    o.wasReady = !o.exhausted;
     if (e.to === 'here' && ctx.event && ctx.event.bf !== undefined) { s.bf[ctx.event.bf].units.push(iid); RB.applyContested(s, ctx.event.bf, ctx.p); }
     else s.players[ctx.p].base.push(iid);
     RB.log(s, 'token', { p: ctx.p, iid: iid, card: e.cardId }, 'unit.deploy');
+    // "Play a token" is playing it: sfd-166 Rally the Troops ("when a friendly unit is
+    // played this turn, buff it") missed every Sand Soldier. The unl token ops already
+    // raised this; the core's did not.
+    if (RB.card(e.cardId).type === 'Unit') RB.runTriggers(s, 'unitPlayed', { p: ctx.p, iid: iid });
   });
   RB.defineOp('nothing', () => {});
   RB.defineOp('extraTurn', (s, e, ctx) => {
@@ -443,7 +452,9 @@
     if (bf === null) return;
     for (const iid of RB.allUnits(s).slice()) {
       const o = RB.obj(s, iid);
-      if (o.controller !== ctx.p || !o.token) continue;
+      // "Your token UNITS": allUnits walks the base, where Gold gear tokens also live, and
+      // sfd-177 Azir marched them onto the battlefield as if they could fight.
+      if (o.controller !== ctx.p || !o.token || RB.cardOf(s, iid).type !== 'Unit') continue;
       const loc = RB.locationOf(s, iid);
       if (loc.kind === 'bf' && loc.bf === bf) continue;
       if (loc.kind === 'base') RB.removeFrom(s.players[ctx.p].base, iid);
