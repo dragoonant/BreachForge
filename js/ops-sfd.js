@@ -685,16 +685,18 @@
       if (e.type && c.type !== e.type) return false;
       if (e.maxEnergy != null && (c.energy || 0) > e.maxEnergy) return false;
       if (e.maxPower != null && (c.power || 0) > e.maxPower) return false;
-      return true;
+      // "Ignoring its Energy cost (you must still pay its Power cost)": a spell whose Power
+      // the player cannot pay is not one they can play, so it is not a candidate. Offered
+      // anyway, the engine's first pick could be the unpayable one and nothing happened
+      // while a payable spell sat beside it.
+      return e.ignoreCost || RB.canPay(s, ctx.p, trashCost(s, iid, e));
     });
     pool.sort((a, b) => (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0));
     const iid = RB.offerChoice(s, pool, 1, ctx, 'fromTrash', 'Play which card from your trash?')[0];
     if (!iid) return;
     RB.removeFrom(P.trash, iid);
     if (!e.ignoreCost) {
-      const cost = RB.costOf(s, iid);
-      if (e.ignoreEnergy) cost.energy = 0;
-      const plan = RB.planPayment(s, ctx.p, cost);
+      const plan = RB.planPayment(s, ctx.p, trashCost(s, iid, e));
       if (!plan) { P.trash.push(iid); return; }
       RB.pay(s, ctx.p, plan);
     }
@@ -704,6 +706,11 @@
     // the same spell being replayed from there every turn.
     if (e.recycleAfter && RB.removeFrom(P.trash, iid)) P.deck.push(iid);
   });
+  function trashCost(s, iid, e) {
+    const cost = RB.costOf(s, iid);
+    if (e.ignoreEnergy) cost.energy = 0;
+    return cost;
+  }
   say('playFromTrash', e => 'Play a ' + (e.type ? e.type.toLowerCase() : 'card') +
     ' from your trash' +
     (e.maxEnergy != null ? ' with Energy cost no more than ' + e.maxEnergy : '') +

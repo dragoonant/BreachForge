@@ -177,4 +177,22 @@ export function run(t) {
     t.ok(s2.bf[0].units.includes(u), 'a unit that is not attacking is not taken');
   });
 
+  // --- sfd-140 Fizz -------------------------------------------------------------
+  t.test('Fizz offers only a spell whose Power cost can be paid, and recycles it (sfd-140)', () => {
+    let s = game();
+    s.players[0].runes = [];
+    s.players[0].pool.energy = 10;
+    const star = put(s, 'ogn-029', 0, 'trash');            // 2 Power: unpayable here
+    const cleave = put(s, 'ogn-004', 0, 'trash');          // no Power
+    put(s, vanilla, 0, 'base');
+    const fizz = put(s, 'sfd-140', 0, 'hand');
+    const fc = RB.card('sfd-140');
+    s.players[0].pool.power[fc.domain] = fc.power || 0;  // exactly Fizz's own Power
+    s = RB.apply(s, plays(s, fizz)[0]);
+    t.eq(s.players[0].pool.power[fc.domain] || 0, 0, 'no Power left over');
+    s = settle(RB.apply(s, { t: 'choose', ix: 0 }));
+    t.ok(s.players[0].deck.includes(cleave), 'the payable spell was played and recycled');
+    t.ok(s.players[0].trash.includes(star), 'the unpayable one is still in the trash');
+  });
+
 }
