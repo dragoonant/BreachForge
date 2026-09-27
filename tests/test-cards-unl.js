@@ -161,4 +161,41 @@ export function run(t) {
     t.eq(s.players[1].hand.slice().sort(), [x, y].sort(), 'both returned');
     t.eq((s.delayed || []).length, 0, 'and the promises are spent');
   });
+
+  // --- leaving the board (unl-128, 132, 134, 184) -----------------------------------
+  t.test('a bounce is a card leaving the board: leftBoard fires, replacements and gear go', () => {
+    const s = game();
+    const u = put(s, vanilla, 1, 0);
+    const g = RB.mint(s, 'sfd-033', 1);
+    RB.obj(s, u).attached.push(g); RB.obj(s, g).attachedTo = u;
+    RB.obj(s, u).replaces = [{ event: 'death', kind: 'banishInstead', byP: 0 }];
+    const seen = [];
+    const base = RB.runTriggers;
+    RB.runTriggers = (st, ev, d) => { if (ev === 'leftBoard') seen.push(d.iid); return base(st, ev, d); };
+    try { RB.ops.returnToHand(s, { target: { pick: 'enemyUnits' } }, { p: 0, source: u }); }
+    finally { RB.runTriggers = base; }
+    t.eq(seen, [u], 'leftBoard fired for the bounced unit');
+    t.ok(s.players[1].hand.includes(u), 'in hand');
+    t.eq(RB.obj(s, u).replaces, null, 'its replacement is gone');
+    t.ok(s.players[1].base.includes(g) && !RB.obj(s, g).attachedTo, 'its gear fell to base');
+  });
+
+  t.test('Thrill of the Hunt: a banished-and-replayed unit is a new object — no Temporary, no gear', () => {
+    let s = game();
+    const u = put(s, vanilla, 0, 0);
+    RB.obj(s, u).temporary = true;
+    const g = RB.mint(s, 'sfd-033', 0);
+    RB.obj(s, u).attached.push(g); RB.obj(s, g).attachedTo = u;
+    const seen = [];
+    const base = RB.runTriggers;
+    RB.runTriggers = (st, ev, d) => { if (ev === 'leftBoard') seen.push(d.iid); return base(st, ev, d); };
+    try { resolve(s, [{ op: 'blinkUnit', target: { pick: 'myUnits' } }], { p: 0, source: u }); }
+    finally { RB.runTriggers = base; }
+    s = passAll(s);
+    t.eq(seen, [u], 'leftBoard fired');
+    t.ok(s.bf.some(b => b.units.includes(u)), 'back on a battlefield');
+    t.ok(!RB.obj(s, u).temporary, 'no longer Temporary');
+    t.ok(s.players[0].base.includes(g) && !RB.obj(s, g).attachedTo, 'its gear fell to base');
+    t.eq(RB.obj(s, u).attached, []);
+  });
 }

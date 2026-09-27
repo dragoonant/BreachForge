@@ -151,23 +151,37 @@
     return true;
   }
 
-  // Off the board and into the owner's hand. A token ceases to exist instead; gear riding
-  // a returned unit is detached and falls back to its owner's base.
-  function toHand(s, iid) {
-    const o = RB.obj(s, iid);
-    if (!pluck(s, iid)) return false;
+  // Gear riding a unit that leaves the board does not go with it: it is detached and falls
+  // to its controller's base, the same as when the host dies (RB.kill).
+  function dropGear(s, o) {
     for (const g of (o.attached || []).slice()) {
       const go = RB.obj(s, g);
       go.attachedTo = null;
-      s.players[go.owner].base.push(g);
+      s.players[go.controller].base.push(g);
+      RB.log(s, 'unattach', { p: go.controller, iid: g }, 'gear.equip');
     }
     o.attached = [];
-    // RB.kill clears permBuffs and counters; this path lifts the card out of its zone
-    // directly and never reaches kill, so it has to clear the same fields itself.
-    o.damage = 0; o.buffs = 0; o.permBuffs = 0; o.counters = 0; o.granted = [];
-    o.exhausted = false; o.cantMove = false;
-    o.stunned = false; o.temporary = false; o.attachedTo = null; o.movedThisTurn = 0;
-    delete o.role;
+  }
+
+  // A card leaving the board by bounce or banish goes through RB.leaveBoard, the core's one
+  // door: it clears the card's modifications (Temporary, replacements, damage, buffs…) and
+  // raises `leftBoard`. These ops used to lift the card out of its zone themselves, so no
+  // leftBoard ever fired for a bounced unit, a placed "banish it instead" rode it back into
+  // play, and a blinked unit came back still Temporary. Gear goes to base first, while the
+  // host is still where it was.
+  function offBoard(s, iid) {
+    const o = RB.obj(s, iid);
+    dropGear(s, o);
+    if (!RB.leaveBoard(s, iid)) return false;
+    o.movedThisTurn = 0;
+    o.unlDamagedBy = null;
+    return true;
+  }
+
+  // Off the board and into the owner's hand. A token ceases to exist instead.
+  function toHand(s, iid) {
+    const o = RB.obj(s, iid);
+    if (!offBoard(s, iid)) return false;
     if (!o.token) s.players[o.owner].hand.push(iid);
     RB.log(s, 'returnToHand', { p: o.controller, iid: iid }, 'unit.move');
     return true;
@@ -1116,26 +1130,23 @@
     const iid = targets(s, e.target, ctx)[0];
     if (!iid) return;
     const o = RB.obj(s, iid);
-    if (!pluck(s, iid)) return;
-    o.damage = 0; o.buffs = 0; o.permBuffs = 0; o.counters = 0; o.granted = [];
-    o.stunned = false; o.cantMove = false; delete o.role;
-    s.players[o.owner].banished.push(iid);
-    RB.obj(s, ctx.source).unlBlink = iid;
+    if (!offBoard(s, iid)) return;
     RB.log(s, 'banish', { p: o.owner, iid: iid });
+    if (o.token) return;                  // a token that leaves the board ceases to exist
+    s.players[o.owner].banished.push(iid);
     if (!s.bf.length) return;
+    // Which card lands rides in the answer's own effect, not in a slot on the source.
     askDestination(s, ctx, s.bf.map((b, i) => ({ label: 'To ' + RB.card(b.cardId).name, bf: i })),
-      o2 => [{ op: 'atBf', bf: o2.bf, effects: [{ op: 'landBanished' }] }]);
+      o2 => [{ op: 'atBf', bf: o2.bf, effects: [{ op: 'landBanished', iid: iid }] }]);
   });
   RB.defineDescriber('blinkUnit', e => 'Banish ' + selText(e.target) +
     ', then its owner plays it to any battlefield, ignoring its cost.');
 
   RB.defineOp('landBanished', (s, e, ctx) => {
-    const src = RB.obj(s, ctx.source);
-    const iid = src.unlBlink;
+    const iid = e.iid;
     if (!iid || ctx.event === undefined || ctx.event.bf === undefined) return;
     const owner = RB.obj(s, iid).owner;
-    if (!RB.removeFrom(s.players[owner].banished, iid)) { src.unlBlink = null; return; }
-    src.unlBlink = null;
+    if (!RB.removeFrom(s.players[owner].banished, iid)) return;
     RB.log(s, 'play', { p: owner, iid: iid, card: RB.obj(s, iid).cardId, to: 'bf' + ctx.event.bf }, 'unit.deploy');
     RB.playCard(s, { iid: iid, controller: owner, to: 'bf' + ctx.event.bf, kind: 'card', immediate: true, targets: [] });
   });
