@@ -295,23 +295,58 @@
 
   // --- predict --------------------------------------------------------------
   // Predict X (rules §412): look at the top X, recycle any number, put the rest back on
-  // top in any order. Every branch is legal, so the choice is made by a stated rule
-  // rather than a prompt: recycle what you could not pay for right now.
+  // top in any order. Which to recycle is the PLAYER'S decision about cards only they have
+  // seen; it used to be made for them by a stated rule (recycle what costs more Energy than
+  // you have runes), for the human seat too. Now the looked-at cards stay on top while one
+  // question is open: Predict 1 is a yes/no ("recycle it?"), Predict X a choose over every
+  // subset (four answers for Predict 2). The rest stay in the order they were in — "any
+  // order" is not asked.
+  //
+  // A queued question returns at once, so anything printed AFTER the Predict ("Predict,
+  // then reveal the top card", "Predict 2, then draw 1") is carried as `then` and runs in
+  // the answer's branch — it has to see the deck the player left, not the one before.
+  //
+  // The human seat's prompt names the cards. Any other seat's does not: a choose label is
+  // logged, and what an opponent looked at and kept is not the human's to read.
   RB.defineOp('predict', (s, e, ctx) => {
     const P = s.players[ctx.p];
+    const then = e.then || [];
     const n = Math.min(n_(e), P.deck.length);
-    if (!n) return;
-    const look = P.deck.splice(0, n);
-    const keep = [], recycle = [];
-    for (const iid of look) {
-      const c = RB.cardOf(s, iid);
-      ((c.energy || 0) > P.runes.length ? recycle : keep).push(iid);
+    if (!n) { RB.runEffects(s, then, ctx); return; }
+    const look = P.deck.slice(0, n);
+    RB.log(s, 'look', { p: ctx.p, n: n });
+    const named = ctx.p === s.humanSeat;
+    const name = (i, k) => named ? RB.cardOf(s, i).name : 'card ' + (k + 1);
+    const settle = recycle => [{ op: 'predictSettle', look: look, recycle: recycle }].concat(then);
+    const step = { who: ctx.p, source: ctx.source,
+      ctx: { p: ctx.p, source: ctx.source, event: ctx.event, targets: ctx.targets, paid: ctx.paid } };
+    if (n === 1) {
+      s.queue.push(Object.assign(step, { kind: 'may',
+        prompt: named ? 'Predict: the top card of your Main Deck is ' + name(look[0], 0) + '. Recycle it?'
+          : 'Predict: recycle the top card of your Main Deck?',
+        onAnswer: [settle(look.slice()), settle([])] }));
+      return;
     }
-    P.deck.unshift(...keep);
-    P.deck.push(...recycle);        // recycle is to the BOTTOM, never a reshuffle
-    RB.log(s, 'predict', { p: ctx.p, n: n, recycled: recycle.length });
+    const subsets = [];
+    for (let mask = 0; mask < (1 << n); mask++) subsets.push(look.filter((_, k) => mask & (1 << k)));
+    s.queue.push(Object.assign(step, { kind: 'choose',
+      prompt: 'Predict ' + n + (named ? ': the top cards of your Main Deck are ' +
+        look.map(name).join(', ') + ' (top first)' : '') + '. Recycle which?',
+      options: subsets.map(r => !r.length ? 'Keep all on top'
+        : r.length === n ? 'Recycle all ' + n
+        : 'Recycle ' + r.map(i => name(i, look.indexOf(i))).join(' and ')),
+      onAnswer: subsets.map(settle) }));
   });
-  RB.defineDescriber('predict', e => 'Predict ' + n_(e) + '.');
+  RB.defineDescriber('predict', e => 'Predict ' + n_(e) + '.' +
+    (e.then && e.then.length ? ' Then ' + lower(join(e.then)) : ''));
+
+  RB.defineOp('predictSettle', (s, e, ctx) => {
+    const P = s.players[ctx.p];
+    const recycle = (e.recycle || []).filter(i => P.deck.includes(i));
+    for (const iid of recycle) { RB.removeFrom(P.deck, iid); P.deck.push(iid); }  // to the BOTTOM
+    RB.log(s, 'predict', { p: ctx.p, n: (e.look || []).length, recycled: recycle.length });
+  });
+  RB.defineDescriber('predictSettle', () => '');
 
   // --- copyToken ------------------------------------------------------------
   // "Play a Reflection unit token … It becomes a copy of that unit." A copy carries the

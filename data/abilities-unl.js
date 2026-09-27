@@ -150,8 +150,8 @@ RB.registerAbilities({
           op: 'may', prompt: 'Pay 1 Energy to Predict and reveal the top card?',
           effects: [
             { op: 'payCost', energy: 1 },
-            { op: 'predict', n: 1 },
-            { op: 'revealTopSpell' },
+            // `then`: the reveal reads the deck the player's Predict answer left.
+            { op: 'predict', n: 1, then: [{ op: 'revealTopSpell' }] },
           ],
         }],
       }],
@@ -277,10 +277,9 @@ RB.registerAbilities({
     triggers: [{ on: 'played', effects: [{ op: 'exhaust', target: 'self' }] }],
     activated: [{
       energy: 1, exhaustSelf: true, killSelf: true,
+      // `then`: the draw takes whatever the player's Predict answer left on top.
       effects: [
-        { op: 'predict', n: 2 },
-        { op: 'draw', n: 1 },
-        { op: 'xp', n: 1 },
+        { op: 'predict', n: 2, then: [{ op: 'draw', n: 1 }, { op: 'xp', n: 1 }] },
       ],
     }],
   },

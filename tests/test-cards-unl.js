@@ -114,4 +114,35 @@ export function run(t) {
     t.eq(s.players[0].hand, []);
     t.eq(s.players[0].deck.slice(-3).sort(), look.slice().sort());
   });
+
+  // --- Predict (unl-063, 079, 131, 136) --------------------------------------------
+  t.test('Predict: keeping or recycling the top card is the player\'s answer (Eclipse)', () => {
+    for (const recycle of [false, true]) {
+      let s = game({ human: 0 });
+      rich(s, 0);
+      put(s, vanilla, 1, 'base');
+      const cheap = sized(s, 2, 0, 'deck');       // payable: the old rule kept it
+      const e = put(s, 'unl-063', 0, 'hand');
+      s = passChain(RB.apply(s, plays(s, e)[0]));
+      const q = s.queue[0];
+      t.ok(q && q.kind === 'may', 'asked: ' + JSON.stringify(q && q.kind));
+      s = RB.apply(s, { t: 'choose', ix: recycle ? 0 : 1 });
+      t.eq(s.players[0].deck[0] === cheap, !recycle, recycle ? 'recycled' : 'kept on top');
+      t.eq(s.players[0].deck[s.players[0].deck.length - 1] === cheap, recycle, 'bottom');
+    }
+  });
+
+  t.test('Predict 2, then draw: the draw takes the card the player left on top (Scryer\'s Bloom)', () => {
+    let s = game({ human: 0 });
+    const g = put(s, 'unl-136', 0, 'base');
+    const second = sized(s, 3, 0, 'deck');
+    const first = sized(s, 2, 0, 'deck');
+    resolve(s, RB.cardOf(s, g).abilities.activated[0].effects, { p: 0, source: g });
+    const q = s.queue[0];
+    t.ok(q && q.kind === 'choose' && q.options.length === 4, 'four answers: ' + JSON.stringify(q && q.options));
+    s = RB.apply(s, { t: 'choose', ix: 1 });               // recycle the first
+    t.ok(s.players[0].hand.includes(second), 'drew the card kept on top');
+    t.eq(s.players[0].deck[s.players[0].deck.length - 1], first, 'the recycled card is at the bottom');
+    t.eq(s.players[0].xp, 1);
+  });
 }
