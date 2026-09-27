@@ -270,4 +270,58 @@ export function run(t) {
     t.ok(q && q.kind === 'target', 'asked');
     t.eq(q.options.slice().sort(), [a, b].sort());
   });
+
+  t.test('[Repeat] asks its choices again rather than reusing the first answer (Existential Dread)', () => {
+    let s = game({ human: 0 });
+    rich(s, 0);
+    const a = put(s, vanilla, 1, 0), b = put(s, vanilla, 1, 0);
+    RB.obj(s, a).role = 'attacker'; RB.obj(s, b).role = 'attacker';
+    const d = put(s, 'unl-134', 0, 'hand');
+    s = passChain(RB.apply(s, plays(s, d).find(x => (x.pay || []).includes('repeat'))));
+    t.ok(s.queue[0] && s.queue[0].kind === 'target', 'first question');
+    s = RB.apply(s, { t: 'choose', selection: [a] });
+    t.ok(s.queue[0] && s.queue[0].kind === 'target', 'the repeat asks again');
+    s = passChain(RB.apply(s, { t: 'choose', selection: [b] }));
+    t.ok(RB.obj(s, a).stunned && RB.obj(s, b).stunned, 'each was stunned once');
+  });
+
+  // --- the chain: what a spell chooses, and what can counter it ------------------
+  t.test('Not So Fast counters an enemy spell that chose a friendly unit', () => {
+    let s = game();
+    s.active = 1; s.priority = 1;
+    rich(s, 0); rich(s, 1);
+    const mine = put(s, vanilla, 0, 'base');
+    const bolt = put(s, 'ogn-029', 1, 'hand');
+    const nsf = put(s, 'sfd-045', 0, 'hand');
+    s = RB.apply(s, plays(s, bolt)[0]);
+    t.eq(s.chain[0].targets, [mine], 'the spell on the chain records what it chose');
+    s = RB.apply(s, RB.legalActions(s).find(a => a.t === 'play' && a.iid === nsf));
+    s = passChain(s);
+    t.eq(RB.obj(s, mine).damage, 0, 'countered: my unit is untouched');
+    t.ok(s.players[1].trash.includes(bolt), 'and the spell is in the trash');
+  });
+
+  t.test('"counter a spell" leaves an ability alone, and countering an ability does not trash its source', () => {
+    const s = game();
+    const legend = s.players[1].legend;
+    s.chain.push({ iid: legend, controller: 1, kind: 'ability', ix: 0, uid: 'cX' });
+    RB.ops.counter(s, { spellOnly: true }, { p: 0 });
+    t.eq(s.chain.length, 1, 'Flurry\'s "counter a spell" does not take an ability');
+    RB.ops.counter(s, {}, { p: 0 });
+    t.eq(s.chain.length, 0, 'an unrestricted counter does');
+    t.ok(!s.players[1].trash.includes(legend), 'and the legend stays where it is');
+  });
+
+  t.test('a Repeated ransom is bound to its spell: the second "no" does not counter the caster\'s own', () => {
+    const s = game();
+    const theirs = RB.mint(s, 'ogn-029', 1), mine = RB.mint(s, 'ogn-029', 0);
+    s.chain.push({ iid: mine, controller: 0, kind: 'card', uid: 'c1' });
+    s.chain.push({ iid: theirs, controller: 1, kind: 'card', uid: 'c2' });
+    rich(s, 1, 2);
+    RB.ops.ransom(s, { energy: 2 }, { p: 0, source: mine });
+    RB.ops.ransom(s, { energy: 2 }, { p: 0, source: mine });
+    RB.answerQueue(s, { t: 'choose', ix: 1 });           // no — countered
+    RB.answerQueue(s, { t: 'choose', ix: 1 });           // no again — already gone
+    t.eq(s.chain.map(x => x.uid), ['c1'], 'only the ransomed spell left the chain');
+  });
 }

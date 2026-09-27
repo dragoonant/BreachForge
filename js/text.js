@@ -41,7 +41,7 @@
     e.options.map(o => o.label).join('; ') + '.');                                                          // ops.choose
   RB.defineDescriber('stun', e => 'Stun ' + sel(e.target) +
     '. (It contributes no Might in combat this turn.)');                                           // ops.stun
-  RB.defineDescriber('counter', () => 'Counter it.');                                                       // ops.counter
+  RB.defineDescriber('counter', e => e.spellOnly ? 'Counter a spell.' : 'Counter it.');                                                     // ops.counter
   RB.defineDescriber('xp', e => 'Gain ' + n(e) + ' XP.');                                                   // ops.xp
   RB.defineDescriber('placeBuff', e => 'Buff ' + sel(e.target) +
     ". (If it doesn't have a buff, it gets a +1 Might buff.)");                                             // ops.placeBuff

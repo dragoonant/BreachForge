@@ -611,8 +611,11 @@ export function run(t) {
       // Pick the LAST enemy — the one the auto-picker would not have taken — and prove
       // the damage landed there and nowhere else.
       const want = st.queue[0].options[2];
-      const after = RB.apply(st, { t: 'choose', selection: [want] });
+      // Targets are chosen as the spell is PLAYED (§349 step 2), so the question comes
+      // while it waits on the chain; the chain then resolves with that answer.
+      let after = RB.apply(st, { t: 'choose', selection: [want] });
       t.eq(after.queue.length, 0, 'the question is answered');
+      for (let g = 0; g < 6 && after.chain.length && !after.queue.length; g++) after = RB.apply(after, { t: 'pass' });
       t.eq(RB.obj(after, want).damage, 1, 'the chosen unit took the damage');
       const others = st.queue[0].options.filter(x => x !== want);
       for (const o of others) t.eq(RB.obj(after, o).damage, 0, 'and nothing else did');

@@ -336,7 +336,7 @@
     //  to that spell's Energy cost this turn."
     'sfd-206': {
       keywords: ['Reaction'],
-      effects: [{ op: 'sfd.counterSpell',
+      effects: [{ op: 'sfd.counterSpell', spellOnly: true,
         then: [{ op: 'buffByCounteredCost', target: { pick: 'myUnits' } }] }],
     },
 

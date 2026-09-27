@@ -70,7 +70,7 @@ RB.registerAbilities({
     effects: [{
       op: 'choose',
       options: [
-        { label: 'Counter a spell', effects: [{ op: 'counter' }] },
+        { label: 'Counter a spell', effects: [{ op: 'counter', spellOnly: true }] },
         { label: 'Play four 1 Might Bird unit tokens with Deflect',
           effects: [{ op: 'keywordToken', cardId: 'tok-bird', n: 4, might: 1, keywords: ['Deflect'] }] },
       ],

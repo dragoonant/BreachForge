@@ -510,12 +510,19 @@
     // Relevant choices are made as the card is played (§349 step 2), so a card that
     // declares what it chooses records it on the chain item. That is what lets a counter
     // read "a spell that chose exactly one of my units" instead of countering anything.
-    if (card.abilities && card.abilities.chooses)
-      item.targets = RB.select(s, card.abilities.chooses, { p: p, source: iid });
     if (card.type === 'Unit' || card.type === 'Gear') { RB.resolveCard(s, item); return; }
-    s.chain.push(item);
+    pushDeclared(s, item);
     s.priority = RB.opponentOf(p);
     s.passes = 0;
+  }
+
+  // A spell or ability on the chain has made its choices (§349 step 2): it is given an
+  // identity of its own and declared. See RB.declareChoices.
+  function pushDeclared(s, item) {
+    s.chainSeq = (s.chainSeq || 0) + 1;
+    item.uid = 'c' + s.chainSeq;
+    s.chain.push(item);
+    RB.declareChoices(s, item);
   }
 
   // Playing from face down ignores the card's base cost and is a different play from a
@@ -547,7 +554,7 @@
       cardId: card.id, energy: card.energy || 0,
       paid: (a.pay || []).slice(), fromZone: 'hidden' };
     if (card.type === 'Unit' || card.type === 'Gear') { RB.resolveCard(s, item); return; }
-    s.chain.push(item);
+    pushDeclared(s, item);
     s.priority = RB.opponentOf(p);
     s.passes = 0;
   }
@@ -613,8 +620,7 @@
     // ABILITY that chose exactly one of my units" rather than matching spells only.
     const item = { iid: a.iid, controller: p, kind: 'ability', ix: a.ix,
       cardId: RB.cardOf(s, a.iid).id, energy: ab.energy || 0 };
-    if (ab.chooses) item.targets = RB.select(s, ab.chooses, { p: p, source: a.iid });
-    s.chain.push(item);
+    pushDeclared(s, item);
     s.priority = RB.opponentOf(p);
     s.passes = 0;
   }

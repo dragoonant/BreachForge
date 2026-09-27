@@ -56,7 +56,17 @@
       s.players[p].trash.push(iid);
       if (card.type === 'Spell') RB.runTriggers(s, 'spellPlayed', { p: p, iid: iid });
     }
-    for (const x of extras) if (x.effects) RB.runEffects(s, x.effects, ctx);
+    // An additional cost's own clause — [Repeat] is "pay again to do it again" — is a
+    // separate execution whose choices may differ (rules: Repeat), so it runs under its own
+    // prefix in the effect tree. Run at the card's own position, the repeat's question had
+    // the SAME key as the first's and silently reused its answer: unl-134 Existential Dread
+    // stunned a unit and then bounced that same unit.
+    extras.forEach((x, k) => {
+      if (!x.effects) return;
+      ctx.opIx = 'extra' + k;
+      RB.runEffects(s, x.effects, ctx);
+      ctx.opIx = '';
+    });
   };
 
   // What a parked resolution IS, so it can be run again from the top once a question is
@@ -178,6 +188,15 @@
 
   RB.answerQueue = function (s, a) {
     const step = s.queue.shift();
+    if (step.kind === 'target' && step.declare) {
+      const item = s.chain.find(x => x.uid === step.declare);
+      if (!item) return;
+      item.chosen = item.chosen || {};
+      item.chosen[step.key] = (a.selection || []).slice();
+      RB.log(s, 'target', { p: step.who, key: step.key, chose: item.chosen[step.key] });
+      RB.declareChoices(s, item);
+      return;
+    }
     if (step.kind === 'target') {
       const item = step.item;
       item.chosen = item.chosen || {};
@@ -569,14 +588,18 @@
     const victim = item.controller;
     const cost = { energy: e.energy || 0, power: e.power || 0,
       domains: e.domains || RB.DOMAINS.slice(), each: false };
-    if (!RB.canPay(s, victim, cost)) { RB.ops.counter(s, {}, ctx); return; }
+    if (!RB.canPay(s, victim, cost)) { RB.ops.counter(s, { uid: item.uid }, ctx); return; }
+    // Both answers are bound to THIS item. A [Repeat]ed ransom (sfd-136 Hard Bargain) asks
+    // twice; unbound, the second "no" countered whatever was next on the chain — the
+    // caster's own spell — and a second "yes" the victim could no longer afford paid
+    // nothing and let the spell through.
     s.queue.push({
       kind: 'may', who: victim, source: ctx.source,
       prompt: 'Pay ' + (e.energy || 0) + ' Energy' + (e.power ? ' and ' + e.power + ' Power' : '') +
         ' to stop your card being countered?',
       ctx: { p: victim, source: ctx.source },
-      onAnswer: [[{ op: 'payCost', energy: e.energy || 0, power: e.power || 0 }],
-                 [{ op: 'counter' }]],
+      onAnswer: [[{ op: 'payCost', energy: e.energy || 0, power: e.power || 0, orCounter: item.uid }],
+                 [{ op: 'counter', uid: item.uid }]],
     });
   });
   RB.defineOp('payCost', (s, e, ctx) => {
@@ -584,6 +607,7 @@
       domains: e.domains || RB.DOMAINS.slice(), each: false };
     const plan = RB.planPayment(s, ctx.p, cost);
     if (plan) RB.pay(s, ctx.p, plan);
+    else if (e.orCounter) RB.ops.counter(s, { uid: e.orCounter }, ctx);
   });
 
   // Does the chain's top item match what this card is allowed to counter? Read by the
@@ -606,11 +630,18 @@
   });
 
   RB.defineOp('counter', (s, e, ctx) => {
-    // Remove the top card of the chain without resolving it. The chain is LIFO, so "the
-    // spell being responded to" is always its head.
-    const item = s.chain.pop();
-    if (!item) return;
-    s.players[item.controller].trash.push(item.iid);
+    // Remove the top of the chain without resolving it. The chain is LIFO, so "the spell
+    // being responded to" is always its head — unless the counter was bound to one item
+    // (`uid`), as a ransom's delayed answer is: the head may have changed by then.
+    const ix = e.uid ? s.chain.findIndex(x => x.uid === e.uid) : s.chain.length - 1;
+    if (ix < 0) return;
+    const item = s.chain[ix];
+    // "Counter a spell" cannot take an ability (unl-044 Flurry of Feathers).
+    if (e.spellOnly && !(item.kind === 'card' && RB.cardOf(s, item.iid).type === 'Spell')) return;
+    s.chain.splice(ix, 1);
+    // Only a CARD goes to the trash. An ability's item names its source, which is still on
+    // the board: countering a legend's ability put the legend in its owner's trash.
+    if (item.kind === 'card') s.players[item.controller].trash.push(item.iid);
     RB.log(s, 'counter', { p: ctx.p, iid: item.iid }, 'chain.resolve');
   });
   RB.defineOp('xp', (s, e, ctx) => {
@@ -706,11 +737,12 @@
     // The identity of the question is (source, position in the effect tree, selector), so
     // the probe run and the real run agree which clause an answer belongs to.
     const key = (ctx.source || '?') + '|' + (ctx.opIx || '') + '|' + (tag || '');
-    if (s.collecting)
-      s.collecting.push({ key: key, pool: pool.slice(), n: n, p: ctx.p,
-        source: ctx.source, label: label || null });
     const answer = (s.chosen || {})[key];
     const taken = answer ? answer.filter(i => pool.includes(i)) : pool.slice(0, n);
+    if (s.collecting)
+      s.collecting.push({ key: key, pool: pool.slice(), n: n, p: ctx.p,
+        source: ctx.source, label: label || null, taken: taken.slice(),
+        quiet: !!(opts && opts.quiet) });
     if (!(opts && opts.quiet))
       for (const iid of taken) RB.announceChoice(s, ctx.p, iid, ctx.source);
     return taken;
@@ -728,8 +760,15 @@
     run = run || (st => RB.runPendingItem(st, item));
     // Inside a probe, or inside a resolution that is already asking, a nested one simply
     // runs: its questions are collected by — and its answers belong to — the outer one.
-    if (s.humanSeat === null || s.humanSeat === undefined || s.collecting || s.resolving)
-      return run(s);
+    if (s.collecting || s.resolving) return run(s);
+    if (s.humanSeat === null || s.humanSeat === undefined) {
+      // Nobody to ask — but answers declared when the card was played still stand.
+      const prev = s.chosen;
+      s.chosen = item.chosen || {};
+      s.resolving = (s.resolving || 0) + 1;
+      try { return run(s); }
+      finally { s.resolving--; s.chosen = prev || {}; }
+    }
     // Answers live on the item, not on the state: two resolutions can be parked at once
     // (a trigger that fired mid-combat, then the card that combat was for), and one
     // global answer sheet let the first to finish wipe the other's.
@@ -756,6 +795,44 @@
     s.resolving = (s.resolving || 0) + 1;
     try { run(s); }
     finally { s.resolving--; s.chosen = prev || {}; }
+  };
+
+  // DECLARING what a spell or ability chooses, as it is played (§349 step 2).
+  //
+  // The engine resolves a card's choices when it resolves, so a chain item used to carry no
+  // record of what it would choose — and "counter an enemy spell that chooses a friendly
+  // unit" (sfd-045 Not So Fast, unl-106 Repulse) read an empty list and never countered
+  // anything. The resolution is probed now, on a copy with the item off the chain, and
+  // every choice its CONTROLLER makes is settled: a human seat is asked, any other seat's
+  // default is written down. The answers ride on the item, so resolution uses them rather
+  // than choosing again, and `targets` is what a counter reads. A choice that is no longer
+  // legal by then simply finds nothing (the answer is filtered by the live pool).
+  // Choices another player makes (a forced discard) stay at resolution, where they belong.
+  RB.declareChoices = function (s, item) {
+    item.chosen = item.chosen || {};
+    for (let guard = 0; guard < 12; guard++) {
+      const probe = RB.clone(s);
+      probe.chain = probe.chain.filter(x => x.uid !== item.uid);
+      probe.queue = [];
+      probe.collecting = [];
+      probe.chosen = Object.assign({}, item.chosen);
+      probe.resolving = 0;
+      try { RB.runPendingItem(probe, item); }
+      catch (e) { break; }
+      const mine = probe.collecting.filter(c => c.p === item.controller && !c.quiet && !item.chosen[c.key]);
+      if (!mine.length) break;
+      const c = mine[0];
+      if (c.p === s.humanSeat && c.pool.length > c.n && c.n > 0) {
+        s.queue.unshift({ kind: 'target', who: c.p, key: c.key, source: c.source,
+          options: c.pool, n: c.n, label: c.label, declare: item.uid });
+        return;
+      }
+      item.chosen[c.key] = c.taken;
+    }
+    const seen = new Set();
+    for (const k of Object.keys(item.chosen))
+      for (const i of item.chosen[k]) if (s.objects[i]) seen.add(i);
+    item.targets = [...seen];
   };
 
   // The Deflect toll: what an opposing chooser must pay to choose this unit, in Power of
