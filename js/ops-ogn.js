@@ -16,16 +16,14 @@
 //    narrowing shows up in the audit instead of hiding in a handler. The POOL is always
 //    exactly what the card prints: `prefer` orders a pool, it never trims one.
 //
-// 4. FOUR CORE FUNCTIONS ARE STILL WRAPPED, and only these:
+// 4. THREE CORE FUNCTIONS ARE STILL WRAPPED, and only these:
 //      * RB.mightOf — the Buff counter, "-N this turn to a minimum of M", and Assault /
 //        Shield, none of which anything in the core reads. A static cannot carry them:
 //        a Buff is a counter on an arbitrary unit and Assault is granted by a spell that
 //        is in the trash by the time it matters.
-//      * RB.kill — a Buff must vanish when its unit leaves play, a card that says "when
-//        THIS leaves the board" needs a self-dispatch (the core's `leftBoard` walks the
-//        board, so the leaving card, already lifted out of its zone, never hears its own
-//        event), and a Deathknell that recycles itself has to finish after the core has
-//        put the card in the trash.
+//    RB.kill used to be the fourth. What it carried — clearing this pack's layers, a
+//    card's own "when THIS leaves the board", a Deathknell that recycles itself — is now
+//    a leave hook (RB.defineLeaveHook), which every way off the board reaches (D-16).
 //      * RB.isLethalDamage — "when any unit takes damage this turn, kill it": what
 //        counts as lethal, which is not a trigger and has one reader.
 //      * RB.legalActions — the permissions: "opponents can't play cards this turn",
@@ -294,7 +292,7 @@
     o.attachedTo = null;
     s.players[o.owner].trash.push(iid);
     RB.log(s, 'die', { iid: iid, p: o.controller }, 'unit.die');
-    fireLeave(s, iid, o.controller);
+    RB.runLeaveHooks(s, iid, { p: o.controller, how: 'die' });
   }
   def('killGear', (s, e, ctx) => {
     if (e.scope === 'all') { for (const g of allGear(s)) killGear(s, g); return; }
@@ -375,12 +373,11 @@
       o.damage = 0; o.buffs = 0; o.permBuffs = 0; o.counters = 0; o.granted = [];
       o.exhausted = false; o.stunned = false; o.temporary = false; o.movedThisTurn = 0;
       delete o.role;
-      clearLayers(o);
       if (!o.token) s.players[o.owner].hand.push(iid);        // a token ceases to exist
       RB.log(s, 'bounce', { p: o.controller, iid: iid }, 'unit.move');
       RB.runTriggers(s, 'leftBoard', { p: o.controller, iid: iid,
         bf: loc.kind === 'bf' ? loc.bf : undefined });
-      fireLeave(s, iid, o.controller);
+      RB.runLeaveHooks(s, iid, { p: o.controller, how: 'leave' });
       // "Its owner channels 1 rune exhausted" (ogn-104 Retreat): the OWNER of the unit that
       // was returned, and only for a unit that was. A trailing core `channel` gave the
       // rune to the caster, and gave it even when nothing came back.
@@ -1232,23 +1229,22 @@
     }
   }
 
-  const baseKill = RB.kill;
-  RB.kill = function (s, iid) {
-    const loc = RB.locationOf(s, iid);
-    const onBoard = loc.kind === 'base' || loc.kind === 'bf' || loc.kind === 'bfGear';
+  // Every way off the board — this pack's kill and bounce, the core's, and the other
+  // packs' through RB.leaveBoard — ends in the core's leave-hook table, so this pack's
+  // layers are cleared and a card's own "when I leave" is heard however it went (D-16).
+  // A self-recycling Deathknell is finished here too: the card is in the trash by now.
+  RB.defineLeaveHook((s, iid, info) => {
     const o = s.objects[iid];
-    const p = o ? o.controller : null;
-    baseKill(s, iid);
-    if (!onBoard || !o) return;
-    if (o.ognRecycle) {
+    if (!o) return;
+    if (info.how === 'die' && o.ognRecycle) {
       o.ognRecycle = false;
       RB.removeFrom(s.players[o.owner].trash, iid);
       s.players[o.owner].deck.push(iid);
       RB.log(s, 'recycle', { p: o.owner, iid: iid, n: 1 });
     }
     clearLayers(o);
-    fireLeave(s, iid, p);
-  };
+    fireLeave(s, iid, info.p);
+  });
 
   // 3. Lethality. "When any unit takes damage this turn, kill it" is not a trigger —
   //    there is no damage event — but a change to what counts as lethal, and

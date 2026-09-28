@@ -124,8 +124,8 @@ outside ogn's — it strips a unit play to a battlefield marked "units can't be 
 including ogn-193 Miss Fortune's open-battlefield play. The missing hook is a play-action
 filter table.)
 Unleashed wraps nothing; Origins keeps three (`RB.mightOf` for Buff counters and the
-Assault/Shield keywords, `RB.kill` for a self-dispatched "when I leave the board", and
-`RB.legalActions` for one play restriction); Spiritforged keeps two (`RB.recycleRune`, because no
+Assault/Shield keywords, `RB.isLethalDamage`, and `RB.legalActions` for one play restriction —
+its `RB.kill` wrapper became a leave hook with D-16); Spiritforged keeps two (`RB.recycleRune`, because no
 event exists for a recycled rune, and `RB.score`, because the score lock has no hook table). Each
 reads only its own prefixed data. The two Spiritforged ones name the missing hook exactly, and
 that is the fix. The original entry read:
@@ -209,12 +209,13 @@ choose any location a unit could be played to. Unconfirmed against a ruling. The
 op with `to:'here'` also ignores sfd-216 Rockfall Path's "units can't be played here".
 Owner: unassigned.
 
-**D-16 — Leaving the board through another pack's op skips ogn's layer.**
-`RB.leaveBoard` clears the core's modifications and raises `leftBoard`, but not ops-ogn's own
+**D-16 — RETIRED 2026-09-27.** `RB.leaveBoard` and `RB.kill` both end in a core leave-hook
+table (`RB.defineLeaveHook`), and ops-ogn's layers, its self-dispatched "when I leave" and its
+self-recycling Deathknell moved there — so ogn's `RB.kill` wrapper is gone. The original entry
+read: `RB.leaveBoard` clears the core's modifications and raises `leftBoard`, but not ops-ogn's own
 layers (`ognMods`, `ognKw`) nor the leaving card's own "when I leave" (`fireLeave`), which run
 only on ogn's own kill and bounce. A unit carrying an ogn might modifier that is bounced by an
 unl or sfd op keeps it into its hand. *Fix:* a leave-hook table called from `RB.leaveBoard`.
-Owner: unassigned.
 
 **D-17 — sfd-146 Vex: the extra [A] follows the spell's domain when the spell already costs
 Power.** A cost carries one domain list for all of its Power, so on a spell that already costs

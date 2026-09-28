@@ -893,6 +893,7 @@
     }
     o.attached = [];
     if (!o.token) s.players[o.owner].trash.push(iid);
+    RB.runLeaveHooks(s, iid, { p: o.controller, how: 'die' });
   };
 
   // ------------------------------------------------------------------- advance

@@ -76,4 +76,23 @@ export function run(t) {
     resolve(s, [{ op: 'counter' }], { p: 1, source: null });
     t.ok(s.players[1].trash.includes(spell), "in the owner's trash");
   });
+
+  // --- D-16 ------------------------------------------------------------------------
+  t.test("D-16 a unit bounced by another pack's op loses its ogn Might modifier", () => {
+    let s = game();
+    const u = sized(s, 3, 0, 0);
+    resolve(s, [{ op: 'ogn.mightThisTurn', n: 2, target: 'self' }], { p: 0, source: u });
+    t.eq(RB.mightOf(s, u), 5, 'modified on the board');
+    resolve(s, [{ op: 'returnToHand', target: 'self' }], { p: 0, source: u });   // an unl op
+    t.ok(s.players[0].hand.includes(u), 'back in hand');
+    t.eq((RB.obj(s, u).ognMods || []).length, 0, 'the modifier did not ride along');
+  });
+
+  t.test('D-16 ogn-186 "when this leaves the board" is heard when an unl op bounces it', () => {
+    let s = game();
+    const g = put(s, 'ogn-186', 0, 'base');
+    const hand = s.players[0].hand.length;
+    resolve(s, [{ op: 'returnToHand', target: 'self' }], { p: 0, source: g });
+    t.eq(s.players[0].hand.length, hand + 2, 'itself, plus the card it draws');
+  });
 }

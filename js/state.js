@@ -171,7 +171,20 @@
     delete o.role;
     RB.runTriggers(state, 'leftBoard', { p: o.controller, iid: iid,
       bf: loc.kind === 'bf' ? loc.bf : undefined });
+    RB.runLeaveHooks(state, iid, { p: o.controller, how: 'leave' });
     return true;
+  };
+
+  // What a PACK keeps on an object is cleared by the pack, and it has to hear every way a
+  // card leaves — not only its own. ops-ogn kept its Might and keyword layers and a card's
+  // own "when I leave the board" in a wrapper over RB.kill and in its own bounce, so a unit
+  // bounced by an unl or sfd op kept its ogn Might modifier into its owner's hand (D-16).
+  // RB.leaveBoard and RB.kill both end here; `how` is 'die' for a death and 'leave' for
+  // anything else.
+  RB.leaveHooks = [];
+  RB.defineLeaveHook = function (fn) { RB.leaveHooks.push(fn); };
+  RB.runLeaveHooks = function (state, iid, info) {
+    for (const fn of RB.leaveHooks) fn(state, iid, info);
   };
 
   RB.removeFrom = function (arr, iid) {
