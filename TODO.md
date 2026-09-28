@@ -33,6 +33,13 @@ Add entries to the bottom. Delete one in the commit that makes it true.
 > Whoever picks it up: either judge it done on criteria 2 and 3, or make the reveal family
 > reachable first (more cards granting it, or a deck built around one) so there is something
 > to measure. Do not sweep `sandbagKnown` hoping for a number — it is not there.
+>
+> **2026-09-27: the reveal now changes nothing at all** (0 of ~350 decisions in the fuzz
+> test, whose "a reveal changes what it does" assertion was retired with this note). The
+> sandbag it re-prices was mostly compensating for endTurn being scored after the
+> opponent's upkeep; with that fixed (`endHorizon`, js/ai.js) an answer cast in the open
+> state rarely competes, so there is nothing left for a reveal to re-price. T-2 is the
+> same fact seen from the menu.
 
 Several cards let their controller look at hidden information — the opponent's facedown
 cards, the top of a deck, cards in hand. The AI plays those cards and then throws the
@@ -82,3 +89,22 @@ up for the other player's turn.
   one that catches the cheating version, because the cheating version also wins more.
 - Playing the deck that carries the reveal card against it, a human can *see* the AI act on
   what it saw — it holds the counter, or plays around the card it knows is coming.
+
+---
+
+## T-2 — Give the difficulty tiers a real difference again
+
+**Status:** not started · **Wanted by:** owner, 2026-09-27
+
+`competition` beat `hard` 85% of decisive shuffles, and all of that edge was `sandbag`
+suppressing one bug: endTurn was scored after the opponent's upkeep, so whenever they held a
+battlefield ANY play outscored ending the turn — a unit walked into a bigger one, a pump
+spell on a unit in base (trace 1790558636409, pinned in tests/test-ai.js). With endTurn
+scored at the same horizon, new `hard` beats old `hard` 76% of 17 decisive, new
+`competition` is level with old `competition` (49% ±9.1), and the two tiers are the SAME
+player: 60 of 60 shuffles split. So `Hard` came off the menu (index.html), leaving Random
+and Competition; the `hard` table stays as the arena's baseline.
+
+**Done when** a tier is back on the menu that the arena separates from `competition` on
+holdout seeds (`--seedbase`), in either direction, and the difference is one a player
+could name — not a weight that happens to measure.

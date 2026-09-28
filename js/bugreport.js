@@ -4,11 +4,14 @@
 // of a conversation.
 (function (RB) {
   'use strict';
-  const rec = { seed: null, decks: null, actions: [], note: '' };
+  const rec = { seed: null, decks: null, humanSeat: null, actions: [], note: '' };
 
   RB.recordStart = function (state) {
     rec.seed = state.seed;
     rec.decks = state.players.map(p => p.deckId);
+    // Which seat the engine ASKS. Without it a replay auto-answers every discard and
+    // target the human chose, and the first such prompt reads back as ILLEGAL.
+    rec.humanSeat = state.humanSeat;
     rec.actions = [];
   };
   RB.recordAction = function (action) { rec.actions.push(action); };

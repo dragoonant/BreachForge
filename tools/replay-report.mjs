@@ -12,7 +12,10 @@ RB.registerCards();
 const argv = process.argv.slice(2);
 
 function replay(trace) {
-  let s = RB.newGame({ seed: trace.seed, decks: trace.decks });
+  // A trace from before humanSeat was recorded came from the app, where the human is
+  // always seat 0 (js/screens.js). The selftest trace is AI-only and says so with null.
+  const humanSeat = trace.humanSeat === undefined ? 0 : trace.humanSeat;
+  let s = RB.newGame({ seed: trace.seed, decks: trace.decks, humanSeat: humanSeat });
   for (let i = 0; i < trace.actions.length; i++) {
     const a = trace.actions[i];
     let legal;
@@ -28,7 +31,7 @@ function replay(trace) {
 
 if (argv.includes('--selftest')) {
   let s = RB.newGame({ seed: 'selftest', decks: [RB.deckData[0].id, RB.deckData[1].id] });
-  const trace = { seed: s.seed, decks: s.players.map(p => p.deckId), actions: [] };
+  const trace = { seed: s.seed, decks: s.players.map(p => p.deckId), humanSeat: null, actions: [] };
   for (let n = 0; n < 250 && !RB.isTerminal(s); n++) {
     const acts = RB.legalActions(s);
     const a = acts[RB.peekInt(s, acts.length, n)];

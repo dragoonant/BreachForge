@@ -30,11 +30,13 @@
       held: 0,              // option value of a card kept for the opponent's turn
       sandbag: 0,           // what it costs to spend an answer at main-phase speed
       sandbagKnown: 0,      // ...once it has SEEN the hand, priced per Energy of the biggest card
-      // 16, not 6. At 6 the AI ended its turn with the turn still in it; the whole reach of
-      // this knob is endTurn -> move (14 of 14 flips in a probe), so raising it buys moves it
-      // was declining to make. 20 ties 16 (61% vs 61%), so 16 is the low end of a plateau
-      // rather than a peak, and 3 measures at exactly 50%.
+      // 16 was tuned while endTurn was scored AFTER the opponent's upkeep (see endHorizon),
+      // so it sat on top of their Hold points and bought any play that lost less than 16 —
+      // a unit walked into a wall (-6), a pump spell on a unit in base (-2). Now a losing
+      // play clears the same bar as ending, so the bar only ever decides between ending and
+      // a play that does not lose; its size is no longer what stops a bad play.
       endTurnBar: 16, passBar: 4,
+      endHorizon: 1,        // 1: endTurn scored before the opponent's upkeep (see aiChoose)
     },
   };
   // competition is hard, plus one thing hard is forbidden to think about: what the card in
@@ -181,14 +183,30 @@
     }
     pool = pool.concat(moves);
 
+    // Ending the turn is scored at the SAME horizon as everything else: the board as it
+    // stands, before the opponent's upkeep. Applying endTurn runs that upkeep, so its score
+    // included the Hold points they were about to take while every other action's did not —
+    // and whenever they held a battlefield, anything at all outscored ending by those
+    // points. Walking a 2 Might Sand Soldier into a 6 Might Master Yi (-6) and then casting
+    // Blood Rush on a unit in base (-2) both beat ending the turn by ~60. Those Hold points
+    // are not avoided by acting either; the turn still ends after the play.
+    const here = w.endHorizon && s.active === me && !s.chain.length && !s.showdown
+      ? RB.evaluate(s, me, w) : null;
+
     let best = null, bestV = -Infinity;
     for (const a of pool) {
       let v;
-      try { v = RB.evaluate(settled(RB.apply(s, a)), me, w); }
-      catch (e) { continue; }
+      if (a.t === 'endTurn' && here !== null) v = here;
+      else {
+        try { v = RB.evaluate(settled(RB.apply(s, a)), me, w); }
+        catch (e) { continue; }
+      }
       // Ending the turn hands the opponent a scoring step, so it must clear a bar rather
-      // than win ties — otherwise the AI passes with playable cards in hand.
+      // than win ties — otherwise the AI passes with playable cards in hand. The bar is a
+      // preference for ACTING, never for losing: a play that leaves the board worse than
+      // doing nothing clears the same bar, so ending always beats it.
       if (a.t === 'endTurn') v -= w.endTurnBar;
+      else if (here !== null && v < here) v -= w.endTurnBar;
       if (a.t === 'pass' && !s.chain.length && !s.showdown) v -= w.passBar;
       // Holding the right card for the right moment. An Action or Reaction spent in your
       // own neutral open state buys whatever it does; spent on the opponent's turn it buys
