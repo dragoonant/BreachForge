@@ -227,11 +227,19 @@ sfd-140 Fizz, ogn Kai'Sa's play-from-trash and the core `playFromZone` resolve t
 immediately (`immediate: true`), so no player gets priority to respond to it.
 Owner: unassigned.
 
-**D-19 — Two readings awaiting a ruling.** ogn-193 Miss Fortune's "open battlefield" is read as
-*uncontrolled* (rules.md's Battlefield row says "open (both)", which is ambiguous; the official
-page could not be reached from here). sfd-248 Prodigal Explorer's "chosen enemy units and/or
-gear twice this turn" counts each object chosen, so one spell choosing two counts as twice.
-Owner: unassigned.
+**D-19 — RETIRED 2026-09-27: both readings stand, with sources.** *Open battlefield* (ogn-193
+Miss Fortune, and sfd-116 Yone's `conqueredOpen`, which already agreed): the Core Rules define a
+battlefield only as Controlled or Uncontrolled (§190.2.a; §184.2.b "controlled by no one") — there
+is no third "open" state for rules.md's "(both)" to name — and RiftJudge's ruling on Yone played
+"to an open battlefield using Miss Fortune, Buccaneer" and then conquering it only makes sense if
+open means uncontrolled. *Chosen twice* (sfd-248 Ezreal, Prodigal Explorer): the published reading
+is that one spell choosing two enemy units is enough, and that gear abilities do not count — which
+is what `sfd.countChoice` already does (per object chosen; Spell and Unit sources only). Neither is
+an official FAQ entry; if one ever contradicts either, that is a new defect.
+The original entry read: ogn-193 Miss Fortune's "open battlefield" is read as *uncontrolled*
+(rules.md's Battlefield row says "open (both)", which is ambiguous; the official page could not be
+reached from here). sfd-248 Prodigal Explorer's "chosen enemy units and/or gear twice this turn"
+counts each object chosen, so one spell choosing two counts as twice.
 
 **D-20 — RETIRED 2026-09-27.** unl-118 Elder Dragon now records "your damage" from the core's
 damage-DEALT hook (`RB.defineDamageDealt`), after prevention, so a fully prevented hit no longer
