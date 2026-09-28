@@ -626,7 +626,7 @@
     P.deck.push(...revealed);
     RB.removeFrom(P.banished, unit);
     RB.log(s, 'play', { p: ctx.p, iid: unit, card: RB.obj(s, unit).cardId, to: 'base' }, 'unit.deploy');
-    RB.playCard(s, { iid: unit, controller: ctx.p, to: 'base', kind: 'card', immediate: true, targets: [] });
+    RB.playCard(s, { iid: unit, controller: ctx.p, to: 'base', kind: 'card', byEffect: true, targets: [] });
   });
   say('playUnitFromDeck', () => 'Reveal cards from the top of your Main Deck until you reveal ' +
     'a unit and banish it. Play it, ignoring its cost, and recycle the rest.');
@@ -778,7 +778,7 @@
       RB.pay(s, p, plan);
       RB.removeFrom(s.players[p].banished, iid);
       RB.log(s, 'play', { p: p, iid: iid, card: RB.obj(s, iid).cardId, to: 'base' }, 'card.play');
-      RB.playCard(s, { iid: iid, controller: p, to: 'base', kind: 'card', immediate: true, targets: [] });
+      RB.playCard(s, { iid: iid, controller: p, to: 'base', kind: 'card', byEffect: true, targets: [] });
     }
   });
   say('eachBanishTopAndPlay', e => 'Each player looks at the top ' + num(e, 'look', 5) +
@@ -810,10 +810,9 @@
       RB.pay(s, ctx.p, plan);
       RB.removeFrom(P.trash, iid);
       RB.log(s, 'play', { p: ctx.p, iid: iid, card: RB.obj(s, iid).cardId, to: '-' }, 'spell.cast');
-      RB.playCard(s, { iid: iid, controller: ctx.p, to: '-', kind: 'card', immediate: true, targets: [] });
-      RB.removeFrom(P.trash, iid);                       // …then recycle it
-      P.deck.push(iid);
-      RB.log(s, 'recycle', { p: ctx.p, iid: iid, n: 1 });
+      // On the chain like any played spell (D-18); recycled as it resolves.
+      RB.playCard(s, { iid: iid, controller: ctx.p, to: '-', kind: 'card', byEffect: true,
+        recycleAfter: true, targets: [] });
       return;
     }
   });

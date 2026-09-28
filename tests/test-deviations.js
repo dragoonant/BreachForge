@@ -113,4 +113,21 @@ export function run(t) {
     t.ok(!RB.canPay(s, 0, RB.totalCost(s, defy, [])), 'but the Calm itself still needs Calm');
     void vex;
   });
+
+  // --- D-18 ------------------------------------------------------------------------
+  t.test('D-18 sfd-140 Fizz: the spell it plays from the trash goes on the chain, and can be answered', () => {
+    let s = game();
+    rich(s, 0);
+    const fizz = put(s, 'sfd-140', 0, 'hand');
+    const spell = put(s, 'unl-061', 0, 'trash');          // Downstage Dramatics: draw 1
+    s = RB.apply(s, plays(s, fizz).find(a => a.to === 'base'));
+    t.eq(s.queue[0] && s.queue[0].kind, 'may', 'Fizz asks "you may"');
+    s = RB.apply(s, { t: 'choose', ix: 0 });
+    t.ok(s.chain.some(x => x.iid === spell), 'the spell is on the chain');
+    t.eq(RB.whoActs(s), 1, 'and the opponent has priority to respond');
+    const hand = s.players[0].hand.length;
+    s = passAll(s);
+    t.eq(s.players[0].hand.length, hand + 1, 'it resolved: drew 1');
+    t.eq(s.players[0].deck[s.players[0].deck.length - 1], spell, 'then recycled, not trashed');
+  });
 }

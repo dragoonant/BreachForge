@@ -60,7 +60,12 @@
       RB.runEffects(s, (ab.triggers || []).filter(t => t.on === 'played').flatMap(t => t.effects), ctx);
     } else {
       RB.runEffects(s, ab.effects || [], ctx);
-      s.players[RB.obj(s, iid).owner].trash.push(iid);   // the OWNER's trash (§13.4 step 6)
+      // "Recycle that spell after you play it": it finishes on the bottom of its owner's
+      // deck rather than in the trash it came from.
+      if (item.recycleAfter) {
+        s.players[RB.obj(s, iid).owner].deck.push(iid);
+        RB.log(s, 'recycle', { p: p, iid: iid, n: 1 });
+      } else s.players[RB.obj(s, iid).owner].trash.push(iid);   // the OWNER's trash (§13.4 step 6)
       if (card.type === 'Spell') RB.runTriggers(s, 'spellPlayed', { p: p, iid: iid });
     }
     // An additional cost's own clause — [Repeat] is "pay again to do it again" — is a
@@ -517,7 +522,7 @@
     }
     RB.log(s, 'play', { p: ctx.p, iid: iid, card: RB.cardOf(s, iid).id,
       from: e.zone || 'trash' }, 'card.play');
-    RB.playCard(s, { iid: iid, controller: ctx.p, to: e.to || 'base', kind: 'card', immediate: true });
+    RB.playCard(s, { iid: iid, controller: ctx.p, to: e.to || 'base', kind: 'card', byEffect: true });
   });
 
   // A unit's Might is swapped, held for the turn. RB.mightOf derives Might on demand, so

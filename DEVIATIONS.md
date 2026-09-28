@@ -225,10 +225,11 @@ carries one domain list for all of its Power, so on a spell that already costs P
 [A] can only be paid in that spell's domains. On a spell with no Power cost it is exact (any
 domain).
 
-**D-18 — A spell played by an effect resolves at once rather than going on the chain.**
-sfd-140 Fizz, ogn Kai'Sa's play-from-trash and the core `playFromZone` resolve the played spell
-immediately (`immediate: true`), so no player gets priority to respond to it.
-Owner: unassigned.
+**D-18 — RETIRED 2026-09-27.** `RB.playCard` puts every spell on the chain, whoever played it;
+one played by an effect (`byEffect`) hands priority to the other player, and "recycle it after"
+happens as it resolves (`recycleAfter`). The original entry read: sfd-140 Fizz, ogn Kai'Sa's
+play-from-trash and the core `playFromZone` resolve the played spell immediately
+(`immediate: true`), so no player gets priority to respond to it.
 
 **D-19 — RETIRED 2026-09-27: both readings stand, with sources.** *Open battlefield* (ogn-193
 Miss Fortune, and sfd-116 Yone's `conqueredOpen`, which already agreed): the Core Rules define a

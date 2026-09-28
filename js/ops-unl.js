@@ -695,7 +695,7 @@
       RB.pay(s, ctx.p, plan);
       RB.removeFrom(P.hand, iid);
       RB.log(s, 'play', { p: ctx.p, iid: iid, card: RB.cardOf(s, iid).id, to: 'base' }, 'unit.deploy');
-      RB.playCard(s, { iid: iid, controller: ctx.p, to: 'base', kind: 'card', immediate: true, targets: [] });
+      RB.playCard(s, { iid: iid, controller: ctx.p, to: 'base', kind: 'card', byEffect: true, targets: [] });
       return;
     }
   });
@@ -823,7 +823,7 @@
     if (!iid) return;
     RB.removeFrom(P.trash, iid);
     RB.log(s, 'play', { p: ctx.p, iid: iid, card: RB.obj(s, iid).cardId, to: 'base' }, 'unit.deploy');
-    RB.playCard(s, { iid: iid, controller: ctx.p, to: 'base', kind: 'card', immediate: true, targets: [] });
+    RB.playCard(s, { iid: iid, controller: ctx.p, to: 'base', kind: 'card', byEffect: true, targets: [] });
   });
   RB.defineDescriber('resurrectWithin', () =>
     'Play a unit from your trash that costs no more Energy and no more Power than the ' +
@@ -1162,7 +1162,7 @@
     const owner = RB.obj(s, iid).owner;
     if (!RB.removeFrom(s.players[owner].banished, iid)) return;
     RB.log(s, 'play', { p: owner, iid: iid, card: RB.obj(s, iid).cardId, to: 'bf' + ctx.event.bf }, 'unit.deploy');
-    RB.playCard(s, { iid: iid, controller: owner, to: 'bf' + ctx.event.bf, kind: 'card', immediate: true, targets: [] });
+    RB.playCard(s, { iid: iid, controller: owner, to: 'bf' + ctx.event.bf, kind: 'card', byEffect: true, targets: [] });
   });
   RB.defineDescriber('landBanished', () => '');
 

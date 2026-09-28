@@ -536,8 +536,15 @@
       return;
     }
     RB.runTriggers(s, 'cardPlayed', event);
-    if (item.immediate) { RB.resolveCard(s, item); return; }
+    // What a counter reads off the item ("a spell that costs no more than [4]").
+    if (item.cardId === undefined) item.cardId = card.id;
+    if (item.energy === undefined) item.energy = card.energy || 0;
     pushDeclared(s, item);
+    // A spell played by an EFFECT (sfd-140 Fizz, ogn Kai'Sa, `playFromZone`) is played like
+    // any other: it goes on the chain and the other player gets priority to respond (§13.4
+    // step 6). It used to resolve on the spot, inside the effect that played it, and
+    // nobody could answer it (D-18). doPlay sets the same two fields for a hand play.
+    if (item.byEffect) { s.priority = RB.opponentOf(p); s.passes = 0; }
   };
 
   // A spell or ability on the chain has made its choices (§349 step 2): it is given an
