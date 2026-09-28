@@ -798,14 +798,11 @@
   // spells cost [1][A] more." Registered into the core's modifier list rather than wrapping
   // RB.totalCost, and driven by the `spellCost` static so the clause lives in the card data.
   //
-  // "[A]" is Power of ANY domain, and a cost carries ONE domain list for all of its Power.
-  // For a spell with no Power of its own — most of them — that is exact: the list becomes
-  // every domain. For a spell that already costs Power the extra [A] can only join that
-  // spell's own domains (Universal Power still pays it, an off-domain rune cannot): that
-  // remainder is a standing deviation until a cost can carry Power per domain list.
-  // Changing the Power of a one-of-each cost clears `each`, as RB.totalCost does for an
-  // extra that adds Power — left set, the solver reads the domain list and never the
-  // count, so neither the surcharge nor the discount was applied to such a spell.
+  // "[A]" is Power of ANY domain. For a spell with no Power of its own the surcharge is
+  // plain Power over every domain; for one that already costs Power it is carried as
+  // `anyPower` beside the spell's own domain requirement, which RB.planPayment solves
+  // separately (D-17 — it used to join the spell's domain list and could only be paid in
+  // that spell's domains).
   RB.defineCostModifier(function (s, p, iid, cost) {
     if (!s.showdown || !s.showdown.combat) return;
     if (RB.card(RB.obj(s, iid).cardId).type !== 'Spell') return;
@@ -815,12 +812,23 @@
         const shift = RB.obj(s, src).controller === p ? st.spellCost.friendly : st.spellCost.enemy;
         if (!shift) continue;
         cost.energy += shift.energy || 0;
-        if ((shift.power || 0) > 0 && cost.power <= 0) cost.domains = RB.DOMAINS.slice();
-        const before = cost.power;
-        cost.power += shift.power || 0;
         if (shift.minEnergy != null && cost.energy < shift.minEnergy) cost.energy = shift.minEnergy;
-        if (cost.power < 0) cost.power = 0;
-        if (cost.power !== before) cost.each = false;
+        const dp = shift.power || 0;
+        if (dp > 0) {
+          // The surcharge is [A]: any domain. A spell with no Power of its own takes it as
+          // plain Power over every domain; one that already costs Power keeps its own
+          // domain requirement and adds the [A] beside it, as `anyPower` (D-17).
+          if (cost.power <= 0) { cost.domains = RB.DOMAINS.slice(); cost.power += dp; }
+          else cost.anyPower = (cost.anyPower || 0) + dp;
+        } else if (dp < 0) {
+          // The discount comes off an [A] surcharge first, then off the spell's own Power.
+          let off = -dp;
+          const fromAny = Math.min(off, cost.anyPower || 0);
+          cost.anyPower = (cost.anyPower || 0) - fromAny; off -= fromAny;
+          const before = cost.power;
+          cost.power = Math.max(0, cost.power - off);
+          if (cost.power !== before) cost.each = false;
+        }
       }
     }
   });
@@ -864,7 +872,7 @@
   }
   function stillPayable(s, p, cost, offEnergy, offPower) {
     return RB.canPay(s, p, { energy: Math.max(0, cost.energy - offEnergy),
-      power: Math.max(0, cost.power - offPower),
+      power: Math.max(0, cost.power - offPower), anyPower: cost.anyPower || 0,
       domains: cost.domains.slice(), each: cost.each });
   }
 

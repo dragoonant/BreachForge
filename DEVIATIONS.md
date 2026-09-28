@@ -217,11 +217,13 @@ layers (`ognMods`, `ognKw`) nor the leaving card's own "when I leave" (`fireLeav
 only on ogn's own kill and bounce. A unit carrying an ogn might modifier that is bounced by an
 unl or sfd op keeps it into its hand. *Fix:* a leave-hook table called from `RB.leaveBoard`.
 
-**D-17 — sfd-146 Vex: the extra [A] follows the spell's domain when the spell already costs
-Power.** A cost carries one domain list for all of its Power, so on a spell that already costs
-Power the extra [A] can only be paid in that spell's domains. On a spell with no Power cost it
-is exact (any domain).
-Owner: unassigned.
+**D-17 — RETIRED 2026-09-27.** A cost carries `anyPower` — Power of any domain — beside its
+domain-bound `power`, and `RB.planPayment` solves it separately, so sfd-146 Vex's [A] surcharge
+on a spell that already costs Power is payable in any domain. The original entry read:
+sfd-146 Vex: the extra [A] follows the spell's domain when the spell already costs Power. A cost
+carries one domain list for all of its Power, so on a spell that already costs Power the extra
+[A] can only be paid in that spell's domains. On a spell with no Power cost it is exact (any
+domain).
 
 **D-18 — A spell played by an effect resolves at once rather than going on the chain.**
 sfd-140 Fizz, ogn Kai'Sa's play-from-trash and the core `playFromZone` resolve the played spell

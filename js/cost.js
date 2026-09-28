@@ -112,6 +112,11 @@
       if (cost.each) for (const d of cost.domains) need.push([d]);
       else for (let i = 0; i < cost.power; i++) need.push(cost.domains.slice());
     }
+    // `anyPower` is Power of ANY domain on top of the domain-bound `power`. A cost used to
+    // carry one domain list for all of its Power, so sfd-146 Vex's "+[A]" on a spell that
+    // already cost Chaos could only be paid in Chaos (D-17). Asked last, so the
+    // domain-bound requirements take the runes only they can use first.
+    for (let i = 0; i < (cost.anyPower || 0); i++) need.push(RB.DOMAINS.slice());
     let universal = P.pool.any || 0;
     // planPayment is a PROBE — canPay calls it without paying — so it must not touch the
     // real pool at all. Reserving from it and restoring afterwards is one early `return
@@ -348,6 +353,11 @@
     const byDomain = {};
     for (const i of ready) { const d = RB.cardOf(state, i).domain; byDomain[d] = (byDomain[d] || 0) + 1; }
     const have = P.pool.energy + ready.length;
+    if ((cost.anyPower || 0) > 0 && cost.power <= 0) {
+      const usable = ready.length + RB.DOMAINS.reduce((n, d) => n + (P.pool.power[d] || 0), 0) + (P.pool.any || 0);
+      if (usable < cost.anyPower)
+        return 'needs ' + cost.anyPower + ' Power of any domain — you have ' + usable + ' ready';
+    }
     if (cost.power > 0) {
       const usable = cost.domains.reduce((n, d) => n + (byDomain[d] || 0) + (P.pool.power[d] || 0), 0);
       if (usable < cost.power)

@@ -95,4 +95,22 @@ export function run(t) {
     resolve(s, [{ op: 'returnToHand', target: 'self' }], { p: 0, source: g });
     t.eq(s.players[0].hand.length, hand + 2, 'itself, plus the card it draws');
   });
+
+  // --- D-17 ------------------------------------------------------------------------
+  const rune = dom => RB.allCards().find(c => c.type === 'Rune' && c.domain === dom).id;
+  t.test("D-17 sfd-146 Vex: the enemy's +[A] on a Calm spell may be paid with a Fury rune", () => {
+    let s = game();
+    const vex = put(s, 'sfd-146', 1, 0);
+    put(s, vanilla, 0, 0);
+    s.showdown = { bf: 0, attacker: 0, defender: 1, combat: true };
+    s.players[0].runes = [];
+    for (const d of ['Calm', 'Fury']) s.players[0].runes.push(RB.mint(s, rune(d), 0));
+    s.players[0].pool.energy = 5;
+    const defy = put(s, 'ogn-045', 0, 'hand');         // [1] and one Calm
+    const cost = RB.totalCost(s, defy, []);
+    t.ok(RB.canPay(s, 0, cost), 'Calm pays the Calm, Fury pays the [A]');
+    s.players[0].runes = [RB.mint(s, rune('Fury'), 0), RB.mint(s, rune('Fury'), 0)];
+    t.ok(!RB.canPay(s, 0, RB.totalCost(s, defy, [])), 'but the Calm itself still needs Calm');
+    void vex;
+  });
 }
