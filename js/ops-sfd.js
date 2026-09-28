@@ -285,6 +285,10 @@
     attachTo(s, gear, host, ctx.p);
   });
   say('attach', () => 'Attach me to a unit you control.');
+  // [Equip] needs a unit to attach to (D-13). Weaponmaster names its host, so it needs
+  // nothing more; an Equipment already attached is placed and this op does nothing.
+  RB.defineRequirement('sfd.attach', (s, e, ctx) => !!ctx.sfdHost ||
+    (!RB.obj(s, ctx.source).attachedTo && unitsOf(s, ctx.p).some(u => RB.canChoose(s, ctx.p, u))));
 
   function attachTo(s, gear, host, p) {
     const loc = RB.locationOf(s, gear);
@@ -729,6 +733,7 @@
       if (e.type && c.type !== e.type) return false;
       if (e.maxEnergy != null && (c.energy || 0) > e.maxEnergy) return false;
       if (e.maxPower != null && (c.power || 0) > e.maxPower) return false;
+      if (!RB.declarable(s, ctx.p, iid)) return false;             // D-13
       // "Ignoring its Energy cost (you must still pay its Power cost)": a spell whose Power
       // the player cannot pay is not one they can play, so it is not a candidate. Offered
       // anyway, the engine's first pick could be the unpayable one and nothing happened
@@ -767,17 +772,16 @@
   // played in response to (the chain is LIFO and this card has already been popped). An
   // ability's item now carries `cardId` and its declared choices, so "spell OR ABILITY"
   // is sayable: `spellOnly` is what narrows a card that names only spells.
-  def('counterSpell', (s, e, ctx) => {
-    const item = RB.chainTop(s);
-    if (!item || !item.cardId) return;
-    if (e.spellOnly && RB.card(item.cardId).type !== 'Spell') return;
-    if (e.enemy && item.controller === ctx.p) return;
-    if (e.chose === 'mine') {
-      const mine = (item.targets || []).filter(i => s.objects[i] && RB.obj(s, i).controller === ctx.p);
-      if (!mine.length) return;
-    }
+  RB.defineCounter('sfd.counterSpell', (s, item, e, ctx) => {
+    if (!item.cardId) return false;
+    if (e.spellOnly && RB.card(item.cardId).type !== 'Spell') return false;
+    if (e.enemy && item.controller === ctx.p) return false;
+    if (e.chose === 'mine')
+      return (item.targets || []).some(i => s.objects[i] && RB.obj(s, i).controller === ctx.p);
+    return true;
+  }, (s, item, e, ctx) => {
     const energy = item.energy || 0;
-    RB.ops.counter(s, {}, ctx);
+    RB.counterItem(s, item, ctx);
     if (e.then) RB.runEffects(s, e.then, Object.assign({}, ctx, { counteredEnergy: energy }));
   });
   say('counterSpell', e => 'Counter ' + (e.enemy ? 'an enemy ' : 'a ') +
@@ -785,12 +789,8 @@
     (e.chose === 'mine' ? ' that chooses a friendly unit or gear' : '') + '.' +
     (e.then ? ' ' + upper(join(e.then)) : ''));
 
-  def('ransomSpell', (s, e, ctx) => {
-    const item = RB.chainTop(s);
-    if (!item || !item.cardId) return;
-    if (RB.card(item.cardId).type !== 'Spell') return;
-    RB.ops.ransom(s, { energy: e.energy || 0, power: e.power || 0 }, ctx);
-  });
+  RB.defineCounter('sfd.ransomSpell', (s, item) => !!item.cardId && RB.card(item.cardId).type === 'Spell',
+    (s, item, e, ctx) => RB.ops.ransom(s, { energy: e.energy || 0, power: e.power || 0, uid: item.uid }, ctx));
   say('ransomSpell', e => 'Counter a spell unless its controller pays ' + (e.energy || 0) + ' Energy.');
 
   // --- a cost layer -------------------------------------------------------------

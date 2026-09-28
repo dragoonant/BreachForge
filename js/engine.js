@@ -161,6 +161,7 @@
         if (h.owner !== p || state.bf[i].controller !== p) continue;
         if (h.turnHidden >= state.turn) continue;             // not until the next turn
         const card = RB.cardOf(state, h.iid);
+        if (!declarable(state, p, h.iid, card)) continue;
         // A hidden permanent must be played to the battlefield it was hidden at (§811),
         // which overrides both "units to base" and "gear to base". Asking the ordinary
         // destinations here sent every facedown unit to base, where "when you play me to a
@@ -192,6 +193,7 @@
       // action, because paying one changes both what the card costs and what it does —
       // [Accelerate] is a different play, not a decision taken afterwards.
       if (RB.restricted(state, p, 'play', card.type)) continue;
+      if (!declarable(state, p, iid, card)) continue;
       // Timing is asked per destination rather than once per card: see timingOk. Asking it
       // first, of the card alone, is what made every [Ambush] unit unplayable in the
       // showdown its own arrival opened.
@@ -226,11 +228,22 @@
         if (a.when && !RB.testCondition(state, a.when, { p: p, source: iid })) return;
         const cost = RB.abilityCost(state, iid, a);
         if (!RB.canPay(state, p, cost)) return;
+        if (!RB.canDeclare(state, a.effects, { p: p, source: iid })) return;   // D-13
         out.push({ t: 'activate', iid: iid, ix: ix });
       });
     }
     return out;
   }
+
+  // A spell whose mandatory choice has nothing to choose cannot be played (§13.4 step 5,
+  // D-13). A permanent's "when you play me" is a trigger, not a choice of the play.
+  function declarable(state, p, iid, card) {
+    if (card.type !== 'Spell') return true;
+    return RB.canDeclare(state, (card.abilities || {}).effects, { p: p, source: iid });
+  }
+
+  // The same question for a card an EFFECT plays out of a trash or a deck.
+  RB.declarable = function (state, p, iid) { return declarable(state, p, iid, RB.cardOf(state, iid)); };
 
   function playDestinations(state, p, card) {
     if (card.type === 'Unit') {

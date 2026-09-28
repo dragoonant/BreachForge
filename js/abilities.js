@@ -490,6 +490,7 @@
       const c = RB.cardOf(s, iid);
       if (e.type && c.type !== e.type) return false;
       if (e.maxEnergy != null && (c.energy || 0) > e.maxEnergy) return false;
+      if (!RB.declarable(s, ctx.p, iid)) return false;             // D-13
       // A card whose remaining cost cannot be paid is not a card you can play (§13.4 step
       // 5). Left in the pool, the biggest was taken first and fizzled — ogn-198 The
       // Harrowing played nothing when its top candidate cost Power the player lacked.
@@ -612,12 +613,17 @@
   });
 
   // "Choose one." The options are the card's own clauses in printed order.
+  // A mode whose required choice has nothing to choose is not a mode you can pick (§13.4
+  // step 5): unl-044 Flurry of Feathers with nothing on the chain is the Birds, not a
+  // counter that counters nothing.
   RB.defineOp('choose', (s, e, ctx) => {
+    const live = e.options.filter(o => RB.canDeclare(s, o.effects, ctx));
+    if (!live.length) return;
     s.queue.push({
       kind: 'choose', who: ctx.p, source: ctx.source,
-      options: e.options.map(o => o.label),
+      options: live.map(o => o.label),
       ctx: { p: ctx.p, source: ctx.source, event: ctx.event, targets: ctx.targets },
-      onAnswer: e.options.map(o => o.effects),
+      onAnswer: live.map(o => o.effects),
     });
   });
 
@@ -633,16 +639,80 @@
       RB.log(s, 'stun', { iid: iid }, 'ui.invalid');
     }
   });
+  // --- requirements: what must exist for a card to be played at all -------------------
+  //
+  // §13.4 step 5: a card whose required choices cannot be made is not played — the whole
+  // process is undone. legalActions asked only cost and timing, so "counter a spell" was
+  // playable with nothing on the chain and an [Equip] with no unit to attach to, each
+  // spending its cost for nothing (D-13). An op whose choice is MANDATORY registers here
+  // how to tell whether that choice has anything to choose; RB.canDeclare asks every
+  // top-level effect of a spell or an activated ability. A "choose one" is playable when
+  // any of its modes is. Nested clauses ("you may", "if …") are optional by their nature.
+  RB.requirements = Object.create(null);
+  RB.defineRequirement = function (op, fn) { RB.requirements[op] = fn; };
+  RB.canDeclare = function (s, effects, ctx) {
+    return (effects || []).every(e => {
+      if (e.op === 'choose') return (e.options || []).some(o => RB.canDeclare(s, o.effects, ctx));
+      const fn = RB.requirements[e.op];
+      return !fn || !!fn(s, e, ctx);
+    });
+  };
+
+  // --- the chain as something to choose from ----------------------------------------
+  //
+  // "Counter a spell" chooses ANY spell on the chain, not only the one on top: with two
+  // spells stacked, the player may answer the one underneath. The candidates are offered
+  // top-first — the one about to resolve is the default for a seat nobody asks — through
+  // THE ONE DOOR, keyed by the chain item's card, and `declare` makes the choice part of
+  // what the counter declares as it is played (§349 step 2), though it is not a choice of
+  // an object on the board (no Deflect, no `chosen` trigger).
+  RB.chainTop = function (s) { return s.chain[s.chain.length - 1] || null; };
+  RB.isSpellItem = function (s, item) {
+    return item.kind === 'card' && RB.cardOf(s, item.iid).type === 'Spell';
+  };
+  RB.chooseChainItem = function (s, ctx, pred, label) {
+    const items = s.chain.slice().reverse().filter(pred);
+    if (!items.length) return null;
+    const pool = [];
+    for (const x of items) if (!pool.includes(x.iid)) pool.push(x.iid);
+    const iid = RB.offerChoice(s, pool, 1, ctx, 'chainItem', label || 'Counter which spell?',
+      { quiet: true, declare: true })[0];
+    return iid ? items.find(x => x.iid === iid) || null : null;
+  };
+  // A counter is a predicate over chain items plus what to do to the one chosen. Defining
+  // it here gives it both halves at once: the op chooses among every matching item, and
+  // the requirement withholds the card when none matches.
+  RB.defineCounter = function (op, pred, act, label) {
+    RB.defineOp(op, (s, e, ctx) => {
+      const item = RB.chooseChainItem(s, ctx, x => pred(s, x, e, ctx), label);
+      if (item) act(s, item, e, ctx);
+    });
+    RB.defineRequirement(op, (s, e, ctx) => s.chain.some(x => pred(s, x, e, ctx)));
+  };
+  // Take one item off the chain without resolving it. Only a CARD goes anywhere: an
+  // ability's item names its source, which is still on the board — countering a legend's
+  // ability once put the legend in its owner's trash. And it is the OWNER's trash (§691):
+  // a card cast out of the opponent's trash went to the caster's.
+  RB.counterItem = function (s, item, ctx) {
+    const ix = s.chain.indexOf(item);
+    if (ix < 0) return false;
+    s.chain.splice(ix, 1);
+    if (item.kind === 'card') s.players[RB.obj(s, item.iid).owner].trash.push(item.iid);
+    RB.log(s, 'counter', { p: ctx.p, iid: item.iid }, 'chain.resolve');
+    return true;
+  };
+
   // "Counter it unless its controller pays X." The ransom is a real window: the other
   // player is asked, and paying is a legal answer. Countering them outright is a strictly
-  // better card than the printed one.
+  // better card than the printed one. `uid` names the item a card already chose; bare, it
+  // is the top.
   RB.defineOp('ransom', (s, e, ctx) => {
-    const item = s.chain[s.chain.length - 1];
+    const item = e.uid ? s.chain.find(x => x.uid === e.uid) : RB.chainTop(s);
     if (!item) return;
     const victim = item.controller;
     const cost = { energy: e.energy || 0, power: e.power || 0,
       domains: e.domains || RB.DOMAINS.slice(), each: false };
-    if (!RB.canPay(s, victim, cost)) { RB.ops.counter(s, { uid: item.uid }, ctx); return; }
+    if (!RB.canPay(s, victim, cost)) { RB.counterItem(s, item, ctx); return; }
     // Both answers are bound to THIS item. A [Repeat]ed ransom (sfd-136 Hard Bargain) asks
     // twice; unbound, the second "no" countered whatever was next on the chain — the
     // caster's own spell — and a second "yes" the victim could no longer afford paid
@@ -664,42 +734,36 @@
     else if (e.orCounter) RB.ops.counter(s, { uid: e.orCounter }, ctx);
   });
 
-  // Does the chain's top item match what this card is allowed to counter? Read by the
-  // conditional counters, whose whole text is the condition.
-  RB.chainTop = function (s) { return s.chain[s.chain.length - 1] || null; };
-  RB.defineOp('counterIf', (s, e, ctx) => {
-    const item = RB.chainTop(s);
-    if (!item) return;
+  // The conditional counter, whose whole text is the condition.
+  RB.defineCounter('counterIf', (s, item, e, ctx) => {
     const targets = item.targets || [];
     if (e.chose === 'onlyMineOne') {
       const mine = targets.filter(i => s.objects[i] && RB.obj(s, i).controller === ctx.p);
-      if (mine.length !== 1 || targets.length !== mine.length) return;
+      if (mine.length !== 1 || targets.length !== mine.length) return false;
     }
-    if (e.maxEnergy != null && (item.energy || 0) > e.maxEnergy) return;
-    RB.ops.counter(s, {}, ctx);
+    return !(e.maxEnergy != null && (item.energy || 0) > e.maxEnergy);
+  }, (s, item, e, ctx) => {
+    RB.counterItem(s, item, ctx);
     if (e.then) RB.runEffects(s, e.then, Object.assign({}, ctx, { counteredEnergy: item.energy || 0 }));
   });
   RB.defineOp('buffByCounteredCost', (s, e, ctx) => {
     for (const iid of asList(s, e.target, ctx)) RB.obj(s, iid).buffs += (ctx.counteredEnergy || 0);
   });
 
-  RB.defineOp('counter', (s, e, ctx) => {
-    // Remove the top of the chain without resolving it. The chain is LIFO, so "the spell
-    // being responded to" is always its head — unless the counter was bound to one item
-    // (`uid`), as a ransom's delayed answer is: the head may have changed by then.
-    const ix = e.uid ? s.chain.findIndex(x => x.uid === e.uid) : s.chain.length - 1;
-    if (ix < 0) return;
-    const item = s.chain[ix];
-    // "Counter a spell" cannot take an ability (unl-044 Flurry of Feathers).
-    if (e.spellOnly && !(item.kind === 'card' && RB.cardOf(s, item.iid).type === 'Spell')) return;
-    s.chain.splice(ix, 1);
-    // Only a CARD goes to the trash. An ability's item names its source, which is still on
-    // the board: countering a legend's ability put the legend in its owner's trash. And it
-    // is the OWNER's trash (§691): a card played by the player who does not own it — a
-    // spell cast out of the opponent's trash — went to the caster's.
-    if (item.kind === 'card') s.players[RB.obj(s, item.iid).owner].trash.push(item.iid);
-    RB.log(s, 'counter', { p: ctx.p, iid: item.iid }, 'chain.resolve');
-  });
+  // "Counter a spell" (`spellOnly`: unl-044 Flurry of Feathers cannot take an ability) —
+  // or, with `uid`, the one item a ransom's delayed answer is bound to.
+  RB.defineCounter('counter', (s, item, e) => !e.spellOnly || RB.isSpellItem(s, item),
+    (s, item, e, ctx) => RB.counterItem(s, item, ctx));
+  {
+    const chosen = RB.ops.counter;
+    RB.defineOp('counter', (s, e, ctx) => {
+      if (!e.uid) return chosen(s, e, ctx);
+      const item = s.chain.find(x => x.uid === e.uid);
+      if (item) RB.counterItem(s, item, ctx);
+    });
+    const need = RB.requirements.counter;
+    RB.defineRequirement('counter', (s, e, ctx) => !!e.uid || need(s, e, ctx));
+  }
   RB.defineOp('xp', (s, e, ctx) => {
     const P = s.players[ctx.p];
     P.xp = (P.xp || 0) + (e.n || 1);
@@ -816,7 +880,7 @@
     if (s.collecting)
       s.collecting.push({ key: key, pool: pool.slice(), n: n, p: ctx.p,
         source: ctx.source, label: label || null, taken: taken.slice(),
-        quiet: !!(opts && opts.quiet) });
+        quiet: !!(opts && opts.quiet), declare: !!(opts && opts.declare) });
     if (!(opts && opts.quiet))
       for (const iid of taken) RB.announceChoice(s, ctx.p, iid, ctx.source);
     return taken;
@@ -893,7 +957,7 @@
       probe.resolving = 0;
       try { RB.runPendingItem(probe, item); }
       catch (e) { break; }
-      const mine = probe.collecting.filter(c => c.p === item.controller && !c.quiet && !item.chosen[c.key]);
+      const mine = probe.collecting.filter(c => c.p === item.controller && (!c.quiet || c.declare) && !item.chosen[c.key]);
       if (!mine.length) break;
       const c = mine[0];
       if (c.p === s.humanSeat && c.pool.length > c.n && c.n > 0) {
@@ -904,8 +968,11 @@
       item.chosen[c.key] = c.taken;
     }
     const seen = new Set();
+    // `targets` is what a counter reads as "the units it chooses", so a chain item this
+    // one chose (a counter's spell) is not among them.
     for (const k of Object.keys(item.chosen))
-      for (const i of item.chosen[k]) if (s.objects[i]) seen.add(i);
+      for (const i of item.chosen[k])
+        if (s.objects[i] && !s.chain.some(x => x.iid === i)) seen.add(i);
     item.targets = [...seen];
   };
 

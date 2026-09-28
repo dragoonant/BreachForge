@@ -130,4 +130,67 @@ export function run(t) {
     t.eq(s.players[0].hand.length, hand + 1, 'it resolved: drew 1');
     t.eq(s.players[0].deck[s.players[0].deck.length - 1], spell, 'then recycled, not trashed');
   });
+
+  // --- D-13 ------------------------------------------------------------------------
+  t.test('D-13 "counter a spell" is not playable with nothing on the chain', () => {
+    for (const id of ['ogn-045', 'unl-131', 'unl-190']) {
+      let s = game();
+      rich(s, 0);
+      const c = put(s, id, 0, 'hand');
+      s.priority = 0;
+      t.eq(plays(s, c).length, 0, id + ' withheld on an empty chain');
+      onChain(s, 'unl-061', 1);                        // an enemy spell to answer
+      t.ok(plays(s, c).length > 0, id + ' offered once there is a spell to counter');
+    }
+  });
+
+  t.test('D-13 unl-106 Repulse needs a friendly unit at a battlefield', () => {
+    let s = game();
+    rich(s, 0);
+    const r = put(s, 'unl-106', 0, 'hand');
+    const mine = sized(s, 3, 0, 'base');
+    const sp = onChain(s, 'unl-061', 1);
+    s.chain[0].targets = [mine];
+    s.priority = 0;
+    t.eq(plays(s, r).length, 0, 'no friendly unit at a battlefield: withheld');
+    RB.removeFrom(s.players[0].base, mine); s.bf[0].units.push(mine);
+    t.ok(plays(s, r).length > 0, 'offered once one stands at a battlefield');
+    void sp;
+  });
+
+  t.test('D-13 [Equip] is not offered with no unit to attach to', () => {
+    let s = game();
+    rich(s, 0);
+    const g = put(s, 'sfd-022', 0, 'base');           // [Equip] [C]
+    t.eq(acts(s, g).length, 0, 'no unit: nothing to equip');
+    sized(s, 3, 0, 'base');
+    t.ok(acts(s, g).length > 0, 'a unit to attach to: offered');
+  });
+
+  t.test('D-13 unl-044 Flurry of Feathers on an empty chain offers only the Birds', () => {
+    let s = game();
+    rich(s, 0);
+    const f = put(s, 'unl-044', 0, 'hand');
+    s = RB.apply(s, plays(s, f)[0]);
+    s = RB.apply(s, { t: 'pass' }); s = RB.apply(s, { t: 'pass' });
+    t.eq(s.queue[0] && s.queue[0].options, ['Play four 1 Might Bird unit tokens with Deflect'],
+      'the counter mode is not offered');
+  });
+
+  t.test('D-13 a counter may answer a spell below the top of the chain', () => {
+    let s = game({ human: 0 });
+    rich(s, 0);
+    const lower = onChain(s, 'unl-061', 1);
+    const upper = onChain(s, 'unl-061', 1);
+    s.priority = 0;
+    const defy = put(s, 'ogn-045', 0, 'hand');
+    s = RB.apply(s, plays(s, defy)[0]);
+    const q = s.queue[0];
+    t.ok(q && q.kind === 'target' && q.options.includes(lower) && q.options.includes(upper),
+      'asked which spell');
+    s = RB.apply(s, { t: 'choose', selection: [lower] });
+    s = RB.apply(s, { t: 'pass' }); s = RB.apply(s, { t: 'pass' });   // Defy resolves
+    t.ok(!s.chain.some(x => x.iid === lower), 'the lower spell is countered');
+    t.ok(s.chain.some(x => x.iid === upper), 'the top one is still there');
+  });
 }

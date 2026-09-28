@@ -183,7 +183,14 @@ The entries below were found by the card-by-card audit of 2026-09-27 (every regi
 literally against `data/printed.js` and run on the engine) and are not yet fixed. Everything
 else that audit found is fixed, by commit, on the branch that carries this text.
 
-**D-13 — A spell or ability with no legal choice can still be played.**
+**D-13 — RETIRED 2026-09-27.** An op whose choice is mandatory registers a requirement
+(`RB.defineRequirement`); `legalActions` withholds a spell or activated ability whose top-level
+requirement fails (`RB.canDeclare`; a "choose one" needs one live mode, and only live modes are
+offered), and so do the effects that play a spell out of a trash. Every counter is a predicate
+over chain items (`RB.defineCounter`) and chooses among ALL matching items, top-first, declared
+as the counter is played. [Equip] needs a unit to attach to; Repulse needs a friendly unit at a
+battlefield. Printed choices outside these ops ("deal 3 to a unit" with no unit) are not yet
+gated — each is a requirement away. The original entry read:
 §13.4 step 5: a card whose required targets do not exist cannot be played. `legalActions` asks
 only cost and timing, so ogn-045 Defy, unl-131 Abandon and unl-190 Lilting Lullaby ("counter a
 spell") are playable with nothing on the chain, unl-106 Repulse with no friendly unit at a
@@ -191,7 +198,6 @@ battlefield, and an [Equip] ability with no unit to attach to — each spends it
 nothing. Related: the counters only ever consider the TOP of the chain, where "a spell" may be
 any spell on it. *Fix:* legalActions probes the declaration (`RB.declareChoices` already runs
 it) and withholds a play whose mandatory choice has an empty pool.
-Owner: unassigned.
 
 **D-14 — Additional costs of ACTIVATED abilities are not paid at activation.**
 sfd-150 Last Rites' "[Equip] — [C], Recycle 2 cards from your trash": the recycle is an effect

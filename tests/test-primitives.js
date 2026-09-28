@@ -663,8 +663,11 @@ export function run(t) {
   t.test('Action and Reaction timing: who may play what, and when', () => {
     const s = game();
     const me = s.active, them = RB.opponentOf(me);
+    // A card with a mandatory choice ("counter a spell") is not playable with nothing to
+    // choose (D-13), which is a different rule from timing — so the probe cards have none.
     const pick = kw => RB.allCards().find(c => c.abilities &&
-      (c.abilities.keywords || []).some(k => k === kw || k.name === kw));
+      (c.abilities.keywords || []).some(k => k === kw || k.name === kw) &&
+      !(c.abilities.effects || []).some(e => RB.requirements[e.op] || e.op === 'choose'));
     const plain = RB.allCards().find(c => c.type === 'Spell' && c.abilities &&
       !(c.abilities.keywords || []).some(k => ['Action', 'Reaction'].includes(k.name || k)));
     const action = pick('Action'), reaction = pick('Reaction');

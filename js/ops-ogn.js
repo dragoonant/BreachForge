@@ -800,7 +800,7 @@
     };
     const pool = P.trash
       .filter(i => RB.cardOf(s, i).type === 'Spell' && (RB.cardOf(s, i).energy || 0) < P.points)
-      .filter(i => !!payable(i))
+      .filter(i => !!payable(i) && RB.declarable(s, ctx.p, i))    // D-13
       .sort((a, b) => (RB.cardOf(s, b).energy || 0) - (RB.cardOf(s, a).energy || 0));
     // quiet: a card in a trash is not an object on the board.
     for (const iid of RB.offerChoice(s, pool, 1, ctx, 'playSpellFromTrashUnderPoints',
@@ -1025,15 +1025,13 @@
   // Counter, but only a spell inside a printed cost bound. The core's `counterIf` reads
   // an Energy bound; this card's bound is on both halves of the cost, and a head outside
   // it is not something this card may choose, so it is simply not countered.
-  def('counterSpell', (s, e, ctx) => {
-    const item = RB.chainTop(s);
-    if (!item) return;
+  // Any spell on the chain inside the bound is a candidate, not only the top (D-13).
+  RB.defineCounter('ogn.counterSpell', (s, item, e) => {
+    if (!RB.isSpellItem(s, item)) return false;
     const card = RB.cardOf(s, item.iid);
-    if (item.kind !== 'card' || card.type !== 'Spell') return;
-    if (e.maxEnergy !== undefined && (card.energy || 0) > e.maxEnergy) return;
-    if (e.maxPower !== undefined && (card.power || 0) > e.maxPower) return;
-    RB.ops.counter(s, {}, ctx);
-  });
+    if (e.maxEnergy !== undefined && (card.energy || 0) > e.maxEnergy) return false;
+    return !(e.maxPower !== undefined && (card.power || 0) > e.maxPower);
+  }, (s, item, e, ctx) => RB.counterItem(s, item, ctx));
   say('counterSpell', e => 'Counter a spell that costs no more than ' + e.maxEnergy +
     ' and no more than ' + e.maxPower + ' Power.');
 

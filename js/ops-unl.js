@@ -220,6 +220,12 @@
     o.attachedTo = host;
     RB.log(s, 'attach', { p: ctx.p, iid: g, host: host }, 'gear.equip');
   });
+  // [Equip] needs a unit to attach to (D-13): with none, the ability is not offered.
+  RB.defineRequirement('equipSelf', (s, e, ctx) => {
+    const host = RB.obj(s, ctx.source).attachedTo;
+    return RB.allUnits(s).some(u => RB.obj(s, u).controller === ctx.p && u !== host &&
+      RB.canChoose(s, ctx.p, u));
+  });
   RB.defineDescriber('equipSelf', e => 'Attach me to ' + selText(e.target || { pick: 'myUnits' }) + '.');
 
   // --- cond -----------------------------------------------------------------
@@ -447,11 +453,8 @@
   // --- counterToHand --------------------------------------------------------
   // "Counter a spell. Return it to its owner's hand instead of putting it in their trash."
   // Only a SPELL on the chain qualifies, so an ability on the chain is left alone.
-  RB.defineOp('counterToHand', (s, e, ctx) => {
-    const item = s.chain[s.chain.length - 1];
-    if (!item || item.kind !== 'card') return;
-    if (RB.cardOf(s, item.iid).type !== 'Spell') return;
-    s.chain.pop();
+  RB.defineCounter('counterToHand', (s, item) => RB.isSpellItem(s, item), (s, item, e, ctx) => {
+    s.chain.splice(s.chain.indexOf(item), 1);
     s.players[RB.obj(s, item.iid).owner].hand.push(item.iid);    // its OWNER's hand, as printed
     RB.log(s, 'counter', { p: ctx.p, iid: item.iid }, 'chain.resolve');
   });
@@ -725,14 +728,18 @@
   // which this card does not say — a spell that took one of mine and one of theirs is
   // still counterable here. The unit it chose must be at a battlefield, which is where the
   // printed card's own choice comes from.
-  RB.defineOp('counterIfChoseOnlyMine', (s, e, ctx) => {
-    const item = RB.chainTop(s);
-    if (!item || item.controller === ctx.p) return;
+  RB.defineCounter('counterIfChoseOnlyMine', (s, item, e, ctx) => {
+    if (item.controller === ctx.p) return false;
     const mine = (item.targets || []).filter(i => s.objects[i] && RB.obj(s, i).controller === ctx.p);
-    if (mine.length !== 1) return;
-    if (RB.locationOf(s, mine[0]).kind !== 'bf') return;
-    RB.ops.counter(s, {}, ctx);
-  });
+    return mine.length === 1 && RB.locationOf(s, mine[0]).kind === 'bf';
+  }, (s, item, e, ctx) => RB.counterItem(s, item, ctx), 'Counter which spell or ability?');
+  // The first choice is "a friendly unit at a battlefield" — with none, there is nothing
+  // to choose and the card is not played (D-13), whatever is on the chain.
+  {
+    const onChain = RB.requirements.counterIfChoseOnlyMine;
+    RB.defineRequirement('counterIfChoseOnlyMine', (s, e, ctx) =>
+      s.bf.some((b, i) => RB.unitsAt(s, i, ctx.p).length > 0) && onChain(s, e, ctx));
+  }
   RB.defineDescriber('counterIfChoseOnlyMine', () =>
     'Choose a friendly unit at a battlefield. Counter an enemy spell or ability that ' +
     'chooses it and no other friendly unit.');
@@ -1251,12 +1258,9 @@
   // `restrict` with opponent:true would then gag the wrong player. The core op does the
   // restricting — it is handed a context whose player IS the victim, so there is still
   // exactly one place that writes s.restrictions.
-  RB.defineOp('counterSpellRestricting', (s, e, ctx) => {
-    const item = RB.chainTop(s);
-    if (!item || item.kind !== 'card') return;          // an ability is not a spell
-    if (RB.cardOf(s, item.iid).type !== 'Spell') return;
+  RB.defineCounter('counterSpellRestricting', (s, item) => RB.isSpellItem(s, item), (s, item, e, ctx) => {
     const victim = item.controller;
-    RB.ops.counter(s, {}, ctx);
+    RB.counterItem(s, item, ctx);
     RB.runEffects(s, [{ op: 'restrict', what: 'play', type: e.type || 'Spell' }],
       Object.assign({}, ctx, { p: victim }));
   });
