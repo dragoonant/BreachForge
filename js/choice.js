@@ -36,6 +36,10 @@
     const q = state.queue[0];
     if (!q || q.kind !== 'target' || q.who !== me) return null;
     if (!q.options.length) return null;
+    // Options that are not cards at all (a location: "your base", a battlefield) carry
+    // their own labels and are answered with buttons on the prompt line, not in a panel
+    // of card faces — js/ui.js, paintPrompt.
+    if (q.labels) return null;
     return q.options.every(onBoard) ? null : q;
   };
 

@@ -322,7 +322,51 @@
     for (const i of rs) RB.recycleRune(s, ctx.p, i);
   });
   RB.defineOp('heal', (s, e, ctx) => { for (const iid of asList(s, e.target, ctx)) RB.obj(s, iid).damage = 0; });
+  // WHERE a unit token is played. A token is played like a card of its type (§185.2.a),
+  // so "play a token" with no location offers what playing a unit offers — your base or a
+  // battlefield you control (§8.2) — and the effect may narrow that ("to your base",
+  // "here"). A battlefield where "units can't be played" (sfd-216) is never a destination,
+  // and a Hidden card played face down plays its unit at that battlefield (§811, Origins
+  // FAQ). Returns { kind: 'base' } | { kind: 'bf', bf } | null when the named place is
+  // barred. Gear tokens go to base (§8.2). `to` is 'base', 'here' (the event's
+  // battlefield), 'source' (the source's location), or absent for the player's choice.
+  RB.unitPlayBarred = function (s, i) {
+    return RB.battlefieldStatics(s, i).some(st => st.noUnitPlays);
+  };
+  RB.tokenLocation = function (s, cardId, to, ctx) {
+    const base = { kind: 'base' };
+    if (RB.card(cardId).type !== 'Unit' || to === 'base') return base;
+    if (to === 'here' || to === 'source') {
+      const bf = to === 'here' ? (ctx.event ? ctx.event.bf : undefined)
+        : RB.locationOf(s, ctx.source).bf;
+      if (bf === undefined) return base;
+      return RB.unitPlayBarred(s, bf) ? null : { kind: 'bf', bf: bf };
+    }
+    const h = ctx.hiddenBf;
+    if (h !== undefined && s.bf[h] && s.bf[h].controller === ctx.p && !RB.unitPlayBarred(s, h))
+      return { kind: 'bf', bf: h };
+    const pool = ['base'];
+    const labels = { base: 'Your base' };
+    s.bf.forEach((b, i) => {
+      if (b.controller !== ctx.p || RB.unitPlayBarred(s, i)) return;
+      pool.push('bf' + i);
+      labels['bf' + i] = RB.card(b.cardId).name;
+    });
+    if (pool.length === 1) return base;
+    // Base first: that is what a seat nobody asks takes, as it always was.
+    const pick = RB.offerChoice(s, pool, 1, ctx, 'tokenWhere', 'Play the ' +
+      RB.card(cardId).name + ' token where?', { quiet: true, labels: labels })[0] || 'base';
+    return pick === 'base' ? base : { kind: 'bf', bf: +pick.slice(2) };
+  };
+  // Put a freshly minted unit token where tokenLocation said.
+  RB.placeToken = function (s, iid, where, p) {
+    if (where.kind === 'bf') { s.bf[where.bf].units.push(iid); RB.applyContested(s, where.bf, p); }
+    else s.players[p].base.push(iid);
+  };
+
   RB.defineOp('token', (s, e, ctx) => {
+    const where = RB.tokenLocation(s, e.cardId, e.to, ctx);
+    if (!where) return;
     const iid = RB.mint(s, e.cardId, ctx.p);
     const o = RB.obj(s, iid);
     o.token = true; o.exhausted = !e.ready;
@@ -332,8 +376,7 @@
     if (e.temporary) o.temporary = true;
     o.wasReady = !o.exhausted;
     o.wasMighty = null;
-    if (e.to === 'here' && ctx.event && ctx.event.bf !== undefined) { s.bf[ctx.event.bf].units.push(iid); RB.applyContested(s, ctx.event.bf, ctx.p); }
-    else s.players[ctx.p].base.push(iid);
+    RB.placeToken(s, iid, where, ctx.p);
     RB.log(s, 'token', { p: ctx.p, iid: iid, card: e.cardId }, 'unit.deploy');
     // "Play a token" is playing it: sfd-166 Rally the Troops ("when a friendly unit is
     // played this turn, buff it") missed every Sand Soldier. The unl token ops already
@@ -880,7 +923,8 @@
     if (s.collecting)
       s.collecting.push({ key: key, pool: pool.slice(), n: n, p: ctx.p,
         source: ctx.source, label: label || null, taken: taken.slice(),
-        quiet: !!(opts && opts.quiet), declare: !!(opts && opts.declare) });
+        quiet: !!(opts && opts.quiet), declare: !!(opts && opts.declare),
+        labels: (opts && opts.labels) || null });
     if (!(opts && opts.quiet))
       for (const iid of taken) RB.announceChoice(s, ctx.p, iid, ctx.source);
     return taken;
@@ -924,8 +968,11 @@
       const open = (probe.collecting || []).find(c =>
         c.p === s.humanSeat && !item.chosen[c.key] && c.pool.length > c.n && c.n > 0);
       if (!open) break;
+      // `labels` names options that are not cards (a location): the prompt offers them as
+      // buttons instead of asking the board to highlight them.
       s.queue.unshift({ kind: 'target', who: open.p, key: open.key, source: open.source,
-        options: open.pool, n: open.n, label: open.label, item: item });
+        options: open.pool, n: open.n, label: open.label, item: item,
+        labels: open.labels || undefined });
       return;                            // the resolution resumes when the question is answered
     }
     const prev = s.chosen;

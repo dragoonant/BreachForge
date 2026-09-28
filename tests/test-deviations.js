@@ -225,4 +225,39 @@ export function run(t) {
       }
     }
   });
+
+  // --- D-15 ------------------------------------------------------------------------
+  t.test('D-15 unl-069 Sprite Burst: the player chooses where "play two tokens" puts them', () => {
+    let s = game({ human: 0 });
+    rich(s, 0);
+    sized(s, 3, 0, 0); s.bf[0].controller = 0;         // a battlefield p0 controls
+    const sb = put(s, 'unl-069', 0, 'hand');
+    s = RB.apply(s, plays(s, sb)[0]);
+    s = RB.apply(s, { t: 'pass' }); s = RB.apply(s, { t: 'pass' });
+    const q = s.queue[0];
+    t.ok(q && q.kind === 'target' && q.labels, 'asked where, with labelled places');
+    t.eq(q.options, ['base', 'bf0'], 'your base or the battlefield you control — not the other one');
+    s = RB.apply(s, { t: 'choose', selection: ['bf0'] });
+    t.eq(s.bf[0].units.filter(i => RB.obj(s, i).cardId === 'tok-sprite').length, 2, 'both Sprites there');
+  });
+
+  t.test('D-15 sfd-154 Guards! played face down puts its Sand Soldier at that battlefield', () => {
+    let s = game();
+    rich(s, 0);
+    sized(s, 3, 0, 1); s.bf[1].controller = 0;
+    const g = RB.mint(s, 'sfd-154', 0);
+    s.bf[1].hidden.push({ iid: g, owner: 0, turnHidden: s.turn - 1 });
+    const a = RB.legalActions(s).find(x => x.t === 'play' && x.iid === g && x.from === 'hidden' && !x.pay);
+    s = passAll(RB.apply(s, a));
+    t.ok(s.bf[1].units.some(i => RB.obj(s, i).cardId === 'tok-sand-soldier'), 'at the hidden battlefield');
+  });
+
+  t.test('D-15 a token played "here" at sfd-216 Rockfall Path is not played', () => {
+    let s = game();
+    s.bf[0].cardId = 'sfd-216';
+    const before = Object.keys(s.objects).length;
+    resolve(s, [{ op: 'token', cardId: 'tok-sand-soldier', to: 'here' }], { p: 0, source: null, event: { bf: 0 } });
+    t.eq(s.bf[0].units.length, 0, 'nothing arrived');
+    t.eq(Object.keys(s.objects).length, before, 'and nothing was minted');
+  });
 }

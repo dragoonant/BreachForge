@@ -412,6 +412,14 @@
       // click depends on whether the board can draw the answers at all — a choice from a
       // deck or a trash is answered in the panel js/choice.js opens over the board.
       const inPanel = !!RB.ui.offBoardChoice(state, me);
+      // A choice of PLACES, not cards (a token's location, D-15): one button per place.
+      if (q0.labels) {
+        const ask = q0.label || 'Choose.';
+        say((src ? (theirs ? 'Their <b>' : '<b>') + esc(src.name) + '</b> — ' : '') + esc(ask));
+        q0.options.forEach((opt, i) => btn(q0.labels[opt] || opt,
+          () => RB.commit({ t: 'choose', selection: [opt] }), i === 0 ? 'primary' : ''));
+        return;
+      }
       // A card's own prompt may already end in a question mark; a full stop after one
       // reads as a typo, and every prompt written from here on is a question.
       const ask = q0.label || 'Choose ' + q0.n + (q0.n === 1 ? ' target' : ' targets');

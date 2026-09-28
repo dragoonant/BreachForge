@@ -130,10 +130,10 @@ RB.registerAbilities({
     triggers: [
       { on: 'played', effects: [
         { op: 'giveTemporary', target: 'self' },
-        { op: 'keywordToken', cardId: 'tok-sprite', might: 3, ready: true, temporary: true },
+        { op: 'keywordToken', cardId: 'tok-sprite', might: 3, ready: true, temporary: true, to: 'base' },
       ] },
       { on: 'deathknell', effects: [
-        { op: 'keywordToken', cardId: 'tok-sprite', might: 3, ready: true, temporary: true },
+        { op: 'keywordToken', cardId: 'tok-sprite', might: 3, ready: true, temporary: true, to: 'base' },
       ] },
     ],
   },
@@ -822,7 +822,7 @@ RB.registerAbilities({
   // Carrion Dredger — a Bird with the keyword it is printed with.
   'unl-153': {
     triggers: [{ on: 'deathknell', effects: [
-      { op: 'keywordToken', cardId: 'tok-bird', might: 1, keywords: ['Deflect'] },
+      { op: 'keywordToken', cardId: 'tok-bird', might: 1, keywords: ['Deflect'], to: 'base' },
     ] }],
   },
 

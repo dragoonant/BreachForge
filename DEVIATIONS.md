@@ -210,12 +210,17 @@ countered after the [C] was spent and before the recycle. unl-158 Shepherd's Hei
 `legalActions` and paid in `doActivate` through `RB.payExtra`, with the `recycleFromTrash`
 extra cost asking which cards.
 
-**D-15 — A token is always played to its controller's base.**
-sfd-154 Guards!, sfd-198 Arise! and the ogn Recruit tokens print "play a … token" with no
+**D-15 — RETIRED 2026-09-27.** Confirmed by Core Rules §185.2.a — a token is played "following
+all the applicable steps for playing a card plus any restrictions … from the effect that created
+the token" — so a bare "play a … token" offers what playing a unit offers: your base or a
+battlefield you control (`RB.tokenLocation`, asked on the prompt line). "To your base" and
+"here" narrow it, a Hidden card played face down plays its token at that battlefield (§811, the
+Origins FAQ's hidden-play answer), and a battlefield where "units can't be played" is never a
+destination — a token named for one is not played. All four token ops go through it. The
+original entry read: sfd-154 Guards!, sfd-198 Arise! and the ogn Recruit tokens print "play a … token" with no
 location, while sfd-197 prints "to your base" — which suggests the bare form lets the player
 choose any location a unit could be played to. Unconfirmed against a ruling. The core `token`
 op with `to:'here'` also ignores sfd-216 Rockfall Path's "units can't be played here".
-Owner: unassigned.
 
 **D-16 — RETIRED 2026-09-27.** `RB.leaveBoard` and `RB.kill` both end in a core leave-hook
 table (`RB.defineLeaveHook`), and ops-ogn's layers, its self-dispatched "when I leave" and its

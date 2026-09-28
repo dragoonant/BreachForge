@@ -687,7 +687,8 @@
   // "Play a … token here" — at the location of the card whose ability this is, which the
   // core's `to: 'here'` cannot say because a play trigger carries no event battlefield.
   def('token', (s, e, ctx) => {
-    const loc = e.to === 'source' ? RB.locationOf(s, ctx.source) : { kind: 'base' };
+    const loc = RB.tokenLocation(s, e.cardId, e.to, ctx);      // D-15
+    if (!loc) return;
     const iid = RB.mint(s, e.cardId, ctx.p);
     const o = RB.obj(s, iid);
     o.token = true; o.exhausted = !e.ready; o.enteredTurn = s.turn;
@@ -700,7 +701,7 @@
     RB.runTriggers(s, 'unitPlayed', { p: ctx.p, iid: iid });
   });
   say('token', e => 'Play a ' + (RB.card(e.cardId).might || 0) + ' Might ' +
-    RB.card(e.cardId).name + ' unit token ' + (e.to === 'source' ? 'here.' : 'at your base.'));
+    RB.card(e.cardId).name + ' unit token' + (e.to === 'source' ? ' here.' : e.to === 'base' ? ' at your base.' : '.'));
 
   // Recycle cards out of a trash: to the BOTTOM of their owner's Main Deck. Your own
   // trash first — the cards come back to you — and the cheapest of it first, so a card

@@ -376,6 +376,8 @@
     const src = targets(s, e.target, ctx)[0];
     if (!src) return;
     for (let k = 0; k < n_(e); k++) {
+      const where = RB.tokenLocation(s, RB.obj(s, src).cardId, e.to, ctx);   // sfd-216 bars "here"
+      if (!where) return;
       const iid = RB.mint(s, RB.obj(s, src).cardId, ctx.p);
       const o = RB.obj(s, iid);
       o.token = true;
@@ -386,10 +388,7 @@
       // a token copy never runs — so the data says `temporary` where the copied card
       // prints the keyword (unl-081), and a status someone GAVE the source is not copied.
       if (e.temporary) o.temporary = true;
-      if (e.to === 'here' && ctx.event && ctx.event.bf !== undefined) {
-        s.bf[ctx.event.bf].units.push(iid);
-        RB.applyContested(s, ctx.event.bf, ctx.p);
-      } else s.players[ctx.p].base.push(iid);
+      RB.placeToken(s, iid, where, ctx.p);
       RB.log(s, 'token', { p: ctx.p, iid: iid, card: o.cardId }, 'unit.deploy');
       RB.runTriggers(s, 'unitPlayed', { p: ctx.p, iid: iid });
     }
@@ -408,6 +407,9 @@
   // each the keywords the creating card prints on them.
   RB.defineOp('keywordToken', (s, e, ctx) => {
     for (let i = 0; i < n_(e); i++) {
+      // One question for the lot: every copy asks under the same key (D-15).
+      const where = RB.tokenLocation(s, e.cardId, e.to, ctx);
+      if (!where) return;
       const iid = RB.mint(s, e.cardId, ctx.p);
       const o = RB.obj(s, iid);
       o.token = true;
@@ -421,10 +423,7 @@
       // RB.grantedOn). Written to o.granted — the this-turn channel — unl-044's and
       // unl-153's Birds lost [Deflect] at the first Ending Cleanup.
       o.keywords = (e.keywords || []).slice();
-      if (e.to === 'here' && ctx.event && ctx.event.bf !== undefined) {
-        s.bf[ctx.event.bf].units.push(iid);
-        RB.applyContested(s, ctx.event.bf, ctx.p);
-      } else s.players[ctx.p].base.push(iid);
+      RB.placeToken(s, iid, where, ctx.p);
       RB.log(s, 'token', { p: ctx.p, iid: iid, card: e.cardId }, 'unit.deploy');
       // "Play a token" is playing it, so a unit token raises unitPlayed — which is what a
       // card like Lillia ("when you play a token unit") reads.
@@ -447,7 +446,7 @@
       c.type.toLowerCase() + ' token' + (k === 1 ? '' : 's') +
       ((e.keywords || []).length ? ' with ' + e.keywords.join(' and ') : '') +
       (e.temporary ? ' with Temporary' : '') +
-      (e.to === 'here' ? ' there' : ' to your base') + '.';
+      (e.to === 'here' ? ' there' : e.to === 'base' ? ' to your base' : '') + '.';
   });
 
   // --- counterToHand --------------------------------------------------------

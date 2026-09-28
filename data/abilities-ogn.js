@@ -606,7 +606,7 @@ RB.registerAbilities({
   // [1], [T]: Play a 1 [S] Recruit unit token.
   'ogn-308': {
     activated: [{ energy: 1, exhaustSelf: true, effects: [
-      { op: 'ogn.token', cardId: 'tok-recruit', to: 'base' }] }],
+      { op: 'ogn.token', cardId: 'tok-recruit' }] }],
   },
 
   // [T]: Give a unit [Ganking] this turn.

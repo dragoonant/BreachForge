@@ -34,7 +34,7 @@
   RB.defineDescriber('recycleRune', e => 'Recycle ' + n(e) + ' rune' + (n(e) === 1 ? '' : 's') + '.');       // ops.recycleRune
   RB.defineDescriber('heal', e => 'Heal ' + sel(e.target) + '.');                                           // ops.heal
   RB.defineDescriber('token', e => 'Play a ' + (e.might != null ? e.might + ' Might ' : '') + 'token' +
-    (e.to === 'here' ? ' there' : ' to your base') + (e.temporary ? ', Temporary' : '') + '.');              // ops.token
+    (e.to === 'here' ? ' there' : e.to === 'base' ? ' to your base' : '') + (e.temporary ? ', Temporary' : '') + '.');              // ops.token
   RB.defineDescriber('nothing', () => '');                                                                  // ops.nothing
   RB.defineDescriber('may', e => 'You may ' + lower(e.effects.map(line).join(' ')));                        // ops.may
   RB.defineDescriber('choose', e => 'Choose one — ' +
