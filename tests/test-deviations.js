@@ -193,4 +193,36 @@ export function run(t) {
     t.ok(!s.chain.some(x => x.iid === lower), 'the lower spell is countered');
     t.ok(s.chain.some(x => x.iid === upper), 'the top one is still there');
   });
+
+  // --- D-14 ------------------------------------------------------------------------
+  t.test('D-14 sfd-150 Last Rites: the recycle is paid on activation, cards of the player\'s choosing', () => {
+    let s = game({ human: 0 });
+    rich(s, 0);
+    const g = put(s, 'sfd-150', 0, 'base');
+    sized(s, 3, 0, 'base');
+    const t1 = put(s, vanilla, 0, 'trash'), t2 = put(s, vanilla, 0, 'trash'), t3 = put(s, vanilla, 0, 'trash');
+    s = RB.apply(s, acts(s, g)[0]);
+    t.eq(s.queue[0] && s.queue[0].kind, 'target', 'asked which cards to recycle');
+    t.eq(s.chain.length, 0, 'the ability is not on the chain before its cost is paid');
+    s = RB.apply(s, { t: 'choose', selection: [t1, t3] });
+    t.eq(s.players[0].trash, [t2], 'the two chosen are recycled');
+    t.ok(s.chain.some(x => x.kind === 'ability' && x.iid === g), 'then the ability is on the chain');
+  });
+
+  t.test("D-14 unl-158 Shepherd's Heirloom: Weaponmaster spends the XP too", () => {
+    for (const xp of [0, 1]) {
+      let s = game();
+      rich(s, 0);
+      s.players[0].xp = xp;
+      const g = put(s, 'unl-158', 0, 'base');
+      const y = put(s, 'sfd-116', 0, 'hand');           // Yone, [Weaponmaster]
+      s = RB.apply(s, plays(s, y).find(a => a.to === 'base'));
+      s = passAll(s);
+      if (!xp) t.eq(RB.obj(s, g).attachedTo, null, 'no XP: not attached');
+      else {
+        t.eq(RB.obj(s, g).attachedTo, y, 'attached');
+        t.eq(s.players[0].xp, 0, 'and the XP was spent');
+      }
+    }
+  });
 }

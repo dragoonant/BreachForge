@@ -325,6 +325,7 @@
   };
 
   function lower(s) { return s.charAt(0).toLowerCase() + s.slice(1); }
+  function upper(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
   const PLAY_WHERE_TEXT = {
     whereIHaveUnits: 'I can be played to a battlefield where you have units.',
     whereEnemyUnits: 'I can be played to a battlefield where there are enemy units.',
@@ -337,7 +338,7 @@
     killFriendly: x => 'kill a friendly ' + (x.mighty ? 'Mighty ' : '') + 'unit',
     discard: x => 'discard ' + (x.n || 1),
     spendBuff: x => 'spend ' + (x.n || 1) + ' buff',
-    recycleFromTrash: x => 'recycle ' + (x.n || 1) + ' from your trash',
+    recycleFromTrash: x => 'recycle ' + (x.n || 1) + ' cards from your trash',
   };
   RB.defineExtraCostText = function (kind, fn) {
     EXTRA_TEXT[kind] = typeof fn === 'function' ? fn : () => fn;
@@ -399,6 +400,7 @@
     if (a.power) bits.push(a.power + ' Power');
     if (a.exhaustSelf) bits.push('Exhaust me');
     if (a.killSelf) bits.push('Kill me');
+    for (const x of a.extra || []) bits.push(upper(extraCost(x)));
     let c = bits.join(', ') || 'Free';
     for (const k of Object.keys(ABILITY_NOTE)) if (a[k]) c += ' — ' + ABILITY_NOTE[k](a);
     // The gate is rendered by the caller, as its own sentence after the effect.

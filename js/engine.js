@@ -228,6 +228,7 @@
         if (a.when && !RB.testCondition(state, a.when, { p: p, source: iid })) return;
         const cost = RB.abilityCost(state, iid, a);
         if (!RB.canPay(state, p, cost)) return;
+        if (!RB.extrasAvailable(state, p, iid, a.extra)) return;              // D-14
         if (!RB.canDeclare(state, a.effects, { p: p, source: iid })) return;   // D-13
         out.push({ t: 'activate', iid: iid, ix: ix });
       });
@@ -681,10 +682,29 @@
     // ABILITY that chose exactly one of my units" rather than matching spells only.
     const item = { iid: a.iid, controller: p, kind: 'ability', ix: a.ix,
       cardId: RB.cardOf(s, a.iid).id, energy: ab.energy || 0 };
+    // An additional cost beyond Energy and Power ("Recycle 2 cards from your trash",
+    // "Spend 1 XP") is paid here too, before the ability exists on the chain (D-14). One
+    // that makes a choice may have to ASK, so the rest of the activation runs as a
+    // restartable resolution of its own and resumes when the question is answered.
+    if ((ab.extra || []).length) {
+      RB.resolveAsking(s, { kind: 'effects', via: a.iid, ctx: { p: p, source: a.iid },
+        effects: [{ op: 'payActivation', extra: ab.extra, item: item }] });
+      return;
+    }
+    declareActivation(s, item);
+  }
+  function declareActivation(s, item) {
     pushDeclared(s, item);
-    s.priority = RB.opponentOf(p);
+    s.priority = RB.opponentOf(item.controller);
     s.passes = 0;
   }
+  // Engine plumbing, not a printed clause: it appears only in the effect list doActivate
+  // builds. The item is copied because the probe runs share the effect list with the
+  // real one, and declaring writes to it.
+  RB.defineOp('payActivation', (s, e, ctx) => {
+    for (const x of e.extra) RB.payExtra(s, ctx.p, ctx.source, x, ctx);
+    declareActivation(s, JSON.parse(JSON.stringify(e.item)));
+  });
 
   function doPass(s, p) {
     s.passes++;

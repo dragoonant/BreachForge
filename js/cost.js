@@ -237,9 +237,20 @@
     }
     return out;
   };
-  RB.payExtra = function (state, p, iid, x) {
+  // `ctx` is the resolution the payment runs in, when it runs in one (an activated
+  // ability's extra cost does, D-14): a kind that makes a choice asks it through
+  // RB.offerChoice there. Without one the choice is the kind's own default.
+  RB.payExtra = function (state, p, iid, x, ctx) {
     if (!x.pays) return;
-    RB.extraAvailable[x.pays].pay(state, p, iid, x);
+    RB.extraAvailable[x.pays].pay(state, p, iid, x, ctx || { p: p, source: iid });
+  };
+  // Can every one of these additional costs be paid right now?
+  RB.extrasAvailable = function (state, p, iid, list) {
+    return (list || []).every(x => {
+      const spec = RB.extraAvailable[x.pays];
+      if (!spec) throw new Error('no extra-cost kind named ' + x.pays);
+      return spec.available(state, p, iid, x);
+    });
   };
 
   // The kinds of additional cost a card can name. Each answers two questions: can the
@@ -288,11 +299,18 @@
   function buffPool(s, p) {
     return RB.allUnits(s).filter(u => RB.obj(s, u).controller === p && (RB.obj(s, u).counters || 0) > 0);
   }
+  // WHICH cards is the player's: cheapest first is only the default for a seat nobody asks.
   RB.defineExtraCost('recycleFromTrash', {
     available: (s, p, iid, x) => s.players[p].trash.length >= (x.n || 1),
-    pay: (s, p, iid, x) => {
+    pay: (s, p, iid, x, ctx) => {
       const P = s.players[p];
-      for (let i = 0; i < (x.n || 1) && P.trash.length; i++) P.deck.push(P.trash.pop());
+      const n = x.n || 1;
+      const pool = P.trash.slice().sort((a, b) =>
+        (RB.cardOf(s, a).energy || 0) - (RB.cardOf(s, b).energy || 0));
+      const took = RB.offerChoice(s, pool, n, ctx, 'recycleCost',
+        'Recycle which ' + n + ' card' + (n === 1 ? '' : 's') + ' from your trash?', { quiet: true });
+      for (const c of took) { RB.removeFrom(P.trash, c); P.deck.push(c); }
+      RB.log(s, 'recycle', { p: p, iids: took.slice() });
     },
   });
 

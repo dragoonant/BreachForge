@@ -369,6 +369,7 @@
     const payable = gear => {
       const eq = equipOf(s, gear);
       if (eq && eq.when && !RB.testCondition(s, eq.when, { p: ctx.p, source: gear })) return false;
+      if (eq && !RB.extrasAvailable(s, ctx.p, gear, eq.extra)) return false;
       return RB.canPay(s, ctx.p, reduced(gear));
     };
     const mine = allGear(s).filter(i => RB.obj(s, i).controller === ctx.p &&
@@ -381,9 +382,11 @@
     if (!plan) return;
     RB.pay(s, ctx.p, plan);
     const eq = equipOf(s, gear);
-    // This pack's Equip abilities attach through sfd.attach, which honours the named host;
-    // their other effects (the recycle) run as they would on activation. Another pack's
-    // Equip op cannot be told the host, so it is attached directly.
+    // The rest of the Equip cost — sfd-150's recycle, unl-158's XP — is paid too; only the
+    // Power is reduced. Inside this resolution, so a choice in it is the player's.
+    for (const x of (eq && eq.extra) || []) RB.payExtra(s, ctx.p, gear, x, ctx);
+    // This pack's Equip abilities attach through sfd.attach, which honours the named host.
+    // Another pack's Equip op cannot be told the host, so it is attached directly.
     if (eq && usesSfdAttach(eq.effects)) {
       RB.runEffects(s, eq.effects, Object.assign(plainCtx(ctx), { source: gear, sfdHost: ctx.source }));
       return;

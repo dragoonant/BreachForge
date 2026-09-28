@@ -199,14 +199,16 @@ nothing. Related: the counters only ever consider the TOP of the chain, where "a
 any spell on it. *Fix:* legalActions probes the declaration (`RB.declareChoices` already runs
 it) and withholds a play whose mandatory choice has an empty pool.
 
-**D-14 — Additional costs of ACTIVATED abilities are not paid at activation.**
+**D-14 — RETIRED 2026-09-27.** An activated ability carries `extra` additional costs:
+`legalActions` checks them (`RB.extrasAvailable`), `doActivate` pays them before the ability goes
+on the chain — as a restartable resolution, so `recycleFromTrash` asks which cards — and
+Weaponmaster pays them too. sfd-150 and unl-158 are authored that way. The original entry read:
 sfd-150 Last Rites' "[Equip] — [C], Recycle 2 cards from your trash": the recycle is an effect
 of the ability, gated on two cards being there, not a cost paid on activation — so it could be
 countered after the [C] was spent and before the recycle. unl-158 Shepherd's Heirloom's
 "Spend 1 XP" is not spent on the Weaponmaster path. *Fix:* `ab.extra` checked in
 `legalActions` and paid in `doActivate` through `RB.payExtra`, with the `recycleFromTrash`
 extra cost asking which cards.
-Owner: unassigned.
 
 **D-15 — A token is always played to its controller's base.**
 sfd-154 Guards!, sfd-198 Arise! and the ogn Recruit tokens print "play a … token" with no

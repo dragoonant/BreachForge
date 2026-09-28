@@ -199,19 +199,14 @@
     },
 
     // "[Equip] — [C], Recycle 2 cards from your trash".
-    // The recycle is part of the COST. The core pays an activated ability's Energy, Power,
-    // exhaust and kill-self only, so the rest is split in two: the `when` gate means the
-    // ability is not offered unless the trash holds two cards, and the first thing the
-    // ability does is recycle the two the player picks — all or nothing, and nothing is
-    // attached without it. Weaponmaster (sfd.weaponmaster) runs these same effects, so the
-    // recycle is paid on that path too.
+    // The recycle is part of the COST (D-14): `extra` is checked in legalActions and paid
+    // on activation, before the ability goes on the chain, so a counter can no longer
+    // leave the [C] spent and the recycle unpaid. Which two cards is the player's.
+    // Weaponmaster pays the same extra when it attaches this.
     'sfd-150': {
       activated: [{ keyword: 'Equip', power: 1, domains: ['Chaos'],
-        when: { kind: 'sfd.trashAtLeast', n: 2 },
-        effects: [{
-          op: 'sfd.when', cond: 'trashAtLeast', n: 2,
-          effects: [{ op: 'sfd.recycleFromTrash', n: 2 }, { op: 'sfd.attach' }],
-        }] }],
+        extra: [{ pays: 'recycleFromTrash', n: 2 }],
+        effects: [{ op: 'sfd.attach' }] }],
     },
 
     // ---------------------------------------------------------------- Order

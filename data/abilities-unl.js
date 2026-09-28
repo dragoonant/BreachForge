@@ -349,15 +349,15 @@ RB.registerAbilities({
   },
 
   // Shepherd's Heirloom — "When you play this, gain 1 XP."; "[Equip] — Spend 1 XP".
-  // The `when` gate on an activated ability is checked in legalActions, so with no XP the
-  // Equip is not offered at all — which is what a cost means. The earlier resolution-time
-  // deviation is gone.
+  // Spending the XP is the cost (D-14): `extra` gates the ability in legalActions, is paid
+  // on activation, and is paid by Weaponmaster too — the XP used to be an EFFECT, which
+  // Weaponmaster's path never ran.
   'unl-158': {
     triggers: [{ on: 'played', effects: [{ op: 'xp', n: 1 }] }],
     activated: [{
       keyword: 'Equip',
-      when: { kind: 'haveXP', n: 1 },
-      effects: [{ op: 'spendXP', n: 1 }, { op: 'equipSelf' }],
+      extra: [{ pays: 'spendXP', n: 1 }],
+      effects: [{ op: 'equipSelf' }],
     }],
   },
 
