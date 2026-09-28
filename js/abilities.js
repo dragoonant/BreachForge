@@ -26,7 +26,7 @@
     const card = RB.cardOf(s, iid);
     const ab = card.abilities || {};
     const ctx = { p: p, source: iid, to: item.to, targets: item.targets || [],
-      fromHidden: !!item.fromHidden, paid: item.paid || [], xPaid: item.xPaid || 0 };
+      fromHidden: !!item.fromHidden, hiddenBf: item.hiddenBf, paid: item.paid || [], xPaid: item.xPaid || 0 };
 
     // An additional cost may change how the card enters or add its own clause —
     // [Accelerate] is "pay more and I enter ready", which is a property of the play, not
@@ -36,6 +36,13 @@
 
     if (card.type === 'Unit') {
       RB.obj(s, iid).exhausted = !entersReady;     // units enter the board exhausted
+      // Entering ready is not BECOMING ready: [Accelerate] is a replacement, and "becomes
+      // ready" triggers do not fire for it (rules.md, Accelerate). The crossing detector in
+      // the cleanup compares against wasReady, which a fresh object seeds as false.
+      RB.obj(s, iid).wasReady = entersReady;
+      // Nor is entering at 5+ Might BECOMING Mighty (rules.md, Mighty: a crossing from
+      // below 5 to 5+). Seeded false, sfd-205 Grand Duelist fired for any big unit played.
+      RB.obj(s, iid).wasMighty = null;
       RB.obj(s, iid).enteredTurn = s.turn;
       if (item.to && item.to.startsWith('bf')) {
         const i = +item.to.slice(2);
@@ -56,7 +63,41 @@
       s.players[p].trash.push(iid);
       if (card.type === 'Spell') RB.runTriggers(s, 'spellPlayed', { p: p, iid: iid });
     }
-    for (const x of extras) if (x.effects) RB.runEffects(s, x.effects, ctx);
+    // An additional cost's own clause — [Repeat] is "pay again to do it again" — is a
+    // separate execution whose choices may differ (rules: Repeat), so it runs under its own
+    // prefix in the effect tree. Run at the card's own position, the repeat's question had
+    // the SAME key as the first's and silently reused its answer: unl-134 Existential Dread
+    // stunned a unit and then bounced that same unit.
+    extras.forEach((x, k) => {
+      if (!x.effects) return;
+      ctx.opIx = 'extra' + k;
+      RB.runEffects(s, x.effects, ctx);
+      ctx.opIx = '';
+    });
+  };
+
+  // What a parked resolution IS, so it can be run again from the top once a question is
+  // answered. A card or an ability names itself; a bare list of effects — the branch a
+  // "you may" or "choose one" answer picked, or a triggered ability that fired outside any
+  // resolution — carries its effects and context with it.
+  RB.runPendingItem = function (s, item) {
+    if (item.kind === 'ability') return RB.resolveAbilityNow(s, item);
+    if (item.kind === 'effects') {
+      const prev = s.via;
+      if (item.via) s.via = { iid: item.via };
+      RB.runEffects(s, item.effects || [], Object.assign({}, item.ctx));
+      s.via = prev;
+      return;
+    }
+    return RB.resolveCardNow(s, item);
+  };
+
+  // Run a list of effects as its own resolution: it may stop to ask the human seat. This
+  // is how a triggered ability and a "you may" answer resolve, because both happen
+  // outside the card resolution that the asking machinery used to wrap — and every choice
+  // inside them was made for the player by the engine's own ordering.
+  RB.runAsking = function (s, effects, ctx, via) {
+    RB.resolveAsking(s, { kind: 'effects', effects: effects, ctx: ctx, via: via });
   };
 
   RB.resolveAbilityNow = function (s, item) {
@@ -74,19 +115,15 @@
     // how often another card's trigger fires, so the count is asked here rather than
     // written into the trigger.
     let times = 1;
-    for (const u of RB.allUnits(s).concat([s.players[o.controller].legend]))
+    for (const u of RB.permanents(s).concat([s.players[o.controller].legend]))
       if (u && RB.obj(s, u).controller === o.controller)
         for (const st of (RB.cardOf(s, u).abilities || {}).statics || [])
           if (st.deathknellExtra) times += st.deathknellExtra;
     for (const t of ab.triggers) {
       if (t.on !== 'deathknell') continue;
-      for (let k = 0; k < times; k++) {
-        const prev = s.via;
-        s.via = { iid: iid };
-        RB.runEffects(s, t.effects, { p: o.controller, source: iid,
-          event: { p: o.controller, iid: iid, bf: loc.kind === 'bf' ? loc.bf : undefined } });
-        s.via = prev;
-      }
+      for (let k = 0; k < times; k++)
+        RB.runAsking(s, t.effects, { p: o.controller, source: iid,
+          event: { p: o.controller, iid: iid, bf: loc.kind === 'bf' ? loc.bf : undefined } }, iid);
     }
   };
 
@@ -110,10 +147,7 @@
         if (d.on !== event) continue;
         if (d.mine !== false && d.watch === 'mine' && data.p !== d.p) continue;
         if (d.once) s.delayed.splice(s.delayed.indexOf(d), 1);
-        const prev = s.via;
-        s.via = { iid: d.source };
-        RB.runEffects(s, d.effects, { p: d.p, source: d.source, event: data, delayed: d.data });
-        s.via = prev;
+        RB.runAsking(s, d.effects, { p: d.p, source: d.source, event: data, delayed: d.data }, d.source);
       }
     }
     const sources = [];
@@ -132,11 +166,14 @@
         if (t.on !== event) continue;
         const p = owner === null ? data.p : owner;
         if (t.mine && p !== data.p) continue;
-        if (t.here !== undefined && data.bf !== undefined && t.here && RB.locationOf(s, iid).bf !== data.bf) continue;
-        const prev = s.via;
-        s.via = { iid: iid };
-        RB.runEffects(s, t.effects, { p: p, source: iid, event: data });
-        s.via = prev;
+        // "Here" is the source's own battlefield. A battlefield card is not IN a location —
+        // it is one — so its index is asked directly; locationOf reads 'nowhere' for it and
+        // every "when you hold here" on a battlefield was skipped.
+        if (t.here && data.bf !== undefined) {
+          const at = owner === null ? s.bf.findIndex(b => b.iid === iid) : RB.locationOf(s, iid).bf;
+          if (at !== data.bf) continue;
+        }
+        RB.runAsking(s, t.effects, { p: p, source: iid, event: data }, iid);
       }
     }
   };
@@ -158,17 +195,23 @@
 
   RB.answerQueue = function (s, a) {
     const step = s.queue.shift();
+    if (step.kind === 'target' && step.declare) {
+      const item = s.chain.find(x => x.uid === step.declare);
+      if (!item) return;
+      item.chosen = item.chosen || {};
+      item.chosen[step.key] = (a.selection || []).slice();
+      RB.log(s, 'target', { p: step.who, key: step.key, chose: item.chosen[step.key] });
+      RB.declareChoices(s, item);
+      return;
+    }
     if (step.kind === 'target') {
-      s.chosen = s.chosen || {};
-      s.chosen[step.key] = (a.selection || []).slice();
-      RB.log(s, 'target', { p: step.who, key: step.key, chose: s.chosen[step.key] });
-      const item = s.pendingItem;
-      if (item) {
-        // Run the whole resolution again from the top with this answer pre-filled. It may
-        // stop again on the next question; the loop ends when nothing is left to ask.
-        if (item.kind === 'ability') RB.resolveAsking(s, item, st => RB.resolveAbilityNow(st, item));
-        else RB.resolveAsking(s, item, st => RB.resolveCardNow(st, item));
-      }
+      const item = step.item;
+      item.chosen = item.chosen || {};
+      item.chosen[step.key] = (a.selection || []).slice();
+      RB.log(s, 'target', { p: step.who, key: step.key, chose: item.chosen[step.key] });
+      // Run the whole resolution again from the top with this answer pre-filled. It may
+      // stop again on the next question; the loop ends when nothing is left to ask.
+      RB.resolveAsking(s, item);
       return;
     }
     if (step.kind !== 'may' && step.kind !== 'choose') return;
@@ -176,8 +219,10 @@
     if (step.source) s.via = { iid: step.source };
     RB.log(s, 'choice', { p: step.who, ix: a.ix,
       label: step.options ? step.options[a.ix] : (a.ix === 0 ? 'yes' : 'no') });
-    if (step.onAnswer) RB.runEffects(s, step.onAnswer[a.ix] || [], step.ctx);
     s.via = prev;
+    // The branch is a resolution of its own. Run bare, "you may return a unit" and
+    // "choose one — move an enemy unit" took the engine's first candidate for the player.
+    if (step.onAnswer) RB.runAsking(s, step.onAnswer[a.ix] || [], step.ctx, step.source);
   };
 
   // --- the ops --------------------------------------------------------------
@@ -273,9 +318,15 @@
     // might wins over the token's own.
     if (e.might != null) o.buffs = e.might - (RB.card(e.cardId).might || 0);
     if (e.temporary) o.temporary = true;
+    o.wasReady = !o.exhausted;
+    o.wasMighty = null;
     if (e.to === 'here' && ctx.event && ctx.event.bf !== undefined) { s.bf[ctx.event.bf].units.push(iid); RB.applyContested(s, ctx.event.bf, ctx.p); }
     else s.players[ctx.p].base.push(iid);
     RB.log(s, 'token', { p: ctx.p, iid: iid, card: e.cardId }, 'unit.deploy');
+    // "Play a token" is playing it: sfd-166 Rally the Troops ("when a friendly unit is
+    // played this turn, buff it") missed every Sand Soldier. The unl token ops already
+    // raised this; the core's did not.
+    if (RB.card(e.cardId).type === 'Unit') RB.runTriggers(s, 'unitPlayed', { p: ctx.p, iid: iid });
   });
   RB.defineOp('nothing', () => {});
   RB.defineOp('extraTurn', (s, e, ctx) => {
@@ -405,7 +456,9 @@
     if (bf === null) return;
     for (const iid of RB.allUnits(s).slice()) {
       const o = RB.obj(s, iid);
-      if (o.controller !== ctx.p || !o.token) continue;
+      // "Your token UNITS": allUnits walks the base, where Gold gear tokens also live, and
+      // sfd-177 Azir marched them onto the battlefield as if they could fight.
+      if (o.controller !== ctx.p || !o.token || RB.cardOf(s, iid).type !== 'Unit') continue;
       const loc = RB.locationOf(s, iid);
       if (loc.kind === 'bf' && loc.bf === bf) continue;
       if (loc.kind === 'base') RB.removeFrom(s.players[ctx.p].base, iid);
@@ -425,6 +478,14 @@
       const c = RB.cardOf(s, iid);
       if (e.type && c.type !== e.type) return false;
       if (e.maxEnergy != null && (c.energy || 0) > e.maxEnergy) return false;
+      // A card whose remaining cost cannot be paid is not a card you can play (§13.4 step
+      // 5). Left in the pool, the biggest was taken first and fizzled — ogn-198 The
+      // Harrowing played nothing when its top candidate cost Power the player lacked.
+      if (!e.ignoreCost) {
+        const cost = RB.costOf(s, iid);
+        if (e.ignoreEnergy) cost.energy = 0;
+        if (!RB.canPay(s, ctx.p, cost)) return false;
+      }
       return true;
     });
     if (!pool.length) return;
@@ -449,7 +510,7 @@
     }
     RB.log(s, 'play', { p: ctx.p, iid: iid, card: RB.cardOf(s, iid).id,
       from: e.zone || 'trash' }, 'card.play');
-    RB.resolveCard(s, { iid: iid, controller: ctx.p, to: e.to || 'base', kind: 'card' });
+    RB.playCard(s, { iid: iid, controller: ctx.p, to: e.to || 'base', kind: 'card', immediate: true });
   });
 
   // A unit's Might is swapped, held for the turn. RB.mightOf derives Might on demand, so
@@ -550,14 +611,18 @@
     const victim = item.controller;
     const cost = { energy: e.energy || 0, power: e.power || 0,
       domains: e.domains || RB.DOMAINS.slice(), each: false };
-    if (!RB.canPay(s, victim, cost)) { RB.ops.counter(s, {}, ctx); return; }
+    if (!RB.canPay(s, victim, cost)) { RB.ops.counter(s, { uid: item.uid }, ctx); return; }
+    // Both answers are bound to THIS item. A [Repeat]ed ransom (sfd-136 Hard Bargain) asks
+    // twice; unbound, the second "no" countered whatever was next on the chain — the
+    // caster's own spell — and a second "yes" the victim could no longer afford paid
+    // nothing and let the spell through.
     s.queue.push({
       kind: 'may', who: victim, source: ctx.source,
       prompt: 'Pay ' + (e.energy || 0) + ' Energy' + (e.power ? ' and ' + e.power + ' Power' : '') +
         ' to stop your card being countered?',
       ctx: { p: victim, source: ctx.source },
-      onAnswer: [[{ op: 'payCost', energy: e.energy || 0, power: e.power || 0 }],
-                 [{ op: 'counter' }]],
+      onAnswer: [[{ op: 'payCost', energy: e.energy || 0, power: e.power || 0, orCounter: item.uid }],
+                 [{ op: 'counter', uid: item.uid }]],
     });
   });
   RB.defineOp('payCost', (s, e, ctx) => {
@@ -565,6 +630,7 @@
       domains: e.domains || RB.DOMAINS.slice(), each: false };
     const plan = RB.planPayment(s, ctx.p, cost);
     if (plan) RB.pay(s, ctx.p, plan);
+    else if (e.orCounter) RB.ops.counter(s, { uid: e.orCounter }, ctx);
   });
 
   // Does the chain's top item match what this card is allowed to counter? Read by the
@@ -587,11 +653,18 @@
   });
 
   RB.defineOp('counter', (s, e, ctx) => {
-    // Remove the top card of the chain without resolving it. The chain is LIFO, so "the
-    // spell being responded to" is always its head.
-    const item = s.chain.pop();
-    if (!item) return;
-    s.players[item.controller].trash.push(item.iid);
+    // Remove the top of the chain without resolving it. The chain is LIFO, so "the spell
+    // being responded to" is always its head — unless the counter was bound to one item
+    // (`uid`), as a ransom's delayed answer is: the head may have changed by then.
+    const ix = e.uid ? s.chain.findIndex(x => x.uid === e.uid) : s.chain.length - 1;
+    if (ix < 0) return;
+    const item = s.chain[ix];
+    // "Counter a spell" cannot take an ability (unl-044 Flurry of Feathers).
+    if (e.spellOnly && !(item.kind === 'card' && RB.cardOf(s, item.iid).type === 'Spell')) return;
+    s.chain.splice(ix, 1);
+    // Only a CARD goes to the trash. An ability's item names its source, which is still on
+    // the board: countering a legend's ability put the legend in its owner's trash.
+    if (item.kind === 'card') s.players[item.controller].trash.push(item.iid);
     RB.log(s, 'counter', { p: ctx.p, iid: item.iid }, 'chain.resolve');
   });
   RB.defineOp('xp', (s, e, ctx) => {
@@ -631,12 +704,21 @@
     if (typeof sel === 'object' && sel.pick) return RB.autoPick(s, sel, ctx);
     return [];
   };
-  function allUnits(s) {
+  // A base holds gear as well as units (§8.2), so walking the bases is "every permanent
+  // on the board", not "every unit". allUnits read the bases raw, and every selector built
+  // on it — "kill all units" (unl-180 The Ruination), "a friendly unit" — took gear too.
+  // RB.permanents is the old walk, for the few callers that do mean gear as well: the
+  // sources of replacements and statics.
+  function permanents(s) {
     const out = [];
     for (let p = 0; p < 2; p++) for (const i of s.players[p].base) out.push(i);
     for (const bf of s.bf) for (const i of bf.units) out.push(i);
     return out;
   }
+  function allUnits(s) {
+    return permanents(s).filter(i => RB.card(s.objects[i].cardId).type === 'Unit');
+  }
+  RB.permanents = permanents;
   RB.allUnits = allUnits;
 
   // A "choose a unit" clause resolves against the best candidate by a stated rule rather
@@ -677,15 +759,31 @@
   // which card to keep. Deflect and the `chosen` trigger are about choosing an object on
   // the board, and firing them for a card in hand would be a rule invented here.
   RB.offerChoice = function (s, pool, n, ctx, tag, label, opts) {
+    // A targeting choice may only take what the chooser CAN choose: an untargetable unit
+    // is not a candidate, and neither is a [Deflect] unit whose toll the chooser cannot
+    // pay (§809). The core's autoPick filtered its own pool; the three packs build theirs
+    // and hand them straight here, and announceChoice then skipped an unpayable toll and
+    // took the unit for free. Filtering at the door covers every pack at once.
+    if (!(opts && opts.quiet)) pool = pool.filter(i => !s.objects[i] || RB.canChoose(s, ctx.p, i));
+    // A card played from face down chooses its targets at that battlefield, "unless the
+    // targeting restriction makes that impossible" (§811 Hidden) — so the pool narrows to
+    // the battlefield only when something there qualifies. Nothing recorded which
+    // battlefield a facedown play came from, and sfd-070 / sfd-145 / unl-042 / unl-083
+    // reached across the board.
+    if (ctx.hiddenBf !== undefined && !(opts && opts.quiet)) {
+      const there = pool.filter(i => { const l = RB.locationOf(s, i); return l.kind === 'bf' && l.bf === ctx.hiddenBf; });
+      if (there.length) pool = there;
+    }
     if (!pool.length || !n) return [];
     // The identity of the question is (source, position in the effect tree, selector), so
     // the probe run and the real run agree which clause an answer belongs to.
     const key = (ctx.source || '?') + '|' + (ctx.opIx || '') + '|' + (tag || '');
-    if (s.collecting)
-      s.collecting.push({ key: key, pool: pool.slice(), n: n, p: ctx.p,
-        source: ctx.source, label: label || null });
     const answer = (s.chosen || {})[key];
     const taken = answer ? answer.filter(i => pool.includes(i)) : pool.slice(0, n);
+    if (s.collecting)
+      s.collecting.push({ key: key, pool: pool.slice(), n: n, p: ctx.p,
+        source: ctx.source, label: label || null, taken: taken.slice(),
+        quiet: !!(opts && opts.quiet) });
     if (!(opts && opts.quiet))
       for (const iid of taken) RB.announceChoice(s, ctx.p, iid, ctx.source);
     return taken;
@@ -700,27 +798,82 @@
   // real state, on the final pass. This is the payment solver's rewind, applied to
   // targeting.
   RB.resolveAsking = function (s, item, run) {
-    if (s.humanSeat === null || s.humanSeat === undefined) return run(s);
+    run = run || (st => RB.runPendingItem(st, item));
+    // Inside a probe, or inside a resolution that is already asking, a nested one simply
+    // runs: its questions are collected by — and its answers belong to — the outer one.
+    if (s.collecting || s.resolving) return run(s);
+    if (s.humanSeat === null || s.humanSeat === undefined) {
+      // Nobody to ask — but answers declared when the card was played still stand.
+      const prev = s.chosen;
+      s.chosen = item.chosen || {};
+      s.resolving = (s.resolving || 0) + 1;
+      try { return run(s); }
+      finally { s.resolving--; s.chosen = prev || {}; }
+    }
+    // Answers live on the item, not on the state: two resolutions can be parked at once
+    // (a trigger that fired mid-combat, then the card that combat was for), and one
+    // global answer sheet let the first to finish wipe the other's.
+    item.chosen = item.chosen || {};
     for (let guard = 0; guard < 12; guard++) {
       const probe = RB.clone(s);
       probe.collecting = [];
-      probe.chosen = Object.assign({}, s.chosen || {});
+      probe.chosen = Object.assign({}, item.chosen);
+      probe.resolving = 0;
       try { run(probe); }
       catch (e) { break; }               // a probe that throws is not a reason not to play
       // The question goes to whoever is CHOOSING, which is not always the player who
       // played the card: a discard forced on you by the opponent's spell is still your
       // choice (§422.1.a), and asking the caster would be the wrong player entirely.
       const open = (probe.collecting || []).find(c =>
-        c.p === s.humanSeat && !(s.chosen || {})[c.key] && c.pool.length > c.n && c.n > 0);
+        c.p === s.humanSeat && !item.chosen[c.key] && c.pool.length > c.n && c.n > 0);
       if (!open) break;
-      s.pendingItem = item;
       s.queue.unshift({ kind: 'target', who: open.p, key: open.key, source: open.source,
-        options: open.pool, n: open.n, label: open.label });
+        options: open.pool, n: open.n, label: open.label, item: item });
       return;                            // the resolution resumes when the question is answered
     }
-    run(s);
-    s.chosen = {};
-    s.pendingItem = null;
+    const prev = s.chosen;
+    s.chosen = item.chosen;
+    s.resolving = (s.resolving || 0) + 1;
+    try { run(s); }
+    finally { s.resolving--; s.chosen = prev || {}; }
+  };
+
+  // DECLARING what a spell or ability chooses, as it is played (§349 step 2).
+  //
+  // The engine resolves a card's choices when it resolves, so a chain item used to carry no
+  // record of what it would choose — and "counter an enemy spell that chooses a friendly
+  // unit" (sfd-045 Not So Fast, unl-106 Repulse) read an empty list and never countered
+  // anything. The resolution is probed now, on a copy with the item off the chain, and
+  // every choice its CONTROLLER makes is settled: a human seat is asked, any other seat's
+  // default is written down. The answers ride on the item, so resolution uses them rather
+  // than choosing again, and `targets` is what a counter reads. A choice that is no longer
+  // legal by then simply finds nothing (the answer is filtered by the live pool).
+  // Choices another player makes (a forced discard) stay at resolution, where they belong.
+  RB.declareChoices = function (s, item) {
+    item.chosen = item.chosen || {};
+    for (let guard = 0; guard < 12; guard++) {
+      const probe = RB.clone(s);
+      probe.chain = probe.chain.filter(x => x.uid !== item.uid);
+      probe.queue = [];
+      probe.collecting = [];
+      probe.chosen = Object.assign({}, item.chosen);
+      probe.resolving = 0;
+      try { RB.runPendingItem(probe, item); }
+      catch (e) { break; }
+      const mine = probe.collecting.filter(c => c.p === item.controller && !c.quiet && !item.chosen[c.key]);
+      if (!mine.length) break;
+      const c = mine[0];
+      if (c.p === s.humanSeat && c.pool.length > c.n && c.n > 0) {
+        s.queue.unshift({ kind: 'target', who: c.p, key: c.key, source: c.source,
+          options: c.pool, n: c.n, label: c.label, declare: item.uid });
+        return;
+      }
+      item.chosen[c.key] = c.taken;
+    }
+    const seen = new Set();
+    for (const k of Object.keys(item.chosen))
+      for (const i of item.chosen[k]) if (s.objects[i]) seen.add(i);
+    item.targets = [...seen];
   };
 
   // The Deflect toll: what an opposing chooser must pay to choose this unit, in Power of
@@ -729,8 +882,10 @@
     const o = RB.obj(s, iid);
     if (o.controller === chooser) return 0;
     let n = 0;
+    // keywordValue already reads static grants (RB.grantedOn). A second loop over the
+    // statics here charged ogn-232 Fiora and unl-041 Allay's neighbours [A][A] for one
+    // Deflect.
     if (RB.hasKeyword(s, iid, 'Deflect')) n += Math.max(1, RB.keywordValue(s, iid, 'Deflect'));
-    for (const st of RB.staticsOn(s, iid)) if (st.grant === 'Deflect') n += 1;
     return n;
   };
   RB.canChoose = function (s, chooser, iid) {

@@ -46,7 +46,7 @@ RB.registerAbilitiesFallback({
   'sfd-177': {
     additionalCosts: [{ id: 'accelerate', energy: 1, power: 1, entersReady: true }],
     triggers: [{
-      on: 'attack', here: true,
+      on: 'attack', mine: true, here: true,       // "When I attack" — not when he defends
       effects: [{ op: 'may', prompt: 'Move your token units to this battlefield?',
         effects: [{ op: 'moveTokensHere' }] }],
     }],

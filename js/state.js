@@ -34,7 +34,7 @@
       iid: iid, cardId: cardId, owner: owner, controller: owner,
       exhausted: false, damage: 0, buffs: 0, permBuffs: 0, granted: [], attached: [],
       attachedTo: null, temporary: false, movedThisTurn: 0, enteredTurn: -1,
-      wasMighty: false, wasReady: false, counters: 0, untargetable: false,
+      wasMighty: null, wasReady: false, counters: 0, untargetable: false,
       replaces: null, noMoveToBase: false, banished: false,
     };
     return iid;
@@ -203,6 +203,15 @@
   };
 
   // --- derived predicates: one home each ------------------------------------
+  // "I can't move to base" (unl-111) and "units can't move from here to base" (ogn-295)
+  // restrict every MOVE to base — the standard move and every effect that moves a unit.
+  // Asked only by the standard move before, so Charm, Moonfall, Tricksy Tentacles and a
+  // swap all walked a pinned unit home.
+  RB.canMoveToBase = function (state, iid) {
+    if (RB.obj(state, iid).noMoveToBase) return false;
+    return !RB.staticsOn(state, iid).some(st => st.noMoveToBase);
+  };
+
   RB.mightOf = function (state, iid) {
     const o = RB.obj(state, iid);
     const c = RB.card(o.cardId);
@@ -241,9 +250,18 @@
     return fn(state, iid, v) * (v.per == null ? 1 : v.per);
   };
 
+  // A conditional static may ask a question that itself reads statics — unl-060 Vilemaw's
+  // "enemy units with less Might than me" compares two Mights. The guard used to answer
+  // EVERY nested read with nothing, so the comparison ignored every modifier: an enemy
+  // raised from 7 to 9 by Baron's +2 still counted as weaker than an 8. The dependency
+  // order (rules §-layers: apply the depended-on effect first) is approximated one level
+  // down: a nested read applies the UNCONDITIONAL statics, which cannot depend on the
+  // question being asked, and skips only the conditional ones. Deeper than that it still
+  // answers nothing, so a cycle cannot recurse.
   let staticsDepth = 0;
   RB.staticsOn = function (state, iid) {
-    if (staticsDepth > 0) return [];
+    if (staticsDepth > 1) return [];
+    const nested = staticsDepth > 0;
     staticsDepth++;
     try {
       const out = [];
@@ -255,7 +273,7 @@
           if (sourceIid === iid && !st.includeSelf && st.scope !== 'self') continue;
           if (!inScope(st, sourceBf, sourceP, sourceIid)) continue;
           if (st.tag && !(RB.card(target.cardId).tags || []).includes(st.tag)) continue;
-          if (st.when && !whenHolds(state, iid, st.when, sourceIid)) continue;
+          if (st.when && (nested || !whenHolds(state, iid, st.when, sourceIid))) continue;
           out.push(st);
         }
       };
@@ -355,7 +373,10 @@
 
   RB.grantedOn = function (state, iid) {
     const o = RB.obj(state, iid);
-    const out = (o.granted || []).slice();
+    // `keywords` are printed ON a token by the card that made it ("Bird tokens with
+    // [Deflect]") — characteristics, not this-turn grants, so the Ending Cleanup that
+    // clears `granted` leaves them alone.
+    const out = (o.granted || []).concat(o.keywords || []);
     for (const st of RB.staticsOn(state, iid))
       if (st.grant) out.push(st.grantValue != null ? { name: st.grant, value: st.grantValue } : st.grant);
     return out;

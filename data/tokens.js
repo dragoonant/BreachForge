@@ -18,7 +18,8 @@ RB.tokenData = [
     domain: 'Calm', domains: ['Calm'], tags: ['Token'], energy: 0, power: 0, might: 1,
     rarity: 'Token', set: 'Token', artist: null },
   { id: 'tok-sprite', name: 'Sprite', nameId: 'sprite', type: 'Unit',
-    domain: 'Chaos', domains: ['Chaos'], tags: ['Token'], energy: 0, power: 0, might: 1,
+    // "3 [M] Sprite with Temporary (tag Fae)" — rules.md, token list.
+    domain: 'Chaos', domains: ['Chaos'], tags: ['Fae', 'Token'], energy: 0, power: 0, might: 1,
     rarity: 'Token', set: 'Token', artist: null },
   // A battlefield token. Baron Nashor adds one to the game, so the board is not always
   // the two battlefields the mode deals out.
@@ -43,5 +44,7 @@ RB.tokenAbilities = {
   'tok-bird': { vanilla: true },
   'tok-sprite': { vanilla: true },
   'tok-mech': { vanilla: true },
-  'tok-baron-pit': { vanilla: true },
+  // "Units can move here from anywhere." (printed on unl-147 Baron Nashor, as the token's
+  // own text). Read by moveDestinations as a permission held by the destination.
+  'tok-baron-pit': { statics: [{ arriveFromAnywhere: true }] },
 };

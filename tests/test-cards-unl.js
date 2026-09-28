@@ -1,0 +1,239 @@
+// Unleashed, card by card. Each test reads one printed clause literally and asks the real
+// engine — legalActions / apply — whether a game plays it. Each names the rule, and each
+// was watched failing on the code before its fix (CLAUDE.md rule 10).
+export function run(t) {
+  const RB = t.RB;
+  RB.registerCards();
+  const decks = RB.deckData.map(d => d.id);
+
+  // A cleared board: no hands, no units, p0 active in its main phase.
+  const game = (opts = {}) => {
+    let s = RB.newGame({ seed: opts.seed || 'cards-unl', decks: [decks[0], decks[1]] });
+    while (s.queue.length && s.queue[0].kind === 'mulligan') s = RB.apply(s, { t: 'mulligan', toss: [] });
+    s.humanSeat = opts.human === undefined ? null : opts.human;
+    for (const P of s.players) { P.deck.push(...P.hand); P.hand = []; P.base = []; }
+    for (const b of s.bf) { b.units = []; b.controller = null; b.contestedBy = null; }
+    s.active = 0; s.priority = 0; s.phase = 'main';
+    return s;
+  };
+  const rich = (s, p, n = 20) => { s.players[p].pool.energy = n; s.players[p].pool.any = n; };
+  const put = (s, id, p, where = 'base') => {
+    const iid = RB.mint(s, id, p);
+    if (where === 'hand') s.players[p].hand.push(iid);
+    else if (where === 'trash') s.players[p].trash.push(iid);
+    else if (where === 'deck') s.players[p].deck.unshift(iid);
+    else if (where === 'base') s.players[p].base.push(iid);
+    else s.bf[where].units.push(iid);
+    return iid;
+  };
+  // A plain unit of the given Might.
+  const sized = (s, m, p, where) => {
+    const iid = put(s, vanilla, p, where);
+    RB.obj(s, iid).permBuffs = m - RB.card(vanilla).might;
+    return iid;
+  };
+  const plays = (s, iid) => RB.legalActions(s).filter(a => a.t === 'play' && a.iid === iid);
+  const vanilla = 'tok-mech';                   // a 3 Might unit with no text
+  const aSpell = RB.allCards().find(c => c.type === 'Spell' && c.set !== 'Token').id;
+  // Pass until the chain is empty or a question is waiting — never answers one.
+  const passChain = s => {
+    for (let k = 0; k < 20 && s.chain.length && !s.queue.length; k++) s = RB.apply(s, { t: 'pass' });
+    return s;
+  };
+  const passAll = s => {
+    for (let k = 0; k < 20 && (s.chain.length || s.queue.length); k++)
+      s = s.queue.length ? RB.apply(s, RB.legalActions(s)[0]) : RB.apply(s, { t: 'pass' });
+    return s;
+  };
+  // Run a list of effects as a resolution of its own, as a trigger would.
+  const resolve = (s, effects, ctx) => { RB.runAsking(s, effects, ctx, ctx.source); return s; };
+
+  // --- unl-081 Keeper of Masks ---------------------------------------------------
+  t.test('Keeper of Masks: the copies are copies of a [Temporary] card, so they are Temporary', () => {
+    let s = game();
+    rich(s, 0);
+    const k = put(s, 'unl-081', 0, 'hand');
+    s = passAll(RB.apply(s, plays(s, k).find(a => a.to === 'base')));
+    const copies = s.players[0].base.filter(i => i !== k && RB.obj(s, i).cardId === 'unl-081');
+    t.eq(copies.length, 2, 'two Reflection copies');
+    t.ok(copies.every(i => RB.obj(s, i).temporary), 'each copy is Temporary');
+  });
+
+  // --- unl-118 Elder Dragon ------------------------------------------------------
+  t.test('Elder Dragon: only YOUR damage is always enough — an enemy hurt by its own side lives', () => {
+    const s = game();
+    put(s, 'unl-118', 0, 'base');
+    const a = sized(s, 3, 1, 'base'), b = sized(s, 3, 1, 'base');
+    RB.dealDamage(s, a, 1, { p: 1 }, 'effect');       // their own damage
+    RB.dealDamage(s, b, 1, { p: 0 }, 'effect');       // mine
+    RB.settle(s);
+    t.ok(s.players[1].base.includes(a), 'the unit damaged by its own controller survives');
+    t.ok(!s.players[1].base.includes(b), 'the unit I damaged dies');
+  });
+
+  // --- unl-198 Moonfall ----------------------------------------------------------
+  t.test('Moonfall moves an enemy unit TO the battlefield — never one already there', () => {
+    let s = game({ human: 0 });
+    rich(s, 0);
+    put(s, vanilla, 0, 0);
+    const there = sized(s, 5, 1, 0);
+    const away = sized(s, 2, 1, 'base');
+    const m = put(s, 'unl-198', 0, 'hand');
+    s = passChain(RB.apply(s, plays(s, m)[0]));
+    t.eq(s.queue[0] && s.queue[0].kind, 'choose');
+    s = RB.apply(s, { t: 'choose', ix: 0 });
+    // The only legal enemy is in its base: nothing to ask, and it arrives.
+    t.ok(!s.queue.length || !s.queue[0].options.includes(there), 'the unit already there is no option');
+    t.ok(s.bf[0].units.includes(away), 'the unit from elsewhere was moved there');
+  });
+
+  // --- unl-179 Rift Herald -------------------------------------------------------
+  t.test('Rift Herald looks at the three cards first, then asks which unit (if any) to draw', () => {
+    let s = game({ human: 0 });
+    const h = put(s, 'unl-179', 0, 'base');
+    const u1 = put(s, 'unl-145', 0, 'deck');              // Pyke
+    const sp = put(s, aSpell, 0, 'deck');
+    const u2 = put(s, 'unl-150', 0, 'deck');              // Vex — deck top: u2, sp, u1
+    resolve(s, [{ op: 'moveUnit', target: 'self', to: 'here' }],
+      { p: 0, source: h, event: { bf: 0 } });
+    const q = s.queue[0];
+    t.ok(q && q.kind === 'choose', 'one question, after looking: ' + JSON.stringify(q && q.kind));
+    t.eq(q.options.length, 3, 'draw the first unit, draw the second, or draw none: ' + JSON.stringify(q.options));
+    t.ok(q.options[1].includes('Pyke'), 'the options name the units seen');
+    s = RB.apply(s, { t: 'choose', ix: 1 });
+    t.ok(s.players[0].hand.includes(u1), 'the named unit was drawn');
+    t.eq(s.players[0].deck.slice(-2).sort(), [u2, sp].sort(), 'the rest recycled to the bottom');
+  });
+
+  t.test('Rift Herald draws nothing when the player says no, and recycles all three', () => {
+    let s = game({ human: 0 });
+    const h = put(s, 'unl-179', 0, 'base');
+    const look = [sized(s, 2, 0, 'deck'), put(s, aSpell, 0, 'deck'), sized(s, 3, 0, 'deck')];
+    resolve(s, [{ op: 'moveUnit', target: 'self', to: 'here' }], { p: 0, source: h, event: { bf: 0 } });
+    s = RB.apply(s, { t: 'choose', ix: s.queue[0].options.length - 1 });
+    t.eq(s.players[0].hand, []);
+    t.eq(s.players[0].deck.slice(-3).sort(), look.slice().sort());
+  });
+
+  // --- Predict (unl-063, 079, 131, 136) --------------------------------------------
+  t.test('Predict: keeping or recycling the top card is the player\'s answer (Eclipse)', () => {
+    for (const recycle of [false, true]) {
+      let s = game({ human: 0 });
+      rich(s, 0);
+      put(s, vanilla, 1, 'base');
+      const cheap = sized(s, 2, 0, 'deck');       // payable: the old rule kept it
+      const e = put(s, 'unl-063', 0, 'hand');
+      s = passChain(RB.apply(s, plays(s, e)[0]));
+      const q = s.queue[0];
+      t.ok(q && q.kind === 'may', 'asked: ' + JSON.stringify(q && q.kind));
+      s = RB.apply(s, { t: 'choose', ix: recycle ? 0 : 1 });
+      t.eq(s.players[0].deck[0] === cheap, !recycle, recycle ? 'recycled' : 'kept on top');
+      t.eq(s.players[0].deck[s.players[0].deck.length - 1] === cheap, recycle, 'bottom');
+    }
+  });
+
+  t.test('Predict 2, then draw: the draw takes the card the player left on top (Scryer\'s Bloom)', () => {
+    let s = game({ human: 0 });
+    const g = put(s, 'unl-136', 0, 'base');
+    const second = sized(s, 3, 0, 'deck');
+    const first = sized(s, 2, 0, 'deck');
+    resolve(s, RB.cardOf(s, g).abilities.activated[0].effects, { p: 0, source: g });
+    const q = s.queue[0];
+    t.ok(q && q.kind === 'choose' && q.options.length === 4, 'four answers: ' + JSON.stringify(q && q.options));
+    s = RB.apply(s, { t: 'choose', ix: 1 });               // recycle the first
+    t.ok(s.players[0].hand.includes(second), 'drew the card kept on top');
+    t.eq(s.players[0].deck[s.players[0].deck.length - 1], first, 'the recycled card is at the bottom');
+    t.eq(s.players[0].xp, 1);
+  });
+
+  // --- unl-169 Ashe --------------------------------------------------------------
+  t.test('Ashe: each banished card comes back when they hold, even after Ashe was replayed', () => {
+    let s = game();
+    const ashe = put(s, 'unl-169', 0, 'base');
+    const x = put(s, vanilla, 1, 'hand'), y = put(s, aSpell, 1, 'hand');
+    const played = RB.cardOf(s, ashe).abilities.triggers[0].effects;
+    resolve(s, played, { p: 0, source: ashe });
+    resolve(s, played, { p: 0, source: ashe });            // bounced and played again
+    t.eq(s.players[1].banished.slice().sort(), [x, y].sort(), 'both banished');
+    RB.runTriggers(s, 'hold', { p: 0, bf: 0 });            // MY hold returns nothing
+    t.eq(s.players[1].hand, []);
+    RB.runTriggers(s, 'hold', { p: 1, bf: 0 });
+    t.eq(s.players[1].hand.slice().sort(), [x, y].sort(), 'both returned');
+    t.eq((s.delayed || []).length, 0, 'and the promises are spent');
+  });
+
+  // --- leaving the board (unl-128, 132, 134, 184) -----------------------------------
+  t.test('a bounce is a card leaving the board: leftBoard fires, replacements and gear go', () => {
+    const s = game();
+    const u = put(s, vanilla, 1, 0);
+    const g = RB.mint(s, 'sfd-033', 1);
+    RB.obj(s, u).attached.push(g); RB.obj(s, g).attachedTo = u;
+    RB.obj(s, u).replaces = [{ event: 'death', kind: 'banishInstead', byP: 0 }];
+    const seen = [];
+    const base = RB.runTriggers;
+    RB.runTriggers = (st, ev, d) => { if (ev === 'leftBoard') seen.push(d.iid); return base(st, ev, d); };
+    try { RB.ops.returnToHand(s, { target: { pick: 'enemyUnits' } }, { p: 0, source: u }); }
+    finally { RB.runTriggers = base; }
+    t.eq(seen, [u], 'leftBoard fired for the bounced unit');
+    t.ok(s.players[1].hand.includes(u), 'in hand');
+    t.eq(RB.obj(s, u).replaces, null, 'its replacement is gone');
+    t.ok(s.players[1].base.includes(g) && !RB.obj(s, g).attachedTo, 'its gear fell to base');
+  });
+
+  t.test('Thrill of the Hunt: a banished-and-replayed unit is a new object — no Temporary, no gear', () => {
+    let s = game();
+    const u = put(s, vanilla, 0, 0);
+    RB.obj(s, u).temporary = true;
+    const g = RB.mint(s, 'sfd-033', 0);
+    RB.obj(s, u).attached.push(g); RB.obj(s, g).attachedTo = u;
+    const seen = [];
+    const base = RB.runTriggers;
+    RB.runTriggers = (st, ev, d) => { if (ev === 'leftBoard') seen.push(d.iid); return base(st, ev, d); };
+    try { resolve(s, [{ op: 'blinkUnit', target: { pick: 'myUnits' } }], { p: 0, source: u }); }
+    finally { RB.runTriggers = base; }
+    s = passAll(s);
+    t.eq(seen, [u], 'leftBoard fired');
+    t.ok(s.bf.some(b => b.units.includes(u)), 'back on a battlefield');
+    t.ok(!RB.obj(s, u).temporary, 'no longer Temporary');
+    t.ok(s.players[0].base.includes(g) && !RB.obj(s, g).attachedTo, 'its gear fell to base');
+    t.eq(RB.obj(s, u).attached, []);
+  });
+
+  // --- unl-054 Tricksy Tentacles -------------------------------------------------
+  t.test('Tricksy Tentacles chooses its units: an untargetable one is never moved', () => {
+    const s = game();
+    const baron = put(s, 'unl-147', 1, 0);                 // can't be chosen by enemy spells
+    const small = sized(s, 2, 1, 0);
+    RB.obj(s, baron).permBuffs = -10;                      // small enough to fit the cap
+    resolve(s, [{ op: 'gatherEnemies', maxMight: 8, bf: null }], { p: 0, source: small });
+    t.ok(s.bf[0].units.includes(baron), 'Baron stays');
+    t.ok(s.players[1].base.includes(small), 'the other goes');
+  });
+
+  // --- unl-141 Evelynn, unl-145 Pyke --------------------------------------------------
+  t.test('Evelynn from face down pulls an enemy from ANOTHER location to her battlefield', () => {
+    let s = game({ human: 0 });
+    put(s, vanilla, 0, 1);
+    s.bf[1].controller = 0;
+    const there = sized(s, 5, 1, 1);
+    const away = sized(s, 2, 1, 0);
+    const ev = RB.mint(s, 'unl-141', 0);
+    s.bf[1].hidden.push({ iid: ev, owner: 0, turnHidden: s.turn - 1 });
+    s = RB.apply(s, RB.legalActions(s).find(a => a.t === 'play' && a.iid === ev));
+    s = passChain(s);
+    t.eq(s.queue[0] && s.queue[0].kind, 'may');
+    s = RB.apply(s, { t: 'choose', ix: 0 });
+    t.ok(s.bf[1].units.includes(away) && s.bf[1].units.includes(there), 'pulled from bf0; ' +
+      JSON.stringify(s.queue[0] && s.queue[0].options));
+  });
+
+  t.test('Pyke at a battlefield makes one Gold when an enemy unit dies', () => {
+    const s = game();
+    const p = put(s, 'unl-145', 0, 0);
+    const a = put(s, vanilla, 1, 'base'), b = put(s, vanilla, 1, 'base');
+    RB.kill(s, a); RB.kill(s, b);
+    const gold = s.players[0].base.filter(i => RB.obj(s, i).cardId === 'tok-gold');
+    t.eq(gold.length, 1, 'once each turn');
+    t.ok(p);
+  });
+}

@@ -8,9 +8,11 @@
 // clause and shipping the rest unmarked — is the defect this marker exists to prevent.
 //
 // Two conventions used throughout:
-//   * "choose a unit" resolves through RB.autoPick (D-2: the player does not pick yet), so a
-//     beneficial clause is pointed at `myUnits` and a harmful one at `enemyUnits`. That is
-//     the auto-resolution rule, not a narrowing of what the card may legally target.
+//   * "a unit" is read literally: the pool is every unit, of either side. `prefer` only
+//     ORDERS it — a beneficial clause offers your units first, a harmful one the enemy's —
+//     which is the auto-resolution policy. Pointing a clause at `myUnits` or `enemyUnits`
+//     to say the same thing narrowed what the card may legally choose (Punch First could
+//     not be given to an enemy, Defiant Dance could not weaken your own).
 //   * Every Might change here is printed "this turn", so all of them write the this-turn
 //     buff channel; none of them is permanent.
 (function (RB) {
@@ -60,7 +62,7 @@
     // "When you play me, you may kill a gear."
     'sfd-032': {
       triggers: [{ on: 'played',
-        effects: [{ op: 'may', effects: [{ op: 'sfd.killGear', side: 'enemy' }] }] }],
+        effects: [{ op: 'may', effects: [{ op: 'sfd.killGear' }] }] }],
     },
 
     // "[Equip] [C]"
@@ -116,7 +118,7 @@
     // "Give a unit +5 [S] this turn."
     'sfd-097': {
       keywords: ['Action'],
-      effects: [{ op: 'sfd.giveMight', n: 5, target: { pick: 'myUnits' } }],
+      effects: [{ op: 'sfd.giveMight', n: 5, target: { pick: 'allUnits', prefer: 'mine' } }],
     },
 
     // "I can't be chosen by enemy spells and abilities." Read by RB.canChoose.
@@ -143,7 +145,7 @@
     'sfd-128': {
       triggers: [{ on: 'defend', mine: true, here: true, effects: [{ op: 'may', effects: [
         { op: 'kill', target: 'self' },
-        { op: 'sfd.recallAttacker' },
+        { op: 'sfd.moveAttacker' },
       ] }] }],
     },
 
@@ -161,7 +163,7 @@
     // "Return a gear to its owner's hand."
     'sfd-135': {
       keywords: ['Action'],
-      effects: [{ op: 'sfd.bounceGear', side: 'enemy' }],
+      effects: [{ op: 'sfd.bounceGear' }],
     },
 
     // "[Reaction] [Repeat] [2] Counter a spell unless its controller pays [2]."
@@ -197,15 +199,19 @@
     },
 
     // "[Equip] — [C], Recycle 2 cards from your trash".
-    // DEVIATION: an activated ability's cost may only be Energy, Power, exhausting or
-    // killing the source, so the recycle is enforced on resolution instead. With fewer than
-    // two cards in the trash the ability is still offered and does nothing — it is never
-    // free to actually equip, but it can waste the [C]. Same shape as unl-158.
+    // The recycle is part of the COST. The core pays an activated ability's Energy, Power,
+    // exhaust and kill-self only, so the rest is split in two: the `when` gate means the
+    // ability is not offered unless the trash holds two cards, and the first thing the
+    // ability does is recycle the two the player picks — all or nothing, and nothing is
+    // attached without it. Weaponmaster (sfd.weaponmaster) runs these same effects, so the
+    // recycle is paid on that path too.
     'sfd-150': {
-      activated: [{ keyword: 'Equip', power: 1, domains: ['Chaos'], effects: [{
-        op: 'sfd.when', cond: 'trashAtLeast', n: 2,
-        effects: [{ op: 'sfd.recycleFromTrash', n: 2 }, { op: 'sfd.attach' }],
-      }] }],
+      activated: [{ keyword: 'Equip', power: 1, domains: ['Chaos'],
+        when: { kind: 'sfd.trashAtLeast', n: 2 },
+        effects: [{
+          op: 'sfd.when', cond: 'trashAtLeast', n: 2,
+          effects: [{ op: 'sfd.recycleFromTrash', n: 2 }, { op: 'sfd.attach' }],
+        }] }],
     },
 
     // ---------------------------------------------------------------- Order
@@ -288,8 +294,8 @@
     'sfd-196': {
       keywords: ['Reaction'],
       effects: [
-        { op: 'sfd.giveMight', n: 2, target: { pick: 'myUnits' } },
-        { op: 'sfd.weaken', n: 2, target: { pick: 'enemyUnits' } },
+        { op: 'sfd.giveMight', n: 2, target: { pick: 'allUnits', prefer: 'mine' } },
+        { op: 'sfd.weaken', n: 2, target: { pick: 'allUnits', prefer: 'enemy', another: true } },
       ],
     },
 
@@ -336,7 +342,7 @@
     //  to that spell's Energy cost this turn."
     'sfd-206': {
       keywords: ['Reaction'],
-      effects: [{ op: 'sfd.counterSpell',
+      effects: [{ op: 'sfd.counterSpell', spellOnly: true,
         then: [{ op: 'buffByCounteredCost', target: { pick: 'myUnits' } }] }],
     },
 
@@ -410,8 +416,10 @@
     'sfd-003': {
       keywords: ['Action'],
       additionalCosts: [{ id: 'repeat', energy: 1, effects: [
-        { op: 'sfd.grantKeyword', keyword: 'Assault', value: 2, target: { pick: 'myUnits' } }] }],
-      effects: [{ op: 'sfd.grantKeyword', keyword: 'Assault', value: 2, target: { pick: 'myUnits' } }],
+        { op: 'sfd.grantKeyword', keyword: 'Assault', value: 2,
+          target: { pick: 'allUnits', prefer: 'mine' } }] }],
+      effects: [{ op: 'sfd.grantKeyword', keyword: 'Assault', value: 2,
+        target: { pick: 'allUnits', prefer: 'mine' } }],
     },
 
     // "If you have two or fewer cards in your hand, I enter ready."
@@ -481,8 +489,8 @@
     // "When you play me, buff up to four friendly units."
     // "When you spend a buff, play a Gold gear token exhausted."
     'sfd-101': {
-      triggers: [{ on: 'played', effects: [{ op: 'sfd.buff', n: 4 }] }],
-      sfdTriggers: [{ on: 'buffSpent', mine: true,
+      triggers: [{ on: 'played', effects: [{ op: 'sfd.buff', n: 4 }] },
+        { on: 'buffSpent', mine: true,
         effects: [{ op: 'sfd.playToken', cardId: 'tok-gold', exhausted: true }] }],
     },
 

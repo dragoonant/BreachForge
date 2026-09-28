@@ -101,7 +101,7 @@
   RB.grantedExtras = function (state, p, iid, fromZone) {
     const out = [];
     const card = RB.cardOf(state, iid);
-    for (const src of RB.allUnits(state).concat(state.players.map(P => P.legend)).filter(Boolean)) {
+    for (const src of RB.permanents(state).concat(state.players.map(P => P.legend)).filter(Boolean)) {
       if (RB.obj(state, src).controller !== p) continue;
       if (src === iid) continue;                    // a card does not grant to itself
       for (const st of (RB.card(RB.obj(state, src).cardId).abilities || {}).statics || []) {
@@ -161,7 +161,12 @@
         if (h.owner !== p || state.bf[i].controller !== p) continue;
         if (h.turnHidden >= state.turn) continue;             // not until the next turn
         const card = RB.cardOf(state, h.iid);
-        const dests = playDestinations(state, p, card);
+        // A hidden permanent must be played to the battlefield it was hidden at (§811),
+        // which overrides both "units to base" and "gear to base". Asking the ordinary
+        // destinations here sent every facedown unit to base, where "when you play me to a
+        // battlefield" and "deal 2 to an enemy unit here" had nothing to find.
+        const dests = card.type === 'Unit' || card.type === 'Gear'
+          ? ['bf' + i] : playDestinations(state, p, card);
         // A facedown play takes additional costs like any other. It ignores the card's
         // BASE cost, not the costs a player chooses to add on top of it.
         for (const pick of extraCombinations(state, p, h.iid, 'hidden')) {
@@ -229,9 +234,11 @@
 
   function playDestinations(state, p, card) {
     if (card.type === 'Unit') {
-      // A unit is played to your base. It cannot be played straight to a battlefield
-      // unless something says so — [Ambush] is "I may be played to a battlefield where
-      // you control Units" (§811-adjacent), and a card may force a battlefield outright.
+      // A unit is played to your base or to a battlefield you control — that is the
+      // default play location (§8.2), not a permission. Anything else needs a card to say
+      // so: [Ambush] is "I may be played to a battlefield where you have units", and a card
+      // may force a battlefield outright. This list once started at base alone, and every
+      // "when you play me to a battlefield" in the pool could never fire.
       const ab = card.abilities || {};
       const kw = n => (ab.keywords || []).some(k => k === n || k.name === n);
       if (ab.playTo === 'battlefield') return state.bf.map((_, i) => 'bf' + i);
@@ -242,19 +249,18 @@
         // A play-location permission is narrow on most cards — "where you have units",
         // "where there are enemy units", "a battlefield you're attacking". Each is a named
         // predicate, not the blanket playTo:'battlefield'.
-        const perms = (ab.playAlso || []).slice();
+        const perms = ['whereIControl'].concat(ab.playAlso || []);
         if (kw('Ambush')) perms.push('whereIHaveUnits');
         for (let i = 0; i < state.bf.length; i++)
           if (perms.some(name => RB.playWhere(name)(state, p, i))) out.push('bf' + i);
       }
       return out;
     }
-    if (card.type === 'Gear') {
-      const targets = [];
-      for (let p2 = 0; p2 < 2; p2++) for (const u of state.players[p2].base) targets.push('unit:' + u);
-      for (let i = 0; i < state.bf.length; i++) for (const u of state.bf[i].units) targets.push('unit:' + u);
-      return targets.length ? targets : ['base'];
-    }
+    // Gear is played to your base (§8.2), Equipment included: attaching is what [Equip]
+    // and [Quick-Draw] do, each at its own price. Offering every unit on the board as a
+    // destination attached plain gear to a unit — where none of its abilities could ever
+    // be used — and let an Equipment skip its Equip cost onto an ENEMY unit.
+    if (card.type === 'Gear') return ['base'];
     return ['-'];   // spells: targets are chosen by the resolution queue
   }
 
@@ -276,9 +282,13 @@
     if (from.kind === 'base') {
       for (let i = 0; i < state.bf.length; i++) out.push('bf' + i);
     } else if (from.kind === 'bf') {
-      if (!RB.obj(state, iid).noMoveToBase) out.push('base');
-      if (RB.hasKeyword(state, iid, 'Ganking') || RB.bfGrantsGanking(state, from.bf))
-        for (let j = 0; j < state.bf.length; j++) if (j !== from.bf) out.push('bf' + j);
+      if (RB.canMoveToBase(state, iid)) out.push('base');
+      const gank = RB.hasKeyword(state, iid, 'Ganking') || RB.bfGrantsGanking(state, from.bf);
+      // "Units can move here from anywhere" (unl-147's Baron Pit) is a permission held by
+      // the DESTINATION; only the battlefield being left was ever asked.
+      for (let j = 0; j < state.bf.length; j++)
+        if (j !== from.bf && (gank || RB.battlefieldStatics(state, j).some(st => st.arriveFromAnywhere)))
+          out.push('bf' + j);
     }
     return out;
   }
@@ -488,28 +498,55 @@
     RB.pay(s, p, plan);
     for (const x of extras) RB.payExtra(s, p, iid, x);
     if (a.from === 'champion') P.champion = null; else RB.removeFrom(P.hand, iid);
-    // Count it before anything resolves: a card that asks "is this my second card this
-    // turn" is asking about itself, and a counter bumped afterwards answers one too low.
-    P.playedThisTurn.push(card.id);
-    if ((card.tags || []).includes('Equipment') || card.type === 'Gear') P.turnFlags.equipment = true;
     RB.log(s, 'play', { p: p, iid: iid, card: card.id, to: a.to,
-      nth: P.playedThisTurn.length }, soundFor(card));
-    RB.runTriggers(s, 'cardPlayed', { p: p, iid: iid, nth: P.playedThisTurn.length,
-      type: card.type });
+      nth: P.playedThisTurn.length + 1 }, soundFor(card));
     // Units and Gear resolve immediately on finalization and never sit on the chain
     // (rules §356); only spells and non-Add abilities linger there.
     const item = { iid: iid, controller: p, to: a.to, kind: 'card', targets: a.targets,
       paid: (a.pay || []).slice(), fromZone: zone, xPaid: xPaid,
       cardId: card.id, energy: card.energy || 0 };
-    // Relevant choices are made as the card is played (§349 step 2), so a card that
-    // declares what it chooses records it on the chain item. That is what lets a counter
-    // read "a spell that chose exactly one of my units" instead of countering anything.
-    if (card.abilities && card.abilities.chooses)
-      item.targets = RB.select(s, card.abilities.chooses, { p: p, source: iid });
-    if (card.type === 'Unit' || card.type === 'Gear') { RB.resolveCard(s, item); return; }
-    s.chain.push(item);
+    RB.playCard(s, item, {});
+    if (card.type === 'Unit' || card.type === 'Gear') return;
     s.priority = RB.opponentOf(p);
     s.passes = 0;
+  }
+
+  // EVERY play, from a hand, a facedown card, the Champion Zone, or an effect ("play a
+  // unit from your trash", Aurora, Promising Future, a blink). Playing is one event:
+  // the card is counted as played this turn and "when you play a card" is told. The
+  // effect plays used to call RB.resolveCard directly, so they were never counted — ogn-012
+  // [Legion] and ogn-027 Darius missed them.
+  //
+  // Count it before anything resolves: a card that asks "is this my second card this turn"
+  // is asking about itself. The TRIGGER is another matter: a unit or gear is on the board
+  // the moment it is finalized, and trigger conditions are evaluated after the event (§13.3,
+  // "an object ... triggers if it enters that zone at the same time its condition is met"),
+  // so it is told after the permanent has entered — Darius played as your second card sees
+  // himself. A spell is told as it goes on the chain.
+  RB.playCard = function (s, item, extra) {
+    const p = item.controller, iid = item.iid;
+    const card = RB.cardOf(s, iid);
+    const P = s.players[p];
+    P.playedThisTurn.push(card.id);
+    if ((card.tags || []).includes('Equipment') || card.type === 'Gear') P.turnFlags.equipment = true;
+    const event = Object.assign({ p: p, iid: iid, nth: P.playedThisTurn.length, type: card.type }, extra || {});
+    if (card.type === 'Unit' || card.type === 'Gear') {
+      RB.resolveCard(s, item);
+      RB.runTriggers(s, 'cardPlayed', event);
+      return;
+    }
+    RB.runTriggers(s, 'cardPlayed', event);
+    if (item.immediate) { RB.resolveCard(s, item); return; }
+    pushDeclared(s, item);
+  };
+
+  // A spell or ability on the chain has made its choices (§349 step 2): it is given an
+  // identity of its own and declared. See RB.declareChoices.
+  function pushDeclared(s, item) {
+    s.chainSeq = (s.chainSeq || 0) + 1;
+    item.uid = 'c' + s.chainSeq;
+    s.chain.push(item);
+    RB.declareChoices(s, item);
   }
 
   // Playing from face down ignores the card's base cost and is a different play from a
@@ -521,11 +558,8 @@
     bf.hidden.splice(bf.hidden.indexOf(h), 1);
     const card = RB.cardOf(s, a.iid);
     const P = s.players[p];
-    P.playedThisTurn.push(card.id);
     RB.log(s, 'play', { p: p, iid: a.iid, card: card.id, to: a.to, from: 'hidden',
-      nth: P.playedThisTurn.length }, soundFor(card));
-    RB.runTriggers(s, 'cardPlayed', { p: p, iid: a.iid, nth: P.playedThisTurn.length,
-      type: card.type, fromHidden: true });
+      nth: P.playedThisTurn.length + 1 }, soundFor(card));
     // A facedown play ignores the BASE cost; additional costs the player chose still get
     // paid, which is why they were offered.
     const extras = (a.pay || []).map(id => RB.additionalCost(s, a.iid, id, 'hidden'));
@@ -537,11 +571,11 @@
       RB.pay(s, p, plan);
       for (const x of extras) RB.payExtra(s, p, a.iid, x);
     }
-    const item = { iid: a.iid, controller: p, to: a.to, kind: 'card', fromHidden: true,
+    const item = { iid: a.iid, controller: p, to: a.to, kind: 'card', fromHidden: true, hiddenBf: a.bf,
       cardId: card.id, energy: card.energy || 0,
       paid: (a.pay || []).slice(), fromZone: 'hidden' };
-    if (card.type === 'Unit' || card.type === 'Gear') { RB.resolveCard(s, item); return; }
-    s.chain.push(item);
+    RB.playCard(s, item, { fromHidden: true });
+    if (card.type === 'Unit' || card.type === 'Gear') return;
     s.priority = RB.opponentOf(p);
     s.passes = 0;
   }
@@ -607,8 +641,7 @@
     // ABILITY that chose exactly one of my units" rather than matching spells only.
     const item = { iid: a.iid, controller: p, kind: 'ability', ix: a.ix,
       cardId: RB.cardOf(s, a.iid).id, energy: ab.energy || 0 };
-    if (ab.chooses) item.targets = RB.select(s, ab.chooses, { p: p, source: a.iid });
-    s.chain.push(item);
+    pushDeclared(s, item);
     s.priority = RB.opponentOf(p);
     s.passes = 0;
   }
@@ -651,7 +684,6 @@
     RB.runTriggers(s, 'endOfTurn', { p: s.active });
     for (const iid of Object.keys(s.objects)) {
       const o = s.objects[iid];
-      if (o.temporary) { RB.kill(s, iid); continue; }
       o.damage = 0;                // 3c. Heal all Units
       o.buffs = 0;                 // 3d. "this turn" effects expire
       o.granted = [];
@@ -680,7 +712,10 @@
     s.players[p].playedThisTurn = [];
     s.players[p].drawsThisTurn = 0;
     s.players[p].turnFlags = {};
-    s.players[p].powerSpentThisTurn = 0;
+    // "If you've spent at least [A][A] this turn" is asked on either player's turn, so
+    // the count restarts for both — resetting only the turn player's let sfd-143 Sivir
+    // keep last turn's +2 and Ganking through the opponent's whole turn.
+    for (let q = 0; q < 2; q++) s.players[q].powerSpentThisTurn = 0;
     RB.log(s, 'turnStart', { p: p, turn: s.turn }, 'turn.start');
 
     // Awaken Phase — ready everything you control. Rule 316.2.
@@ -696,8 +731,30 @@
 
     // Beginning Phase — start-of-turn effects, then the Scoring Step: the turn player
     // HOLDS every battlefield they control. Rule 316.3.
+    //
+    // [Temporary] is "at the start of this permanent's controller's Beginning Phase, before
+    // scoring, kill this" — the controller's, not every player's. It used to be swept in
+    // endTurn, on every turn, so a Temporary unit never saw the opponent's turn: it could
+    // not defend, and "Temporary units here have Shield" had nothing to protect.
     s.phase = 'beginning';
+    for (const iid of Object.keys(s.objects)) {
+      const o = s.objects[iid];
+      if (!o.temporary || o.controller !== p) continue;
+      if (RB.locationOf(s, iid).kind === 'nowhere' && !o.attachedTo) continue;
+      RB.kill(s, iid);
+    }
     RB.runTriggers(s, 'beginningPhase', { p: p });
+    // "This happens before scoring." The rest of the turn start waits for the cleanup to
+    // settle what the Beginning Phase did — a unit dealt lethal damage dies before its
+    // battlefield is held — and for any question it asked to be answered. advance()
+    // resumes it; scoring straight away scored a battlefield whose last unit was already
+    // dead and answered Dusk Rose Lab's "you may" after the point was in.
+    s.turnStart = { p: p };
+  }
+
+  function finishTurnStart(s) {
+    const p = s.turnStart.p;
+    s.turnStart = null;
     for (let i = 0; i < s.bf.length; i++)
       if (s.bf[i].controller === p) RB.score(s, p, i, 'hold');
 
@@ -733,6 +790,10 @@
       if (how === 'conquer' && !all) {
         RB.log(s, 'scoreDenied', { p: p, bf: i, how: how }, 'card.draw');
         RB.draw(s, p);
+        // The conquest still happened: a Conquer trigger fires even when the point it
+        // would score is replaced (rules.md, trigger table). unl-113 Master Yi's Hunt
+        // gained no XP at match point.
+        RB.runTriggers(s, 'conquer', { p: p, bf: i });
         return;
       }
     }
@@ -757,7 +818,7 @@
       // the dying unit's own is asked first — "if it would die this turn, banish it
       // instead" is about that unit, not about whoever is watching.
       const sources = [iid].concat(
-        RB.allUnits(s).filter(u => u !== iid),
+        RB.permanents(s).filter(u => u !== iid),        // gear too: ogn-077 Zhonya's
         s.players.map(P => P.legend)).filter(Boolean);
       for (const src of sources) {
         const ab = RB.card(RB.obj(s, src).cardId).abilities;
@@ -778,6 +839,13 @@
     if (loc.kind === 'base') RB.removeFrom(s.players[loc.p].base, iid);
     else if (loc.kind === 'bf') RB.removeFrom(s.bf[loc.bf].units, iid);
     else if (loc.kind === 'bfGear') RB.removeFrom(s.bf[loc.bf].gear, iid);
+    else if (o.attachedTo && s.objects[o.attachedTo]) {
+      // An attached gear sits on its host rather than in a zone of its own, so the zone
+      // lookup reads 'nowhere' for it. Returning here made every attached gear unkillable
+      // — "kill a gear" did nothing and a Temporary Equipment never died.
+      RB.removeFrom(RB.obj(s, o.attachedTo).attached, iid);
+      o.attachedTo = null;
+    }
     else return;
     RB.log(s, 'die', { iid: iid, p: o.controller }, 'unit.die');
     // Order matters and is the card's own first: Deathknell belongs to the card that is
@@ -795,7 +863,15 @@
     o.damage = 0; o.buffs = 0; o.permBuffs = 0; o.counters = 0;
     o.granted = []; o.exhausted = false; o.temporary = false;
     o.stunned = false; o.cantMove = false; o.attachedTo = null;
-    for (const g of o.attached.slice()) { o.attached = []; RB.kill(s, g); }
+    // Attached gear does not die with its host: it is detached and falls to its
+    // controller's base, the same as when the host is bounced (ops-ogn, ops-unl). Calling
+    // kill on it here returned early — the gear was in no zone — and it simply vanished.
+    for (const g of o.attached.slice()) {
+      const go = RB.obj(s, g);
+      go.attachedTo = null;
+      s.players[go.controller].base.push(g);
+    }
+    o.attached = [];
     if (!o.token) s.players[o.owner].trash.push(iid);
   };
 
@@ -813,6 +889,7 @@
       if (s.winner !== null) return;
       if (cleanup(s)) continue;
       if (s.chain.length && s.passes >= 2) { resolveTop(s); s.passes = 0; continue; }
+      if (s.turnStart && !s.queue.length && !s.chain.length) { finishTurnStart(s); continue; }
       return;
     }
     throw new Error('cleanup did not settle');
@@ -845,6 +922,24 @@
         RB.runTriggers(s, 'becameReady', { p: o.controller, iid: iid });
         changed = true;
       } else if (o.wasReady !== ready) o.wasReady = ready;
+    }
+    // 2. Designations. Units arriving at the combat battlefield take their controller's
+    // designation in the cleanup after the action that brought them; a unit that is no
+    // longer there loses its own (§464 step 2, cleanup step 2). Stamped only as a combat
+    // opened, a unit played in as a Reaction — sfd-025 Rengar, every [Ambush] unit — was
+    // never an attacker, and its [Assault] never applied.
+    const sd = s.showdown;
+    if (sd && sd.combat) {
+      for (const iid of RB.allUnits(s)) {
+        const o = s.objects[iid];
+        const here = RB.locationOf(s, iid);
+        const want = here.kind === 'bf' && here.bf === sd.bf
+          ? (o.controller === sd.attacker ? 'attacker' : 'defender') : undefined;
+        if (o.role !== want) {
+          if (want) o.role = want; else delete o.role;
+          changed = true;
+        }
+      }
     }
     // 3. Lethal damage.
     for (let i = 0; i < s.bf.length; i++)
@@ -882,8 +977,10 @@
       if (bf.combatStaged !== cstage) { bf.combatStaged = cstage; changed = true; }
       if (!stage) { bf.contestedBy = null; changed = true; }
     }
-    // 8. In a neutral open state, a staged showdown opens now.
-    if (!s.showdown && !s.chain.length && !s.queue.length) {
+    // 8. In a neutral open state, a staged showdown opens now. The Beginning Phase is not
+    // one: while the turn start is waiting to score, a showdown staged last turn waits for
+    // the Main Phase rather than opening ahead of scoring, channel and draw.
+    if (!s.showdown && !s.chain.length && !s.queue.length && !s.turnStart) {
       const staged = s.bf.map((b, i) => b.showdownStaged ? i : -1).filter(i => i >= 0);
       if (staged.length === 1) { openShowdown(s, staged[0]); return true; }
       if (staged.length > 1) { s.queue.push({ kind: 'chooseShowdown', who: s.active, options: staged }); return true; }
@@ -900,15 +997,22 @@
     s.showdown = { bf: i, attacker: attacker, defender: defender, combat: bf.combatStaged };
     // The Attacker gains Focus, and a player who gains Focus also gains Priority. Rule 315.4.
     s.focus = attacker; s.priority = attacker; s.passes = 0;
-    for (const iid of RB.unitsAt(s, i, attacker)) RB.obj(s, iid).role = 'attacker';
-    for (const iid of RB.unitsAt(s, i, defender)) RB.obj(s, iid).role = 'defender';
+    // Attacker and Defender are COMBAT designations (§464 step 2). A showdown at an empty
+    // battlefield has neither, and neither does it fire "when I attack" / "when you defend"
+    // — sfd-215 Ravenbloom paid out when a unit merely walked onto an empty battlefield.
+    if (s.showdown.combat) {
+      for (const iid of RB.unitsAt(s, i, attacker)) RB.obj(s, iid).role = 'attacker';
+      for (const iid of RB.unitsAt(s, i, defender)) RB.obj(s, iid).role = 'defender';
+    }
     RB.log(s, 'showdownOpen', { bf: i, attacker: attacker, defender: defender, combat: s.showdown.combat }, 'showdown.start');
     // Three events fire here, and cards want all three: the showdown beginning at this
     // battlefield, and each side taking its designation. Roles are stamped above, so a
     // trigger asking "am I a defender" already reads true.
     RB.runTriggers(s, 'showdownBegins', { p: attacker, bf: i, attacker: attacker, defender: defender });
-    RB.runTriggers(s, 'attack', { p: attacker, bf: i });
-    RB.runTriggers(s, 'defend', { p: defender, bf: i });
+    if (s.showdown.combat) {
+      RB.runTriggers(s, 'attack', { p: attacker, bf: i });
+      RB.runTriggers(s, 'defend', { p: defender, bf: i });
+    }
   }
   RB.openShowdown = openShowdown;
 })(window.RB = window.RB || {});

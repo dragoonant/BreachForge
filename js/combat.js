@@ -53,11 +53,13 @@
     return o.damage >= RB.mightOf(s, iid);
   };
 
-  // Tank must be assigned first; a unit that cannot be dealt damage is skipped entirely.
+  // Tank must be assigned first and [Backline] last (§465 ordering keywords); a unit that
+  // cannot be dealt damage is skipped entirely. Backline was never read, so unl-141
+  // Evelynn and unl-145 Pyke died ahead of the bigger unit standing in front of them.
   function assign(s, pool, targets) {
+    const rank = u => RB.hasKeyword(s, u, 'Tank') ? 0 : RB.hasKeyword(s, u, 'Backline') ? 2 : 1;
     const order = targets.slice().sort((a, b) => {
-      const ta = RB.hasKeyword(s, a, 'Tank') ? 0 : 1;
-      const tb = RB.hasKeyword(s, b, 'Tank') ? 0 : 1;
+      const ta = rank(a), tb = rank(b);
       if (ta !== tb) return ta - tb;
       return RB.mightOf(s, a) - RB.mightOf(s, b);   // cheapest kills first
     });
@@ -95,14 +97,21 @@
       // (rule 449). This is the step that makes an attack that fails to clear the
       // battlefield *bounce* — without it two units that cannot kill each other restage
       // the combat forever, which is exactly what the fuzzer found with two 0-might units.
-      if (RB.unitsAt(s, i, sd.defender).length)
-        for (const iid of RB.unitsAt(s, i, sd.attacker)) recall(s, iid, i);
+      if (RB.unitsAt(s, i, sd.defender).length) {
+        const back = RB.unitsAt(s, i, sd.attacker);
+        for (const iid of back) recall(s, iid, i);
+        if (back.length) sd.recalled = true;
+      }
     }
 
     const A = RB.unitsAt(s, i, sd.attacker);
     const D = RB.unitsAt(s, i, sd.defender);
     if (sd.combat) {
-      const winner = (A.length && !D.length) ? sd.attacker : (D.length && !A.length) ? sd.defender : null;
+      // "No Result" if units were recalled in 3d (§466). Judged after the recall alone, a
+      // bounce read as a defender WIN: sfd-148 Draven and sfd-185 Glorious Executioner paid
+      // out on a combat nobody won.
+      const winner = sd.recalled ? null
+        : (A.length && !D.length) ? sd.attacker : (D.length && !A.length) ? sd.defender : null;
       if (winner === null) {
         // "No Result" — neither side holds the field. Both sides having units cannot
         // happen after the recall above, so this is the mutual-destruction case.

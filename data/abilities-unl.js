@@ -70,7 +70,7 @@ RB.registerAbilities({
     effects: [{
       op: 'choose',
       options: [
-        { label: 'Counter a spell', effects: [{ op: 'counter' }] },
+        { label: 'Counter a spell', effects: [{ op: 'counter', spellOnly: true }] },
         { label: 'Play four 1 Might Bird unit tokens with Deflect',
           effects: [{ op: 'keywordToken', cardId: 'tok-bird', n: 4, might: 1, keywords: ['Deflect'] }] },
       ],
@@ -150,8 +150,8 @@ RB.registerAbilities({
           op: 'may', prompt: 'Pay 1 Energy to Predict and reveal the top card?',
           effects: [
             { op: 'payCost', energy: 1 },
-            { op: 'predict', n: 1 },
-            { op: 'revealTopSpell' },
+            // `then`: the reveal reads the deck the player's Predict answer left.
+            { op: 'predict', n: 1, then: [{ op: 'revealTopSpell' }] },
           ],
         }],
       }],
@@ -216,11 +216,13 @@ RB.registerAbilities({
     }],
   },
 
-  // Elder Dragon — any damage kills enemy units, and a ping at every location on the way
-  // in. `anyDamageKills` is read by RB.isLethalDamage, the one home for lethality; the
-  // scope is every unit that is not mine, which is what `enemyOfSource` asks.
+  // Elder Dragon — any amount of YOUR damage kills enemy units, and a ping at every
+  // location on the way in. `anyDamageKills` is read by RB.isLethalDamage, the one home for
+  // lethality; `enemyDamagedBySource` narrows it to enemy units this card's controller has
+  // damaged this turn (js/ops-unl.js records who dealt each hit). `enemyOfSource` read
+  // "your damage" as any damage, so a unit hurt only by its own side died too.
   'unl-118': {
-    statics: [{ anyDamageKills: true, scope: 'all', when: 'enemyOfSource' }],
+    statics: [{ anyDamageKills: true, scope: 'all', when: 'enemyDamagedBySource' }],
     triggers: [{ on: 'played', effects: [{ op: 'damageEachLocation', n: 1 }] }],
   },
 
@@ -275,10 +277,9 @@ RB.registerAbilities({
     triggers: [{ on: 'played', effects: [{ op: 'exhaust', target: 'self' }] }],
     activated: [{
       energy: 1, exhaustSelf: true, killSelf: true,
+      // `then`: the draw takes whatever the player's Predict answer left on top.
       effects: [
-        { op: 'predict', n: 2 },
-        { op: 'draw', n: 1 },
-        { op: 'xp', n: 1 },
+        { op: 'predict', n: 2, then: [{ op: 'draw', n: 1 }, { op: 'xp', n: 1 }] },
       ],
     }],
   },
@@ -370,20 +371,14 @@ RB.registerAbilities({
   },
 
   // Ashe — banish a card out of an opponent's revealed hand, and promise it back when THEY
-  // hold. `delayed` is the promise, and it fires from s.delayed rather than from the board,
-  // which is what "even if I'm no longer on the board" asks for. once:false because a
-  // delayed promise is consumed by the first matching event of EITHER player's hold; the
-  // return op is idempotent and the condition picks out the opponent's.
+  // hold. The promise is a delayed ability on s.delayed, not on the board, which is what
+  // "even if I'm no longer on the board" asks for — and `returnOn` makes banishFromHand
+  // register it with the banished card in its own data, so each play of Ashe promises its
+  // own card and the promise is removed once kept.
   'unl-169': {
     triggers: [{
       on: 'played',
-      effects: [
-        { op: 'banishFromHand' },
-        { op: 'delayed', on: 'hold', once: false, effects: [{
-          op: 'cond', test: { eventIsOpponents: true },
-          effects: [{ op: 'returnBanished' }],
-        }] },
-      ],
+      effects: [{ op: 'banishFromHand', returnOn: 'hold' }],
     }],
   },
 
@@ -412,20 +407,14 @@ RB.registerAbilities({
   },
 
   // Rift Herald — a move trigger that digs 3 for a unit, and a Deathknell that puts a unit
-  // out of hand for free. The dig is `choose` and not `may` because BOTH answers recycle
-  // the cards that were looked at.
+  // out of hand for free. The dig looks FIRST and then asks which unit, if any, to draw;
+  // digUnit owns that question (a pre-look "reveal or recycle all?" asked the player to
+  // decide blind, and then took the biggest unit for them).
   'unl-179': {
     triggers: [
       { on: 'moved', effects: [{
         op: 'cond', test: { eventIsSelf: true, toBattlefield: true },
-        effects: [{
-          op: 'choose',
-          options: [
-            { label: 'Reveal a unit from the top 3, draw it, recycle the rest',
-              effects: [{ op: 'digUnit', n: 3, take: true }] },
-            { label: 'Recycle all three', effects: [{ op: 'digUnit', n: 3, take: false }] },
-          ],
-        }],
+        effects: [{ op: 'digUnit', n: 3, take: true }],
       }] },
       { on: 'deathknell', effects: [{ op: 'playFromHand', type: 'Unit', to: 'base', ignoreEnergy: true }] },
     ],
@@ -459,7 +448,9 @@ RB.registerAbilities({
         options: [
           { label: 'Move an enemy unit there, then give enemy units there -2 Might this turn',
             effects: [
-              { op: 'moveUnit', target: { pick: 'enemyUnits' }, to: 'here' },
+              // `notHere`: a unit already at the battlefield cannot be moved to it, and
+              // choosing one spent the pull on nothing (and tolled its Deflect).
+              { op: 'moveUnit', target: { pick: 'enemyUnits', notHere: true }, to: 'here' },
               { op: 'debuff', n: 2, target: 'hereEnemy' },
             ] },
           { label: 'Move no one; give enemy units there -2 Might this turn',
@@ -689,14 +680,16 @@ RB.registerAbilities({
   },
 
   // Keeper of Masks — [Hidden]; [Temporary] is expanded because the engine's sweep reads
-  // o.temporary, which only an op sets. The copies take her printed characteristics, not
-  // her Temporary status, which is what "become copies of me" means.
+  // o.temporary, which only an op sets. The copies take her printed characteristics, and
+  // [Temporary] IS one — it is printed on her face — so they are Temporary too. The flag is
+  // written on the copy op because the expansion above runs on her play trigger, which a
+  // token copy never gets; without it two permanent 1-Might units outlived her.
   'unl-081': {
     keywords: ['Hidden'],
     triggers: [{ on: 'played', effects: [
       { op: 'giveTemporary', target: 'self' },
       { op: 'atThisBattlefield', orBase: true, effects: [
-        { op: 'copyToken', n: 2, target: 'self', to: 'here' },
+        { op: 'copyToken', n: 2, target: 'self', to: 'here', temporary: true },
       ] },
     ] }],
   },

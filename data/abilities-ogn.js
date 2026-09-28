@@ -55,7 +55,7 @@ RB.registerAbilities({
   'ogn-042': { vanilla: true },
 
   // Move an enemy unit.
-  'ogn-043': { effects: [{ op: 'ogn.moveUnit', target: { pick: 'enemyUnits' }, to: 'base' }] },
+  'ogn-043': { effects: [{ op: 'ogn.moveUnit', target: { pick: 'enemyUnits' }, to: 'anywhere' }] },
 
   // [Reaction] Counter a spell that costs no more than [4] and no more than [A].
   'ogn-045': {
@@ -149,13 +149,12 @@ RB.registerAbilities({
   'ogn-104': {
     keywords: ['Reaction'],
     effects: [
-      { op: 'ogn.bounce', target: { pick: 'myUnits' } },
-      { op: 'channel', n: 1, exhausted: true }],
+      { op: 'ogn.bounce', target: { pick: 'myUnits' }, ownerChannels: 1 }],
   },
 
   // Deal 6 to each of up to two units.
   'ogn-105': {
-    effects: [{ op: 'ogn.damage', n: 6, target: { pick: 'allUnits', n: 2, prefer: 'enemy' } }],
+    effects: [{ op: 'ogn.damage', n: 6, target: { pick: 'allUnits', upTo: 2, prefer: 'enemy' } }],
   },
 
   // [Accelerate] · [Deathknell] — Recycle me to ready your runes.
@@ -227,7 +226,7 @@ RB.registerAbilities({
   // [Action] Move a friendly unit and ready it.
   'ogn-173': {
     keywords: ['Action'],
-    effects: [{ op: 'ogn.moveUnit', target: { pick: 'myUnits' }, to: 'battlefield', ready: true }],
+    effects: [{ op: 'ogn.moveUnit', target: { pick: 'myUnits' }, to: 'anywhere', ready: true }],
   },
 
   // [Action] Each player kills one of their gear.
@@ -411,7 +410,7 @@ RB.registerAbilities({
   'ogs-011': {
     keywords: ['Reaction'],
     effects: [{ op: 'ogn.moveUnit',
-      target: { pick: 'myUnits', at: 'battlefield', n: 2 }, to: 'base' }],
+      target: { pick: 'myUnits', at: 'battlefield', upTo: 2 }, to: 'base' }],
   },
 
   // At the end of your turn, ready 2 runes.
@@ -573,10 +572,10 @@ RB.registerAbilities({
       { op: 'when', test: 'ogn.here', then: [{ op: 'ogn.lookAndRecycle', n: 2 }] }] }],
   },
 
-  // Units can't move from here to base. `ognNoRetreat` is what js/ops-ogn.js reads in
+  // Units can't move from here to base. `noMoveToBase` is what RB.canMoveToBase reads in
   // legalActions; the granted keyword beside it is there so the restriction has a name on
   // the board and a line in the audit — a bespoke static flag has no prose hook yet.
-  'ogn-295': { statics: [{ ognNoRetreat: true, grant: 'No Retreat', scope: 'here' }] },
+  'ogn-295': { statics: [{ noMoveToBase: true, grant: 'No Retreat', scope: 'here' }] },
 
   // Spells and abilities deal 1 Bonus Damage to units here. `bonusDamage` is read inside
   // RB.dealDamage for `effect` damage only, so combat damage here is unchanged — which is

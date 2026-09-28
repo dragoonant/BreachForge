@@ -41,7 +41,7 @@
     e.options.map(o => o.label).join('; ') + '.');                                                          // ops.choose
   RB.defineDescriber('stun', e => 'Stun ' + sel(e.target) +
     '. (It contributes no Might in combat this turn.)');                                           // ops.stun
-  RB.defineDescriber('counter', () => 'Counter it.');                                                       // ops.counter
+  RB.defineDescriber('counter', e => e.spellOnly ? 'Counter a spell.' : 'Counter it.');                                                     // ops.counter
   RB.defineDescriber('xp', e => 'Gain ' + n(e) + ' XP.');                                                   // ops.xp
   RB.defineDescriber('placeBuff', e => 'Buff ' + sel(e.target) +
     ". (If it doesn't have a buff, it gets a +1 Might buff.)");                                             // ops.placeBuff
@@ -110,7 +110,7 @@
     cardPlayed: 'When a card is played', spellPlayed: 'When a spell is played',
     drew: 'When you draw', showdownBegins: 'When a showdown begins here',
     attack: 'When you attack here', defend: 'When you defend here',
-    becameMighty: 'When a unit becomes Mighty', becameReady: 'When a unit becomes ready',
+    becameMighty: 'When a unit becomes Mighty', becameReady: 'When a unit becomes ready', buffSpent: 'When you spend a buff',
     chosen: 'When a unit is chosen', leftBoard: 'When a card leaves the board',
     beginningPhase: 'At the start of your turn', endOfTurn: 'At the end of your turn',
     combatEnd: 'When a combat ends', unitPlayed: 'When you play a unit',

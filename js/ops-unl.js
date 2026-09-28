@@ -151,23 +151,37 @@
     return true;
   }
 
-  // Off the board and into the owner's hand. A token ceases to exist instead; gear riding
-  // a returned unit is detached and falls back to its owner's base.
-  function toHand(s, iid) {
-    const o = RB.obj(s, iid);
-    if (!pluck(s, iid)) return false;
+  // Gear riding a unit that leaves the board does not go with it: it is detached and falls
+  // to its controller's base, the same as when the host dies (RB.kill).
+  function dropGear(s, o) {
     for (const g of (o.attached || []).slice()) {
       const go = RB.obj(s, g);
       go.attachedTo = null;
-      s.players[go.owner].base.push(g);
+      s.players[go.controller].base.push(g);
+      RB.log(s, 'unattach', { p: go.controller, iid: g }, 'gear.equip');
     }
     o.attached = [];
-    // RB.kill clears permBuffs and counters; this path lifts the card out of its zone
-    // directly and never reaches kill, so it has to clear the same fields itself.
-    o.damage = 0; o.buffs = 0; o.permBuffs = 0; o.counters = 0; o.granted = [];
-    o.exhausted = false; o.cantMove = false;
-    o.stunned = false; o.temporary = false; o.attachedTo = null; o.movedThisTurn = 0;
-    delete o.role;
+  }
+
+  // A card leaving the board by bounce or banish goes through RB.leaveBoard, the core's one
+  // door: it clears the card's modifications (Temporary, replacements, damage, buffs…) and
+  // raises `leftBoard`. These ops used to lift the card out of its zone themselves, so no
+  // leftBoard ever fired for a bounced unit, a placed "banish it instead" rode it back into
+  // play, and a blinked unit came back still Temporary. Gear goes to base first, while the
+  // host is still where it was.
+  function offBoard(s, iid) {
+    const o = RB.obj(s, iid);
+    dropGear(s, o);
+    if (!RB.leaveBoard(s, iid)) return false;
+    o.movedThisTurn = 0;
+    o.unlDamagedBy = null;
+    return true;
+  }
+
+  // Off the board and into the owner's hand. A token ceases to exist instead.
+  function toHand(s, iid) {
+    const o = RB.obj(s, iid);
+    if (!offBoard(s, iid)) return false;
     if (!o.token) s.players[o.owner].hand.push(iid);
     RB.log(s, 'returnToHand', { p: o.controller, iid: iid }, 'unit.move');
     return true;
@@ -295,23 +309,58 @@
 
   // --- predict --------------------------------------------------------------
   // Predict X (rules §412): look at the top X, recycle any number, put the rest back on
-  // top in any order. Every branch is legal, so the choice is made by a stated rule
-  // rather than a prompt: recycle what you could not pay for right now.
+  // top in any order. Which to recycle is the PLAYER'S decision about cards only they have
+  // seen; it used to be made for them by a stated rule (recycle what costs more Energy than
+  // you have runes), for the human seat too. Now the looked-at cards stay on top while one
+  // question is open: Predict 1 is a yes/no ("recycle it?"), Predict X a choose over every
+  // subset (four answers for Predict 2). The rest stay in the order they were in — "any
+  // order" is not asked.
+  //
+  // A queued question returns at once, so anything printed AFTER the Predict ("Predict,
+  // then reveal the top card", "Predict 2, then draw 1") is carried as `then` and runs in
+  // the answer's branch — it has to see the deck the player left, not the one before.
+  //
+  // The human seat's prompt names the cards. Any other seat's does not: a choose label is
+  // logged, and what an opponent looked at and kept is not the human's to read.
   RB.defineOp('predict', (s, e, ctx) => {
     const P = s.players[ctx.p];
+    const then = e.then || [];
     const n = Math.min(n_(e), P.deck.length);
-    if (!n) return;
-    const look = P.deck.splice(0, n);
-    const keep = [], recycle = [];
-    for (const iid of look) {
-      const c = RB.cardOf(s, iid);
-      ((c.energy || 0) > P.runes.length ? recycle : keep).push(iid);
+    if (!n) { RB.runEffects(s, then, ctx); return; }
+    const look = P.deck.slice(0, n);
+    RB.log(s, 'look', { p: ctx.p, n: n });
+    const named = ctx.p === s.humanSeat;
+    const name = (i, k) => named ? RB.cardOf(s, i).name : 'card ' + (k + 1);
+    const settle = recycle => [{ op: 'predictSettle', look: look, recycle: recycle }].concat(then);
+    const step = { who: ctx.p, source: ctx.source,
+      ctx: { p: ctx.p, source: ctx.source, event: ctx.event, targets: ctx.targets, paid: ctx.paid } };
+    if (n === 1) {
+      s.queue.push(Object.assign(step, { kind: 'may',
+        prompt: named ? 'Predict: the top card of your Main Deck is ' + name(look[0], 0) + '. Recycle it?'
+          : 'Predict: recycle the top card of your Main Deck?',
+        onAnswer: [settle(look.slice()), settle([])] }));
+      return;
     }
-    P.deck.unshift(...keep);
-    P.deck.push(...recycle);        // recycle is to the BOTTOM, never a reshuffle
-    RB.log(s, 'predict', { p: ctx.p, n: n, recycled: recycle.length });
+    const subsets = [];
+    for (let mask = 0; mask < (1 << n); mask++) subsets.push(look.filter((_, k) => mask & (1 << k)));
+    s.queue.push(Object.assign(step, { kind: 'choose',
+      prompt: 'Predict ' + n + (named ? ': the top cards of your Main Deck are ' +
+        look.map(name).join(', ') + ' (top first)' : '') + '. Recycle which?',
+      options: subsets.map(r => !r.length ? 'Keep all on top'
+        : r.length === n ? 'Recycle all ' + n
+        : 'Recycle ' + r.map(i => name(i, look.indexOf(i))).join(' and ')),
+      onAnswer: subsets.map(settle) }));
   });
-  RB.defineDescriber('predict', e => 'Predict ' + n_(e) + '.');
+  RB.defineDescriber('predict', e => 'Predict ' + n_(e) + '.' +
+    (e.then && e.then.length ? ' Then ' + lower(join(e.then)) : ''));
+
+  RB.defineOp('predictSettle', (s, e, ctx) => {
+    const P = s.players[ctx.p];
+    const recycle = (e.recycle || []).filter(i => P.deck.includes(i));
+    for (const iid of recycle) { RB.removeFrom(P.deck, iid); P.deck.push(iid); }  // to the BOTTOM
+    RB.log(s, 'predict', { p: ctx.p, n: (e.look || []).length, recycled: recycle.length });
+  });
+  RB.defineDescriber('predictSettle', () => '');
 
   // --- copyToken ------------------------------------------------------------
   // "Play a Reflection unit token … It becomes a copy of that unit." A copy carries the
@@ -326,8 +375,10 @@
       o.token = true;
       o.exhausted = !e.ready;
       o.enteredTurn = s.turn;
-      // A copy takes printed characteristics, not statuses — a copy of a Temporary unit is
-      // not itself Temporary unless the card making it says so.
+      // A copy takes printed characteristics, not statuses. A printed [Temporary] is a
+      // characteristic, but this engine expands it into a play trigger (giveTemporary) that
+      // a token copy never runs — so the data says `temporary` where the copied card
+      // prints the keyword (unl-081), and a status someone GAVE the source is not copied.
       if (e.temporary) o.temporary = true;
       if (e.to === 'here' && ctx.event && ctx.event.bf !== undefined) {
         s.bf[ctx.event.bf].units.push(iid);
@@ -360,18 +411,17 @@
       // permBuffs — `buffs` expires in the Ending Cleanup and would shrink it.
       if (e.might != null) o.permBuffs = e.might - (RB.card(e.cardId).might || 0);
       if (e.temporary) o.temporary = true;
-      // NOTE: o.granted is the this-turn channel and is cleared in the Ending Cleanup, so
-      // a keyword printed ON the token ("Bird tokens with [Deflect]") lasts the turn it is
-      // made. There is no permanent granted-keyword channel to write instead; flagged.
-      for (const k of e.keywords || []) o.granted.push(k);
+      // A keyword printed ON the token is a characteristic of it (o.keywords, read by
+      // RB.grantedOn). Written to o.granted — the this-turn channel — unl-044's and
+      // unl-153's Birds lost [Deflect] at the first Ending Cleanup.
+      o.keywords = (e.keywords || []).slice();
       if (e.to === 'here' && ctx.event && ctx.event.bf !== undefined) {
         s.bf[ctx.event.bf].units.push(iid);
         RB.applyContested(s, ctx.event.bf, ctx.p);
       } else s.players[ctx.p].base.push(iid);
       RB.log(s, 'token', { p: ctx.p, iid: iid, card: e.cardId }, 'unit.deploy');
       // "Play a token" is playing it, so a unit token raises unitPlayed — which is what a
-      // card like Lillia ("when you play a token unit") reads. NOTE: the core `token` op
-      // does not raise it, so tokens made by other packs do not reach those triggers.
+      // card like Lillia ("when you play a token unit") reads.
       if (RB.card(e.cardId).type === 'Unit') RB.runTriggers(s, 'unitPlayed', { p: ctx.p, iid: iid });
     }
   });
@@ -437,12 +487,15 @@
   // --- discardByType --------------------------------------------------------
   // "Discard 1. Then, do the following based on the discarded card's type." The core
   // discard op reports nothing back, so the branch needs its own handler. Which card is
-  // discarded follows the core op's own rule — the last card in hand, which after a draw
-  // is the card just drawn.
+  // discarded is the player's (§422.1.a); it was `hand.pop()`, always the card just drawn.
+  // The last card in hand stays first in the pool, so a seat that is never asked keeps the
+  // old answer.
   RB.defineOp('discardByType', (s, e, ctx) => {
     const P = s.players[ctx.p];
     if (!P.hand.length) return;
-    const iid = P.hand.pop();
+    const iid = RB.offerChoice(s, P.hand.slice().reverse(), 1, ctx, 'discardByType',
+      'Discard which card?', { quiet: true })[0];
+    RB.removeFrom(P.hand, iid);
     P.trash.push(iid);
     const type = RB.cardOf(s, iid).type;
     RB.log(s, 'discard', { p: ctx.p, iid: iid, type: type });
@@ -480,6 +533,7 @@
       const from = RB.locationOf(s, iid);
       if (dest !== 'base' && from.kind === 'bf' && from.bf === dest) continue;
       if (dest === 'base' && from.kind === 'base') continue;
+      if (dest === 'base' && !RB.canMoveToBase(s, iid)) continue;
       if (!pluck(s, iid)) continue;
       if (dest === 'base') s.players[o.controller].base.push(iid);
       else {
@@ -564,37 +618,57 @@
   RB.defineDescriber('firstEachTurn', e => 'The first time each turn, ' + lower(join(e.effects)));
 
   // --- digUnit --------------------------------------------------------------
-  // "Look at the top N of your Main Deck. [You may] reveal a unit from among them and draw
-  // it. Recycle the rest." Both branches recycle, which is why the card asks with `choose`
-  // rather than `may`.
+  // "Look at the top N of your Main Deck. You may reveal a unit from among them and draw it.
+  // Recycle the rest." (unl-179 Rift Herald.) LOOK FIRST, THEN CHOOSE: the card was authored
+  // as a `choose` between "reveal a unit" and "recycle all" asked before anything had been
+  // looked at, and the unit drawn was then the biggest one, never asked. Now the looked-at
+  // cards stay on top while ONE question is open — draw this unit, or that one, or none —
+  // and `digSettle` carries out the answer. A choose step is used rather than the targeting
+  // door because "none" is a legal answer the door cannot express (D-2), and it is the last
+  // effect of its trigger, so nothing resolves ahead of the answer.
   //
-  // "Reveal a unit from among them" is the player's pick, not the biggest one. Ordered
-  // biggest-first only to decide what a seat that is never asked takes; quiet, because a
-  // card in a deck is not an object on the board and has no Deflect to toll.
+  // The human seat's question names the cards it is looking at. Any other seat's labels do
+  // not: a choice's label is logged, and the cards not taken are never revealed.
   RB.defineOp('digUnit', (s, e, ctx) => {
     const P = s.players[ctx.p];
     const n = Math.min(n_(e), P.deck.length);
     if (!n) return;
-    const look = P.deck.splice(0, n);
+    const look = P.deck.slice(0, n);
     RB.log(s, 'look', { p: ctx.p, n: look.length });
-    let taken = null;
-    if (e.take) {
-      const units = look.filter(i => RB.cardOf(s, i).type === 'Unit');
-      if (units.length) {
-        units.sort((a, b) => (RB.cardOf(s, b).might || 0) - (RB.cardOf(s, a).might || 0));
-        taken = RB.offerChoice(s, units, 1, ctx, 'digUnit',
-          'Reveal a unit from among them and draw it', { quiet: true })[0] || null;
-      }
-      if (taken) {
-        P.hand.push(taken);
-        RB.log(s, 'draw', { p: ctx.p, iid: taken }, 'card.draw');
-      }
-    }
-    for (const iid of look) if (iid !== taken) P.deck.push(iid);
-    RB.log(s, 'dig', { p: ctx.p, n: n, took: taken ? 1 : 0 });
+    const units = e.take ? look.filter(i => RB.cardOf(s, i).type === 'Unit') : [];
+    if (!units.length) { RB.ops.digSettle(s, { look: look, take: null }, ctx); return; }
+    const named = ctx.p === s.humanSeat;
+    const name = i => RB.cardOf(s, i).name;
+    s.queue.push({
+      kind: 'choose', who: ctx.p, source: ctx.source,
+      prompt: named ? 'You look at ' + look.map(name).join(', ') +
+        '. Reveal a unit from among them and draw it?' : 'Reveal a unit from among them and draw it?',
+      options: units.map((i, k) => 'Reveal and draw ' + (named ? name(i) : 'unit ' + (k + 1)))
+        .concat(['Draw none — recycle all ' + look.length]),
+      ctx: { p: ctx.p, source: ctx.source, event: ctx.event, targets: ctx.targets },
+      onAnswer: units.map(i => [{ op: 'digSettle', look: look, take: i }])
+        .concat([[{ op: 'digSettle', look: look, take: null }]]),
+    });
   });
   RB.defineDescriber('digUnit', e => 'Look at the top ' + n_(e) + ' cards of your Main Deck. ' +
-    (e.take ? 'Reveal a unit from among them and draw it. ' : '') + 'Recycle the rest.');
+    (e.take ? 'You may reveal a unit from among them and draw it. ' : '') + 'Recycle the rest.');
+
+  // The answer: the rest go to the bottom in the order they were seen, and the unit taken
+  // is put back on top and DRAWN through RB.draw, so it counts as a draw ("the second card
+  // you draw each turn") rather than appearing in hand.
+  RB.defineOp('digSettle', (s, e, ctx) => {
+    const P = s.players[ctx.p];
+    const look = (e.look || []).filter(i => P.deck.includes(i));
+    for (const iid of look) RB.removeFrom(P.deck, iid);
+    for (const iid of look) if (iid !== e.take) P.deck.push(iid);
+    if (e.take && look.includes(e.take)) {
+      RB.log(s, 'reveal', { p: ctx.p, iid: e.take });
+      P.deck.unshift(e.take);
+      RB.draw(s, ctx.p);
+    }
+    RB.log(s, 'dig', { p: ctx.p, n: look.length, took: e.take && look.includes(e.take) ? 1 : 0 });
+  });
+  RB.defineDescriber('digSettle', () => '');
 
   // --- playFromHand ---------------------------------------------------------
   // "Play a unit from your hand to your base, ignoring its Energy cost." The Power cost is
@@ -621,7 +695,7 @@
       RB.pay(s, ctx.p, plan);
       RB.removeFrom(P.hand, iid);
       RB.log(s, 'play', { p: ctx.p, iid: iid, card: RB.cardOf(s, iid).id, to: 'base' }, 'unit.deploy');
-      RB.resolveCard(s, { iid: iid, controller: ctx.p, to: 'base', kind: 'card', targets: [] });
+      RB.playCard(s, { iid: iid, controller: ctx.p, to: 'base', kind: 'card', immediate: true, targets: [] });
       return;
     }
   });
@@ -749,7 +823,7 @@
     if (!iid) return;
     RB.removeFrom(P.trash, iid);
     RB.log(s, 'play', { p: ctx.p, iid: iid, card: RB.obj(s, iid).cardId, to: 'base' }, 'unit.deploy');
-    RB.resolveCard(s, { iid: iid, controller: ctx.p, to: 'base', kind: 'card', targets: [] });
+    RB.playCard(s, { iid: iid, controller: ctx.p, to: 'base', kind: 'card', immediate: true, targets: [] });
   });
   RB.defineDescriber('resurrectWithin', () =>
     'Play a unit from your trash that costs no more Energy and no more Power than the ' +
@@ -772,9 +846,11 @@
   RB.defineDescriber('revealHand', () => 'Choose an opponent. They reveal their hand.');
 
   // --- banishFromHand + returnBanished --------------------------------------
-  // Ashe: banish a card out of an opponent's revealed hand, and promise it back. The
-  // promise outlives her, so which card it was is remembered on her own object — that
-  // survives her leaving the board, because objects do.
+  // Ashe: banish a card out of an opponent's revealed hand, and promise it back "when they
+  // hold (even if I'm no longer on the board)". WHICH card is promised travels in the
+  // delayed ability's own data. It used to be one slot on Ashe's object, so an Ashe bounced
+  // and replayed overwrote her first card with her second and that one was never returned;
+  // and the `once:false` promise was never removed, so it stayed on s.delayed all game.
   RB.defineOp('banishFromHand', (s, e, ctx) => {
     const foe = RB.opponentOf(ctx.p);
     const P = s.players[foe];
@@ -791,20 +867,28 @@
     if (!pick) return;
     RB.removeFrom(P.hand, pick);
     P.banished.push(pick);
-    RB.obj(s, ctx.source).unlBanished = pick;
     RB.log(s, 'banish', { p: foe, iid: pick });
+    if (!e.returnOn) return;
+    // once:false because either player's hold raises the event and only THEIRS returns it;
+    // returnBanished removes this entry itself when it does.
+    s.delayed = s.delayed || [];
+    s.delayed.push({ on: e.returnOn, p: ctx.p, source: ctx.source, once: false,
+      effects: [{ op: 'returnBanished' }], data: { banished: pick } });
+    RB.log(s, 'delayed', { p: ctx.p, on: e.returnOn });
   });
-  RB.defineDescriber('banishFromHand', () =>
-    'Choose an opponent. They reveal their hand. Choose a card revealed this way and banish it.');
+  RB.defineDescriber('banishFromHand', e =>
+    'Choose an opponent. They reveal their hand. Choose a card revealed this way and banish it.' +
+    (e.returnOn === 'hold' ? " When they hold, return it to their hand (even if I'm no longer on the board)." : ''));
 
   RB.defineOp('returnBanished', (s, e, ctx) => {
-    const o = RB.obj(s, ctx.source);
-    const iid = o.unlBanished;
-    if (!iid) return;                       // already given back: the promise is spent
+    const d = ctx.delayed;
+    if (!d || !d.banished) return;
+    if (!ctx.event || ctx.event.p === ctx.p) return;          // "when THEY hold"
+    const iid = d.banished;
+    s.delayed = (s.delayed || []).filter(x => !(x.data && x.data.banished === iid));
     const owner = RB.obj(s, iid).owner;
-    if (!RB.removeFrom(s.players[owner].banished, iid)) { o.unlBanished = null; return; }
+    if (!RB.removeFrom(s.players[owner].banished, iid)) return;   // it left the banishment
     s.players[owner].hand.push(iid);
-    o.unlBanished = null;
     RB.log(s, 'returnToHand', { p: owner, iid: iid }, 'card.draw');
   });
   RB.defineDescriber('returnBanished', () => 'Return it to their hand.');
@@ -950,31 +1034,45 @@
     'Move any number of enemy units with the same controller and a total Might of ' +
     e.maxMight + ' or less to a single location.');
 
+  // "Move any number of enemy units" CHOOSES them, so each goes through the targeting door:
+  // an untargetable unit is no candidate, a [Deflect] one is tolled, `chosen` fires. The
+  // pool was built and walked here directly, so Tricksy Tentacles moved Baron Nashor ("I
+  // can't be chosen by enemy spells") and never paid a Deflect. One question per unit, each
+  // offering only what still fits under the cap, smallest first — which is also the unasked
+  // default, as many as fit. (A human cannot stop early: "up to" is D-2.) All the chosen
+  // units then move together.
   RB.defineOp('gatherEnemies', (s, e, ctx) => {
     const foe = RB.opponentOf(ctx.p);
     const dest = e.bf;
-    const cand = RB.allUnits(s)
-      .filter(i => RB.obj(s, i).controller === foe)
-      .filter(i => {
-        const l = RB.locationOf(s, i);
-        return dest === null ? l.kind !== 'base' : !(l.kind === 'bf' && l.bf === dest);
-      })
-      // Smallest first: "any number" wants as many as the cap allows.
-      .sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b));
-    let total = 0;
-    for (const iid of cand) {
-      const m = RB.mightOf(s, iid);
-      if (total + m > e.maxMight) continue;
-      total += m;
+    const movable = i => {
+      if (RB.obj(s, i).controller !== foe) return false;
+      const l = RB.locationOf(s, i);
+      return dest === null ? l.kind !== 'base' && RB.canMoveToBase(s, i) : !(l.kind === 'bf' && l.bf === dest);
+    };
+    const taken = [];
+    let room = e.maxMight;
+    for (let k = 0; k < 20; k++) {
+      const pool = RB.allUnits(s)
+        .filter(i => !taken.includes(i) && movable(i) && RB.mightOf(s, i) <= room)
+        .sort((a, b) => RB.mightOf(s, a) - RB.mightOf(s, b));
+      const pick = RB.offerChoice(s, pool, 1, ctx, 'gather' + k,
+        'Choose an enemy unit to move (total Might ' + e.maxMight + ' or less)')[0];
+      if (!pick) break;
+      taken.push(pick);
+      room -= RB.mightOf(s, pick);
+    }
+    const moved = [];
+    for (const iid of taken) {
       const o = RB.obj(s, iid);
       const from = RB.locationOf(s, iid);
       if (!pluck(s, iid)) continue;
       if (dest === null) s.players[o.controller].base.push(iid);
       else { s.bf[dest].units.push(iid); RB.applyContested(s, dest, o.controller); }
       RB.log(s, 'move', { p: o.controller, iid: iid, to: dest === null ? 'base' : 'bf' + dest }, 'unit.move');
-      RB.runTriggers(s, 'moved', { p: o.controller, iid: iid,
+      moved.push({ p: o.controller, iid: iid,
         bf: dest === null ? undefined : dest, fromBf: from.kind === 'bf' ? from.bf : undefined });
     }
+    for (const ev of moved) RB.runTriggers(s, 'moved', ev);   // after the whole group has moved
   });
   RB.defineDescriber('gatherEnemies', () => '');
 
@@ -994,13 +1092,23 @@
     const b = RB.offerChoice(s, others, 1, ctx, 'swapWith', 'Choose a unit at a different location')[0];
     if (!b) return;
     const la = RB.locationOf(s, a), lb = RB.locationOf(s, b);
-    if (!pluck(s, a) || !pluck(s, b)) return;
-    const place = (iid, loc) => {
+    // Each half is a move: one that may not go to base stays where it is (do as much as
+    // you can), and each that does move raises `moved` — the swap raised none, so
+    // unl-112 Irresistible Faefolk swapped onto a battlefield never offered its pull.
+    const goes = (iid, loc) => loc.kind !== 'base' || RB.canMoveToBase(s, iid);
+    const moveA = goes(a, lb), moveB = goes(b, la);
+    const place = (iid, loc, from) => {
+      if (!pluck(s, iid)) return;
       if (loc.kind === 'bf') { s.bf[loc.bf].units.push(iid); RB.applyContested(s, loc.bf, ctx.p); }
       else s.players[ctx.p].base.push(iid);
       RB.log(s, 'move', { p: ctx.p, iid: iid, to: loc.kind === 'bf' ? 'bf' + loc.bf : 'base' }, 'unit.move');
     };
-    place(a, lb); place(b, la);
+    if (moveA) place(a, lb);
+    if (moveB) place(b, la);
+    const fire = (iid, loc, from) => RB.runTriggers(s, 'moved', { p: ctx.p, iid: iid,
+      bf: loc.kind === 'bf' ? loc.bf : undefined, fromBf: from.kind === 'bf' ? from.bf : undefined });
+    if (moveA) fire(a, lb, la);
+    if (moveB) fire(b, la, lb);
   });
   RB.defineDescriber('swapMyUnits', () =>
     'Choose a unit you control and another unit you control at a different location. ' +
@@ -1036,28 +1144,25 @@
     const iid = targets(s, e.target, ctx)[0];
     if (!iid) return;
     const o = RB.obj(s, iid);
-    if (!pluck(s, iid)) return;
-    o.damage = 0; o.buffs = 0; o.permBuffs = 0; o.counters = 0; o.granted = [];
-    o.stunned = false; o.cantMove = false; delete o.role;
-    s.players[o.owner].banished.push(iid);
-    RB.obj(s, ctx.source).unlBlink = iid;
+    if (!offBoard(s, iid)) return;
     RB.log(s, 'banish', { p: o.owner, iid: iid });
+    if (o.token) return;                  // a token that leaves the board ceases to exist
+    s.players[o.owner].banished.push(iid);
     if (!s.bf.length) return;
+    // Which card lands rides in the answer's own effect, not in a slot on the source.
     askDestination(s, ctx, s.bf.map((b, i) => ({ label: 'To ' + RB.card(b.cardId).name, bf: i })),
-      o2 => [{ op: 'atBf', bf: o2.bf, effects: [{ op: 'landBanished' }] }]);
+      o2 => [{ op: 'atBf', bf: o2.bf, effects: [{ op: 'landBanished', iid: iid }] }]);
   });
   RB.defineDescriber('blinkUnit', e => 'Banish ' + selText(e.target) +
     ', then its owner plays it to any battlefield, ignoring its cost.');
 
   RB.defineOp('landBanished', (s, e, ctx) => {
-    const src = RB.obj(s, ctx.source);
-    const iid = src.unlBlink;
+    const iid = e.iid;
     if (!iid || ctx.event === undefined || ctx.event.bf === undefined) return;
     const owner = RB.obj(s, iid).owner;
-    if (!RB.removeFrom(s.players[owner].banished, iid)) { src.unlBlink = null; return; }
-    src.unlBlink = null;
+    if (!RB.removeFrom(s.players[owner].banished, iid)) return;
     RB.log(s, 'play', { p: owner, iid: iid, card: RB.obj(s, iid).cardId, to: 'bf' + ctx.event.bf }, 'unit.deploy');
-    RB.resolveCard(s, { iid: iid, controller: owner, to: 'bf' + ctx.event.bf, kind: 'card', targets: [] });
+    RB.playCard(s, { iid: iid, controller: owner, to: 'bf' + ctx.event.bf, kind: 'card', immediate: true, targets: [] });
   });
   RB.defineDescriber('landBanished', () => '');
 
@@ -1228,6 +1333,24 @@
   RB.defineStaticWhen('weakerEnemyThanSource', (state, iid, w, src) =>
     RB.obj(state, iid).controller !== RB.obj(state, src).controller &&
     RB.mightOf(state, iid) < RB.mightOf(state, src));
+  // "Any amount of YOUR damage is enough to kill enemy units" (unl-118 Elder Dragon). The
+  // core reads `anyDamageKills` in RB.isLethalDamage, which knows the unit but not who hurt
+  // it — so an enemy unit damaged only by its own side (or by the other player's spell on
+  // it) died too. Who dealt damage is recorded through the core's damage-layer hook, which
+  // sees every hit, combat and effect alike, with the dealing player as info.p; the record
+  // is keyed to the turn because damage is removed in every Ending Cleanup.
+  RB.defineDamageLayer((s, info) => {
+    if (info.p === undefined || info.p === null || !s.objects[info.iid]) return;
+    const o = s.objects[info.iid];
+    if (!o.unlDamagedBy || o.unlDamagedBy.turn !== s.turn) o.unlDamagedBy = { turn: s.turn, by: [] };
+    if (!o.unlDamagedBy.by.includes(info.p)) o.unlDamagedBy.by.push(info.p);
+  });
+  RB.defineStaticWhen('enemyDamagedBySource', (state, iid, w, src) => {
+    const o = RB.obj(state, iid);
+    const me = RB.obj(state, src).controller;
+    const d = o.unlDamagedBy;
+    return o.controller !== me && !!d && d.turn === state.turn && d.by.includes(me);
+  });
   RB.defineStaticWhen('isToken', (state, iid) => !!RB.obj(state, iid).token);
   RB.defineStaticWhen('isTemporary', (state, iid) => !!RB.obj(state, iid).temporary);
   // "+1 Might for each of your units with Temporary at my battlefield." Reads no Might, so
@@ -1267,6 +1390,7 @@
   // camelCase identifier. A condition nobody can read is a clause nobody can check.
   if (RB.defineWhenText) {
     RB.defineWhenText('enemyOfSource', () => 'for enemy units');
+    RB.defineWhenText('enemyDamagedBySource', () => 'for enemy units');
     RB.defineWhenText('weakerEnemyThanSource', () => 'for enemy units with less Might than me');
     RB.defineWhenText('isToken', () => 'while they are tokens');
     RB.defineWhenText('isTemporary', () => 'while they have Temporary');
