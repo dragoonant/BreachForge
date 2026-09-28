@@ -452,7 +452,7 @@
     if (!item || item.kind !== 'card') return;
     if (RB.cardOf(s, item.iid).type !== 'Spell') return;
     s.chain.pop();
-    s.players[item.controller].hand.push(item.iid);
+    s.players[RB.obj(s, item.iid).owner].hand.push(item.iid);    // its OWNER's hand, as printed
     RB.log(s, 'counter', { p: ctx.p, iid: item.iid }, 'chain.resolve');
   });
   RB.defineDescriber('counterToHand', () =>
@@ -1338,8 +1338,10 @@
   // it — so an enemy unit damaged only by its own side (or by the other player's spell on
   // it) died too. Who dealt damage is recorded through the core's damage-layer hook, which
   // sees every hit, combat and effect alike, with the dealing player as info.p; the record
-  // is keyed to the turn because damage is removed in every Ending Cleanup.
-  RB.defineDamageLayer((s, info) => {
+  // is keyed to the turn because damage is removed in every Ending Cleanup. It listens
+  // for damage DEALT, not attempted: a layer runs before prevention, and a fully
+  // prevented hit is no damage of yours.
+  RB.defineDamageDealt((s, info) => {
     if (info.p === undefined || info.p === null || !s.objects[info.iid]) return;
     const o = s.objects[info.iid];
     if (!o.unlDamagedBy || o.unlDamagedBy.turn !== s.turn) o.unlDamagedBy = { turn: s.turn, by: [] };

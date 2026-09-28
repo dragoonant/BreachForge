@@ -233,8 +233,9 @@ page could not be reached from here). sfd-248 Prodigal Explorer's "chosen enemy 
 gear twice this turn" counts each object chosen, so one spell choosing two counts as twice.
 Owner: unassigned.
 
-**D-20 — Small known edges.** unl-118 Elder Dragon records "your damage" before prevention, so
+**D-20 — RETIRED 2026-09-27.** unl-118 Elder Dragon now records "your damage" from the core's
+damage-DEALT hook (`RB.defineDamageDealt`), after prevention, so a fully prevented hit no longer
+counts. `counterToHand`, the core `counter` and a resolved spell all go to the card's OWNER.
+The original entry read: unl-118 Elder Dragon records "your damage" before prevention, so
 a fully prevented hit still counts as yours on a unit holding other damage. `counterToHand`
 and the core `counter` return or trash to the CONTROLLER, where the cards say owner.
-Owner: unassigned.
-

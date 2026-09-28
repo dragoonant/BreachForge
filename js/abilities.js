@@ -60,7 +60,7 @@
       RB.runEffects(s, (ab.triggers || []).filter(t => t.on === 'played').flatMap(t => t.effects), ctx);
     } else {
       RB.runEffects(s, ab.effects || [], ctx);
-      s.players[p].trash.push(iid);
+      s.players[RB.obj(s, iid).owner].trash.push(iid);   // the OWNER's trash (§13.4 step 6)
       if (card.type === 'Spell') RB.runTriggers(s, 'spellPlayed', { p: p, iid: iid });
     }
     // An additional cost's own clause — [Repeat] is "pay again to do it again" — is a
@@ -239,6 +239,12 @@
   // step, because several cards care which.
   RB.damageLayers = [];
   RB.defineDamageLayer = function (fn) { RB.damageLayers.push(fn); };
+  // Listeners told about damage that was actually DEALT — after every layer and every
+  // prevention has had its say. A layer sees the attempt, which is the wrong moment for a
+  // card that remembers who hurt a unit: unl-118 Elder Dragon recorded a fully prevented
+  // hit as "your damage" and then killed the unit off damage someone else had dealt.
+  RB.damageDealtHooks = [];
+  RB.defineDamageDealt = function (fn) { RB.damageDealtHooks.push(fn); };
 
   RB.dealDamage = function (s, iid, n, ctx, kind) {
     const info = { iid: iid, n: n, kind: kind || 'effect',
@@ -251,6 +257,7 @@
     if (s.preventEffectDamage && info.kind === 'effect') info.n = 0;
     if (info.n <= 0) { RB.log(s, 'damagePrevented', { iid: iid }); return 0; }
     RB.obj(s, iid).damage += info.n;
+    for (const fn of RB.damageDealtHooks) fn(s, info);
     return info.n;
   };
 
@@ -682,8 +689,10 @@
     if (e.spellOnly && !(item.kind === 'card' && RB.cardOf(s, item.iid).type === 'Spell')) return;
     s.chain.splice(ix, 1);
     // Only a CARD goes to the trash. An ability's item names its source, which is still on
-    // the board: countering a legend's ability put the legend in its owner's trash.
-    if (item.kind === 'card') s.players[item.controller].trash.push(item.iid);
+    // the board: countering a legend's ability put the legend in its owner's trash. And it
+    // is the OWNER's trash (§691): a card played by the player who does not own it — a
+    // spell cast out of the opponent's trash — went to the caster's.
+    if (item.kind === 'card') s.players[RB.obj(s, item.iid).owner].trash.push(item.iid);
     RB.log(s, 'counter', { p: ctx.p, iid: item.iid }, 'chain.resolve');
   });
   RB.defineOp('xp', (s, e, ctx) => {
