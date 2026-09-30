@@ -21,9 +21,85 @@
     return state.players[p].runes.filter(i => !RB.obj(state, i).exhausted);
   };
 
-  // Can player p pay `cost` right now, counting what is already in the pool plus what the
-  // runes on the board could still produce? Returns a plan, or null.
+  // Can player p pay `cost` right now, counting what is already in the pool, what the
+  // runes on the board could still produce, and what their [Reaction] Add abilities could
+  // add — those may be used while paying (rules §349 step 4), even with no priority.
+  // Returns a plan, or null.
   RB.planPayment = function (state, p, cost) {
+    const plain = planFromRunes(state, p, cost);
+    if (plain) return plain;
+    const sources = addSources(state, p);
+    if (!sources.length) return null;
+    // Fewest sources first, and within a size in the order addSources ranks them, so a
+    // Gold is only cracked when the runes and the gear that merely exhausts fall short.
+    const n = Math.min(sources.length, 6);
+    // More in the pool never makes a cost harder to pay, so if every source together cannot
+    // pay it, no subset can — and that is the common case, an unaffordable card in hand,
+    // asked once per card per legalActions. One probe per variant instead of 63.
+    const all = sources.slice(0, n);
+    if (!variantCombos(all).slice(0, 8).some(combo => trial(state, p, cost, combo))) return null;
+    const subsets = [];
+    for (let m = 1; m < (1 << n); m++) subsets.push(m);
+    subsets.sort((a, b) => bits(a) - bits(b) || a - b);
+    let tries = 0;
+    for (const m of subsets) {
+      const picked = sources.filter((_, i) => m & (1 << i));
+      for (const combo of variantCombos(picked)) {
+        if (++tries > 64) return null;
+        const plan = trial(state, p, cost, combo);
+        if (plan) { plan.adds = combo; return plan; }
+      }
+    }
+    return null;
+  };
+  // The plan the runes and pool would make after these Add abilities had been used.
+  function trial(state, p, cost, combo) {
+    const sim = poolOnly(state, p);
+    for (const u of combo) RB.runEffects(sim, u.effects, { p: p, source: u.iid });
+    return planFromRunes(sim, p, cost);
+  }
+  const bits = m => { let c = 0; for (; m; m &= m - 1) c++; return c; };
+
+  // Ready [Reaction] Add abilities player p controls that cost nothing but themselves
+  // (exhaust, kill). Ones that only exhaust come before ones that die for it.
+  function addSources(state, p) {
+    const P = state.players[p];
+    const out = [];
+    const ids = [P.legend].concat(P.base, state.bf.flatMap(b => b.units))
+      .filter(i => i && RB.obj(state, i).controller === p);
+    for (const iid of ids) {
+      const ab = RB.cardOf(state, iid).abilities;
+      (ab && ab.activated || []).forEach((a, ix) => {
+        const variants = RB.addVariants(a);
+        if (!variants || !(a.tags || []).includes('Reaction')) return;
+        if (a.exhaustSelf && RB.obj(state, iid).exhausted) return;
+        if (a.when && !RB.testCondition(state, a.when, { p: p, source: iid })) return;
+        const c = RB.abilityCost(state, iid, a);
+        if (c.energy || c.power) return;
+        out.push({ iid: iid, ix: ix, variants: variants, dies: !!a.killSelf });
+      });
+    }
+    return out.sort((a, b) => a.dies - b.dies);
+  }
+
+  // Every way to pick one variant per source: one combination unless a source chooses.
+  function variantCombos(picked) {
+    let out = [[]];
+    for (const src of picked)
+      out = out.flatMap(c => src.variants.map(v => c.concat([{ iid: src.iid, ix: src.ix, effects: v }])));
+    return out;
+  }
+
+  // A copy of the state deep enough for an Add op to write to: the one player's pool and
+  // the log. Everything else is shared and only read, which is what RB.addOps promises.
+  function poolOnly(state, p) {
+    const sim = Object.assign({}, state, { log: [], players: state.players.slice() });
+    const P = state.players[p];
+    sim.players[p] = Object.assign({}, P, { pool: JSON.parse(JSON.stringify(P.pool)) });
+    return sim;
+  }
+
+  function planFromRunes(state, p, cost) {
     const P = state.players[p];
     const pool = { energy: P.pool.energy, power: Object.assign({}, P.pool.power) };
     const ready = RB.runesReady(state, p).map(i => ({ iid: i, domain: RB.cardOf(state, i).domain }));
@@ -283,6 +359,9 @@
 
   RB.pay = function (state, p, plan) {
     const P = state.players[p];
+    // The Add abilities the plan was priced with are used first, for real, so the pool
+    // holds exactly what the plan was computed against.
+    for (const u of plan.adds || []) RB.useAddAbility(state, p, u.iid, u.ix, u.effects);
     // Several cards read how much Power you have spent this turn, so the meter lives here,
     // where every payment passes, rather than at each call site.
     P.powerSpentThisTurn = (P.powerSpentThisTurn || 0) +

@@ -86,11 +86,15 @@ Owner: unassigned.
 
 **D-4 — The chain is two-pass, not full priority.**
 A spell goes on the chain and resolves when both players have passed once. Units and Gear resolve
-immediately without touching the chain, which is correct (§356). What is missing is Focus's
-distinct behaviour: Focus does not pass when the chain was opened by a triggered or Add ability,
-and `[Reaction]` Add abilities may be used mid-resolution with no priority at all.
-*Fix:* separate Focus from Priority in `js/engine.js` and add the Add-ability window to the
-payment path.
+immediately without touching the chain, which is correct (§356). What is missing is Focus as
+distinct from priority: Focus does not pass when the chain was opened by a triggered or Add
+ability.
+*Add abilities — RETIRED 2026-09-29.* An activated ability made only of Add effects
+(`RB.addVariants`, js/abilities.js) resolves at once, off the chain, with priority unmoved
+(`RB.useAddAbility`, js/engine.js); a `[Reaction]` one is used by the payment solver when runes
+and pool fall short (js/cost.js), so it pays mid-resolution and with no priority at all. Gold
+(`tok-gold`), ogn-120, ogn-299, ogs-014, unl-234. tests/test-add-abilities.js.
+*Fix (what remains):* separate Focus from Priority in `js/engine.js`.
 Owner: unassigned.
 
 **D-5 — RETIRED 2026-09-20.** Hidden is implemented end to end: the Hide action, the facedown

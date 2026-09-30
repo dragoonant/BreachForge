@@ -626,12 +626,32 @@
     RB.log(s, 'contested', { bf: i, p: p });
   }
 
+  // Use an Add ability (rules §695): pay its self-costs, then add, all at once. It never
+  // goes on the chain and never moves priority, so it is the same act whether the player
+  // chose it as an action or the payment solver reached for it mid-payment (js/cost.js).
+  // `effects` is the variant to run; left out, the ability's own effects run, and a
+  // "choose" among them asks through the queue like any other choice.
+  RB.useAddAbility = function (s, p, iid, ix, effects) {
+    const ab = RB.cardOf(s, iid).abilities.activated[ix];
+    if (ab.exhaustSelf) RB.obj(s, iid).exhausted = true;
+    RB.log(s, 'activate', { p: p, iid: iid, ix: ix, add: true }, 'legend.activate');
+    if (ab.killSelf) RB.kill(s, iid);
+    const prev = s.via;
+    s.via = { iid: iid };
+    RB.runEffects(s, effects || ab.effects, { p: p, source: iid });
+    s.via = prev;
+  };
+
   function doActivate(s, p, a) {
     const ab = RB.cardOf(s, a.iid).abilities.activated[a.ix];
     const cost = RB.abilityCost(s, a.iid, ab);
     const plan = RB.planPayment(s, p, cost);
     if (!plan) throw new Error('cannot pay activated ability');
     RB.pay(s, p, plan);
+    // An Add ability resolves on finalization and passes neither priority nor focus —
+    // before this it went on the chain like any ability and handed the opponent a window
+    // to respond to a player cracking their own Gold (D-4).
+    if (RB.addVariants(ab)) return RB.useAddAbility(s, p, a.iid, a.ix);
     if (ab.exhaustSelf) RB.obj(s, a.iid).exhausted = true;
     RB.log(s, 'activate', { p: p, iid: a.iid, ix: a.ix }, 'legend.activate');
     // An ability may cost the source's own life ("Kill this, [E]: …"). Killing it is part

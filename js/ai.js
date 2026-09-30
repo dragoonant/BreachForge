@@ -172,7 +172,12 @@
     // space an order of magnitude larger, and they are exactly the actions worth reading,
     // so moves are all kept and only the plays are sampled.
     const moves = acts.filter(a => a.t === 'move');
-    const rest = acts.filter(a => a.t !== 'move');
+    // Using an Add ability on its own only fills a pool that empties at end of turn; the
+    // payment solver already uses one when a play needs it (js/cost.js). Scored alone it
+    // reads as +energy for nothing, and the Gold it cracks was never on the scoreboard.
+    const addOnly = a => a.t === 'activate' &&
+      !!RB.addVariants(RB.cardOf(s, a.iid).abilities.activated[a.ix]);
+    const rest = acts.filter(a => a.t !== 'move' && !addOnly(a));
     let pool = rest;
     const CAP = 48;
     if (pool.length > CAP) {

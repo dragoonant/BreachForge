@@ -565,6 +565,25 @@
     s.players[ctx.p].pool.showdownOnly = (s.players[ctx.p].pool.showdownOnly || 0) + (e.n || 1);
   });
 
+  // An Add ability (rules §695) is one whose whole effect is putting resources in the pool:
+  // it resolves on the spot, never uses the chain and never passes priority, and a
+  // [Reaction] one may be used while paying a cost. These are the ops that only ADD — each
+  // writes the player's pool and the log and nothing else, which is what lets the payment
+  // solver try one on a throwaway pool (js/cost.js). A new op joins only if that holds.
+  RB.addOps = new Set(['addEnergy', 'addPower', 'addRestrictedPower', 'addRestrictedEnergy',
+    'addShowdownEnergy']);
+  // The ways an ability can add, as effect lists — one, or one per option of a "choose"
+  // whose every option adds (ogn-299's Fury or Mind) — or null if it is not an Add ability.
+  RB.addVariants = function (ab) {
+    const effs = (ab && ab.effects) || [];
+    const adds = list => list.length > 0 && list.every(e => RB.addOps.has(e.op));
+    if (effs.length === 1 && effs[0].op === 'choose') {
+      const vs = effs[0].options.map(o => o.effects || []);
+      return vs.every(adds) ? vs : null;
+    }
+    return adds(effs) ? [effs] : null;
+  };
+
   // "You may X." A real optional clause: it asks, and declining is a legal answer. The
   // human seat answers on the prompt line; the AI answers through the same queue step, so
   // there is exactly one place that knows what "may" means.
